@@ -1,0 +1,120 @@
+name: Linux distribution releases
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Application version and package revision (for example 0.8.6-59)'
+        required: true
+        default: '0.8.6-59'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and verify ${{ matrix.target }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - target: mint22
+            image: linuxmintd/mint22.3-amd64@sha256:304bbf7ec2a61252962c5210467d231a141661490e8962f52fd4df7688370369
+          - target: ubuntu24.04
+            image: ubuntu@sha256:77eb101c607d6e3d4f5ad0c8a02c2136c689b98aba1f359e6502ba517e5c57ec
+          - target: ubuntu26.04
+            image: ubuntu@sha256:0d5255be560e2d2ddcfbfda88549e9e815ef29e7cd7fc62183d5709e6e2963c6
+          - target: debian13
+            image: debian@sha256:bfc36aecdece0387418759dba474aa856c026ca8087da3606b41b90ab0509c99
+    container:
+      image: ${{ matrix.image }}
+      options: --user 0
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEBIAN_FRONTEND: noninteractive
+      CARGO_HOME: /opt/impress-cargo
+      RUSTUP_HOME: /opt/impress-rustup
+      CARGO_BUILD_JOBS: '2'
+      CMAKE_BUILD_PARALLEL_LEVEL: '2'
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: clang
+      RUSTFLAGS: '-C link-arg=-fuse-ld=lld'
+      LC_ALL: C.UTF-8
+      APP_VERSION: ${{ inputs.version }}
+    steps:
+      - name: Install distribution build and test dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends             ca-certificates curl git build-essential pkg-config cmake clang lld libclang-dev             python3 python3-pil dpkg-dev file binutils desktop-file-utils shared-mime-info             zstd xvfb xauth xdotool scrot fonts-dejavu-core fonts-liberation hunspell-el             libgtk-3-dev libpng-dev libjpeg-dev libtiff-dev libexpat1-dev             libgl1-mesa-dev libglu1-mesa-dev libxkbcommon-dev libwayland-dev             libfontconfig1-dev libfreetype-dev libsm-dev libnotify-dev libenchant-2-dev
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Install Rust 1.93.1
+        run: |
+          curl --proto '=https' --tlsv1.2 -fsS https://sh.rustup.rs -o /tmp/impress-rustup.sh
+          sh /tmp/impress-rustup.sh -y --profile minimal --default-toolchain 1.93.1 --no-modify-path
+          echo "$CARGO_HOME/bin" >> "$GITHUB_PATH"
+      - name: Cache Cargo sources
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830
+        with:
+          path: /opt/impress-cargo/registry
+          key: cargo-rust1931-${{ hashFiles('Cargo.lock') }}
+      - name: Build optimized application and converter
+        run: |
+          cargo build --release --locked --bin Impress --bin impress-convert
+      - name: Run Rust and interface checks
+        run: |
+          mkdir -p dist
+          cargo test --release --locked -p editor -p layout -p render -p docx 2>&1 | tee dist/tests-${{ matrix.target }}.log
+          cargo test --release --locked -p gui --bin Impress 2>&1 | tee -a dist/tests-${{ matrix.target }}.log
+          for test in test_ribbon_runtime_contracts.py test_ribbon_metrics.py test_compact_ribbon.py test_interface_reference.py; do
+            python3 -m unittest discover -s tools/tests -p "$test" 2>&1 | tee -a dist/tests-${{ matrix.target }}.log
+          done
+          printf 'Rust and UI checks passed\n' > dist/TESTS-PASSED.txt
+      - name: Build distribution package with native dependency versions
+        run: python3 packaging/linux/build-deb.py --target '${{ matrix.target }}' --version "$APP_VERSION"
+      - name: Install and exercise the packaged application
+        run: |
+          apt-get install -y ./dist/*.deb
+          packaging/linux/verify-installed.sh dist/validation
+      - name: Upload verified package and evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: diagnostics-${{ matrix.target }}
+          path: |
+            dist/
+            target/release/build/wxdragon-sys-*/output
+          if-no-files-found: ignore
+
+  publish:
+    name: Publish Mint, Ubuntu and Debian releases
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          path: artifacts
+          pattern: '*'
+      - name: Publish distribution-specific releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APP_VERSION: ${{ inputs.version }}
+        run: python3 packaging/linux/publish-releases.py --version "$APP_VERSION" --artifacts artifacts
