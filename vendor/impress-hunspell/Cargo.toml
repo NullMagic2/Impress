@@ -1,0 +1,9 @@
+[package]
+name = "impress-hunspell"
+version = "0.1.0"
+edition = "2024"
+license = "MPL-1.1"
+[dependencies]
+encoding_rs = "=0.8.41"
+[build-dependencies]
+cc = "1.4.7"

@@ -1,0 +1,1024 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resource>
+  <object class="wxDialog" name="bdr_dialog">
+    <title>Borders and Shading</title>
+    <style>wxDEFAULT_DIALOG_STYLE</style>
+    <bg>#e8ecf2</bg>
+    <object class="wxBoxSizer">
+      <orient>wxVERTICAL</orient>
+      <object class="sizeritem">
+        <option>0</option>
+        <flag>wxLEFT|wxRIGHT|wxTOP</flag>
+        <border>12</border>
+        <object class="wxBoxSizer">
+          <orient>wxHORIZONTAL</orient>
+          <object class="spacer">
+            <size>8,1</size>
+            <option>0</option>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_BOTTOM</flag>
+            <border>0</border>
+            <object class="wxButton" name="bdr_tab_0">
+              <label>Borders</label>
+              <size>88,30</size>
+              <style>wxBU_EXACTFIT|wxBORDER_NONE</style>
+              <bg>#e8ecf2</bg>
+            </object>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_BOTTOM</flag>
+            <border>0</border>
+            <object class="wxButton" name="bdr_tab_1">
+              <label>Shading</label>
+              <size>88,30</size>
+              <style>wxBU_EXACTFIT|wxBORDER_NONE</style>
+              <bg>#e8ecf2</bg>
+            </object>
+          </object>
+        </object>
+      </object>
+      <object class="sizeritem">
+        <option>1</option>
+        <flag>wxEXPAND|wxLEFT|wxRIGHT</flag>
+        <border>12</border>
+        <object class="wxPanel" name="bdr_card">
+          <bg>#ffffff</bg>
+          <object class="wxBoxSizer">
+            <orient>wxVERTICAL</orient>
+            <object class="sizeritem">
+              <option>1</option>
+              <flag>wxEXPAND|wxALL</flag>
+              <border>16</border>
+              <object class="wxBoxSizer">
+                <orient>wxVERTICAL</orient>
+                <object class="sizeritem">
+                  <option>1</option>
+                  <flag>wxEXPAND</flag>
+                  <border>0</border>
+                  <object class="wxPanel" name="bdr_page_0">
+                    <bg>#ffffff</bg>
+                    <object class="wxBoxSizer">
+                      <orient>wxVERTICAL</orient>
+                      <object class="sizeritem">
+                        <option>1</option>
+                        <flag>wxEXPAND</flag>
+                        <border>0</border>
+                        <object class="wxBoxSizer">
+                          <orient>wxHORIZONTAL</orient>
+                          <object class="sizeritem">
+                            <option>0</option>
+                            <flag>wxEXPAND</flag>
+                            <border>0</border>
+                            <object class="wxBoxSizer">
+                              <orient>wxVERTICAL</orient>
+                              <object class="sizeritem">
+                                <option>0</option>
+                                <flag>wxEXPAND</flag>
+                                <border>0</border>
+                                <object class="wxBoxSizer">
+                                  <orient>wxHORIZONTAL</orient>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                                    <border>10</border>
+                                    <object class="wxStaticText" name="i18n_control_4">
+                                      <label>Setting</label>
+                                      <fg>#1d3d78</fg>
+                                      <font>
+                                        <weight>bold</weight>
+                                      </font>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>1</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxPanel">
+                                      <size>-1,1</size>
+                                      <bg>#dfe4ec</bg>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                              <object class="sizeritem">
+                                <option>1</option>
+                                <flag>wxEXPAND|wxTOP</flag>
+                                <border>10</border>
+                                <object class="wxBoxSizer">
+                                  <orient>wxHORIZONTAL</orient>
+                                  <object class="spacer">
+                                    <size>12,1</size>
+                                    <option>0</option>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>1</option>
+                                    <flag>wxEXPAND</flag>
+                                    <border>0</border>
+                                    <object class="wxBoxSizer">
+                                      <orient>wxVERTICAL</orient>
+                                      <object class="sizeritem">
+                                        <option>1</option>
+                                        <flag>wxEXPAND</flag>
+                                        <border>0</border>
+                                        <object class="wxPanel" name="bdr_setting">
+                                          <bg>#ffffff</bg>
+                                          <size>120,254</size>
+                                          <style>wxWANTS_CHARS|wxFULL_REPAINT_ON_RESIZE</style>
+                                        </object>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                          <object class="sizeritem">
+                            <option>0</option>
+                            <flag>wxEXPAND|wxLEFT</flag>
+                            <border>24</border>
+                            <object class="wxBoxSizer">
+                              <orient>wxVERTICAL</orient>
+                              <object class="sizeritem">
+                                <option>0</option>
+                                <flag>wxEXPAND</flag>
+                                <border>0</border>
+                                <object class="wxBoxSizer">
+                                  <orient>wxHORIZONTAL</orient>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                                    <border>10</border>
+                                    <object class="wxStaticText" name="i18n_control_5">
+                                      <label>Style</label>
+                                      <fg>#1d3d78</fg>
+                                      <font>
+                                        <weight>bold</weight>
+                                      </font>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>1</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxPanel">
+                                      <size>-1,1</size>
+                                      <bg>#dfe4ec</bg>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                              <object class="sizeritem">
+                                <option>1</option>
+                                <flag>wxEXPAND|wxTOP</flag>
+                                <border>10</border>
+                                <object class="wxBoxSizer">
+                                  <orient>wxHORIZONTAL</orient>
+                                  <object class="spacer">
+                                    <size>12,1</size>
+                                    <option>0</option>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>1</option>
+                                    <flag>wxEXPAND</flag>
+                                    <border>0</border>
+                                    <object class="wxBoxSizer">
+                                      <orient>wxVERTICAL</orient>
+                                      <object class="sizeritem">
+                                        <option>1</option>
+                                        <flag>wxEXPAND</flag>
+                                        <border>0</border>
+                                        <object class="wxPanel" name="bdr_style_list">
+                                          <bg>#ffffff</bg>
+                                          <size>170,196</size>
+                                          <style>wxWANTS_CHARS|wxFULL_REPAINT_ON_RESIZE</style>
+                                        </object>
+                                      </object>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxEXPAND|wxTOP</flag>
+                                        <border>12</border>
+                                        <object class="wxFlexGridSizer">
+                                          <rows>0</rows>
+                                          <cols>1</cols>
+                                          <vgap>8</vgap>
+                                          <hgap>12</hgap>
+                                          <growablecols>0</growablecols>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxEXPAND</flag>
+                                            <border>0</border>
+                                            <object class="wxStaticText" name="i18n_control_6">
+                                              <label>Color:</label>
+                                              <fg>#243042</fg>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxEXPAND</flag>
+                                            <border>0</border>
+                                            <object class="wxBitmapComboBox" name="bdr_color">
+                                              <size>170,28</size>
+                                              <style>wxCB_READONLY</style>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxEXPAND</flag>
+                                            <border>0</border>
+                                            <object class="wxStaticText" name="i18n_control_7">
+                                              <label>Width:</label>
+                                              <fg>#243042</fg>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxEXPAND</flag>
+                                            <border>0</border>
+                                            <object class="wxComboBox" name="bdr_width">
+                                              <size>170,28</size>
+                                              <style>wxCB_READONLY</style>
+                                              <content>
+                                                <item>¼ pt</item>
+                                                <item>½ pt</item>
+                                                <item>¾ pt</item>
+                                                <item>1 pt</item>
+                                                <item>1½ pt</item>
+                                                <item>2¼ pt</item>
+                                                <item>3 pt</item>
+                                                <item>4½ pt</item>
+                                                <item>6 pt</item>
+                                              </content>
+                                              <selection>0</selection>
+                                            </object>
+                                          </object>
+                                        </object>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                          <object class="sizeritem">
+                            <option>1</option>
+                            <flag>wxEXPAND|wxLEFT</flag>
+                            <border>24</border>
+                            <object class="wxBoxSizer">
+                              <orient>wxVERTICAL</orient>
+                              <object class="sizeritem">
+                                <option>0</option>
+                                <flag>wxEXPAND</flag>
+                                <border>0</border>
+                                <object class="wxBoxSizer">
+                                  <orient>wxHORIZONTAL</orient>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                                    <border>10</border>
+                                    <object class="wxStaticText" name="i18n_control_9">
+                                      <label>Preview</label>
+                                      <fg>#1d3d78</fg>
+                                      <font>
+                                        <weight>bold</weight>
+                                      </font>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>1</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxPanel">
+                                      <size>-1,1</size>
+                                      <bg>#dfe4ec</bg>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                              <object class="sizeritem">
+                                <option>1</option>
+                                <flag>wxEXPAND|wxTOP</flag>
+                                <border>10</border>
+                                <object class="wxBoxSizer">
+                                  <orient>wxHORIZONTAL</orient>
+                                  <object class="spacer">
+                                    <size>12,1</size>
+                                    <option>0</option>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>1</option>
+                                    <flag>wxEXPAND</flag>
+                                    <border>0</border>
+                                    <object class="wxBoxSizer">
+                                      <orient>wxVERTICAL</orient>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxBOTTOM</flag>
+                                        <border>6</border>
+                                        <object class="wxStaticText" name="i18n_control_10">
+                                          <label>Click the diagram or use the buttons to apply borders</label>
+                                          <fg>#6b778a</fg>
+                                        </object>
+                                      </object>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxBOTTOM</flag>
+                                        <border>6</border>
+                                        <object class="wxBoxSizer">
+                                          <orient>wxHORIZONTAL</orient>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                            <border>0</border>
+                                            <object class="wxButton" name="bdr_edge_top">
+                                              <label>T</label>
+                                              <size>28,28</size>
+                                              <style>wxBU_EXACTFIT|wxBORDER_NONE</style>
+                                              <bg>#ffffff</bg>
+                                              <tooltip>Top border</tooltip>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                            <border>2</border>
+                                            <object class="wxButton" name="bdr_edge_bottom">
+                                              <label>B</label>
+                                              <size>28,28</size>
+                                              <style>wxBU_EXACTFIT|wxBORDER_NONE</style>
+                                              <bg>#ffffff</bg>
+                                              <tooltip>Bottom border</tooltip>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                            <border>2</border>
+                                            <object class="wxButton" name="bdr_edge_left">
+                                              <label>L</label>
+                                              <size>28,28</size>
+                                              <style>wxBU_EXACTFIT|wxBORDER_NONE</style>
+                                              <bg>#ffffff</bg>
+                                              <tooltip>Left border</tooltip>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                            <border>2</border>
+                                            <object class="wxButton" name="bdr_edge_right">
+                                              <label>R</label>
+                                              <size>28,28</size>
+                                              <style>wxBU_EXACTFIT|wxBORDER_NONE</style>
+                                              <bg>#ffffff</bg>
+                                              <tooltip>Right border</tooltip>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                            <border>2</border>
+                                            <object class="wxButton" name="bdr_edge_between">
+                                              <label>B</label>
+                                              <size>28,28</size>
+                                              <style>wxBU_EXACTFIT|wxBORDER_NONE</style>
+                                              <bg>#ffffff</bg>
+                                              <tooltip>Border between paragraphs</tooltip>
+                                            </object>
+                                          </object>
+                                        </object>
+                                      </object>
+                                      <object class="sizeritem">
+                                        <option>1</option>
+                                        <flag>wxEXPAND</flag>
+                                        <border>0</border>
+                                        <object class="wxPanel" name="bdr_preview">
+                                          <bg>#ffffff</bg>
+                                          <size>190,150</size>
+                                          <style>wxWANTS_CHARS|wxFULL_REPAINT_ON_RESIZE</style>
+                                        </object>
+                                      </object>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxEXPAND|wxTOP</flag>
+                                        <border>12</border>
+                                        <object class="wxFlexGridSizer">
+                                          <rows>0</rows>
+                                          <cols>2</cols>
+                                          <vgap>8</vgap>
+                                          <hgap>12</hgap>
+                                          <growablecols>1</growablecols>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                            <border>0</border>
+                                            <object class="wxStaticText" name="i18n_control_16">
+                                              <label>Apply to:</label>
+                                              <fg>#243042</fg>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxEXPAND|wxALIGN_CENTER_VERTICAL</flag>
+                                            <border>0</border>
+                                            <object class="wxComboBox" name="bdr_apply">
+                                              <size>120,28</size>
+                                              <style>wxCB_READONLY</style>
+                                              <content>
+                                                <item>Paragraph</item>
+                                                <item>Text</item>
+                                              </content>
+                                              <selection>0</selection>
+                                            </object>
+                                          </object>
+                                        </object>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                      <object class="sizeritem">
+                        <option>0</option>
+                        <flag>wxEXPAND|wxTOP</flag>
+                        <border>24</border>
+                        <object class="wxBoxSizer">
+                          <orient>wxHORIZONTAL</orient>
+                          <object class="sizeritem">
+                            <option>0</option>
+                            <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                            <border>10</border>
+                            <object class="wxStaticText" name="i18n_control_18">
+                              <label>Distance from text</label>
+                              <fg>#1d3d78</fg>
+                              <font>
+                                <weight>bold</weight>
+                              </font>
+                            </object>
+                          </object>
+                          <object class="sizeritem">
+                            <option>1</option>
+                            <flag>wxALIGN_CENTER_VERTICAL</flag>
+                            <border>0</border>
+                            <object class="wxPanel">
+                              <size>-1,1</size>
+                              <bg>#dfe4ec</bg>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                      <object class="sizeritem">
+                        <option>0</option>
+                        <flag>wxEXPAND|wxTOP</flag>
+                        <border>10</border>
+                        <object class="wxBoxSizer">
+                          <orient>wxHORIZONTAL</orient>
+                          <object class="spacer">
+                            <size>12,1</size>
+                            <option>0</option>
+                          </object>
+                          <object class="sizeritem">
+                            <option>1</option>
+                            <flag>wxEXPAND</flag>
+                            <border>0</border>
+                            <object class="wxBoxSizer">
+                              <orient>wxVERTICAL</orient>
+                              <object class="sizeritem">
+                                <option>0</option>
+                                <flag>wxEXPAND</flag>
+                                <border>0</border>
+                                <object class="wxFlexGridSizer">
+                                  <rows>0</rows>
+                                  <cols>8</cols>
+                                  <vgap>8</vgap>
+                                  <hgap>12</hgap>
+                                  <growablecols />
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxStaticText" name="i18n_control_19">
+                                      <label>Top:</label>
+                                      <size>48,-1</size>
+                                      <fg>#243042</fg>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxBoxSizer">
+                                      <orient>wxHORIZONTAL</orient>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                        <border>0</border>
+                                        <object class="wxSpinCtrlDouble" name="bdr_from_top">
+                                          <size>70,28</size>
+                                          <min>0</min>
+                                          <max>31</max>
+                                          <inc>0.5</inc>
+                                          <digits>1</digits>
+                                          <value>1</value>
+                                        </object>
+                                      </object>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                        <border>6</border>
+                                        <object class="wxStaticText" name="i18n_control_20">
+                                          <label>pt</label>
+                                          <fg>#6b778a</fg>
+                                        </object>
+                                      </object>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                    <border>24</border>
+                                    <object class="wxStaticText" name="i18n_control_21">
+                                      <label>Bottom:</label>
+                                      <size>48,-1</size>
+                                      <fg>#243042</fg>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxBoxSizer">
+                                      <orient>wxHORIZONTAL</orient>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                        <border>0</border>
+                                        <object class="wxSpinCtrlDouble" name="bdr_from_bottom">
+                                          <size>70,28</size>
+                                          <min>0</min>
+                                          <max>31</max>
+                                          <inc>0.5</inc>
+                                          <digits>1</digits>
+                                          <value>1</value>
+                                        </object>
+                                      </object>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                        <border>6</border>
+                                        <object class="wxStaticText" name="i18n_control_22">
+                                          <label>pt</label>
+                                          <fg>#6b778a</fg>
+                                        </object>
+                                      </object>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                    <border>24</border>
+                                    <object class="wxStaticText" name="i18n_control_23">
+                                      <label>Left:</label>
+                                      <size>48,-1</size>
+                                      <fg>#243042</fg>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxBoxSizer">
+                                      <orient>wxHORIZONTAL</orient>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                        <border>0</border>
+                                        <object class="wxSpinCtrlDouble" name="bdr_from_left">
+                                          <size>70,28</size>
+                                          <min>0</min>
+                                          <max>31</max>
+                                          <inc>0.5</inc>
+                                          <digits>1</digits>
+                                          <value>4</value>
+                                        </object>
+                                      </object>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                        <border>6</border>
+                                        <object class="wxStaticText" name="i18n_control_24">
+                                          <label>pt</label>
+                                          <fg>#6b778a</fg>
+                                        </object>
+                                      </object>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                    <border>24</border>
+                                    <object class="wxStaticText" name="i18n_control_25">
+                                      <label>Right:</label>
+                                      <size>48,-1</size>
+                                      <fg>#243042</fg>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxBoxSizer">
+                                      <orient>wxHORIZONTAL</orient>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                        <border>0</border>
+                                        <object class="wxSpinCtrlDouble" name="bdr_from_right">
+                                          <size>70,28</size>
+                                          <min>0</min>
+                                          <max>31</max>
+                                          <inc>0.5</inc>
+                                          <digits>1</digits>
+                                          <value>4</value>
+                                        </object>
+                                      </object>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                        <border>6</border>
+                                        <object class="wxStaticText" name="i18n_control_26">
+                                          <label>pt</label>
+                                          <fg>#6b778a</fg>
+                                        </object>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <option>1</option>
+                  <flag>wxEXPAND</flag>
+                  <border>0</border>
+                  <object class="wxPanel" name="bdr_page_1">
+                    <bg>#ffffff</bg>
+                    <hidden>1</hidden>
+                    <object class="wxBoxSizer">
+                      <orient>wxVERTICAL</orient>
+                      <object class="sizeritem">
+                        <option>0</option>
+                        <flag>wxEXPAND</flag>
+                        <border>0</border>
+                        <object class="wxBoxSizer">
+                          <orient>wxHORIZONTAL</orient>
+                          <object class="sizeritem">
+                            <option>0</option>
+                            <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                            <border>10</border>
+                            <object class="wxStaticText" name="i18n_control_27">
+                              <label>Fill</label>
+                              <fg>#1d3d78</fg>
+                              <font>
+                                <weight>bold</weight>
+                              </font>
+                            </object>
+                          </object>
+                          <object class="sizeritem">
+                            <option>1</option>
+                            <flag>wxALIGN_CENTER_VERTICAL</flag>
+                            <border>0</border>
+                            <object class="wxPanel">
+                              <size>-1,1</size>
+                              <bg>#dfe4ec</bg>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                      <object class="sizeritem">
+                        <option>0</option>
+                        <flag>wxEXPAND|wxTOP</flag>
+                        <border>10</border>
+                        <object class="wxBoxSizer">
+                          <orient>wxHORIZONTAL</orient>
+                          <object class="spacer">
+                            <size>12,1</size>
+                            <option>0</option>
+                          </object>
+                          <object class="sizeritem">
+                            <option>1</option>
+                            <flag>wxEXPAND</flag>
+                            <border>0</border>
+                            <object class="wxBoxSizer">
+                              <orient>wxVERTICAL</orient>
+                              <object class="sizeritem">
+                                <option>0</option>
+                                <flag>wxEXPAND</flag>
+                                <border>0</border>
+                                <object class="wxFlexGridSizer">
+                                  <rows>0</rows>
+                                  <cols>2</cols>
+                                  <vgap>8</vgap>
+                                  <hgap>12</hgap>
+                                  <growablecols />
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxStaticText" name="i18n_control_28">
+                                      <label>Fill:</label>
+                                      <size>70,-1</size>
+                                      <fg>#243042</fg>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxBitmapComboBox" name="shd_fill">
+                                      <size>170,28</size>
+                                      <style>wxCB_READONLY</style>
+                                    </object>
+                                    <minsize>170,-1</minsize>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                      <object class="sizeritem">
+                        <option>0</option>
+                        <flag>wxEXPAND|wxTOP</flag>
+                        <border>24</border>
+                        <object class="wxBoxSizer">
+                          <orient>wxHORIZONTAL</orient>
+                          <object class="sizeritem">
+                            <option>0</option>
+                            <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                            <border>10</border>
+                            <object class="wxStaticText" name="i18n_control_29">
+                              <label>Patterns</label>
+                              <fg>#1d3d78</fg>
+                              <font>
+                                <weight>bold</weight>
+                              </font>
+                            </object>
+                          </object>
+                          <object class="sizeritem">
+                            <option>1</option>
+                            <flag>wxALIGN_CENTER_VERTICAL</flag>
+                            <border>0</border>
+                            <object class="wxPanel">
+                              <size>-1,1</size>
+                              <bg>#dfe4ec</bg>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                      <object class="sizeritem">
+                        <option>0</option>
+                        <flag>wxEXPAND|wxTOP</flag>
+                        <border>10</border>
+                        <object class="wxBoxSizer">
+                          <orient>wxHORIZONTAL</orient>
+                          <object class="spacer">
+                            <size>12,1</size>
+                            <option>0</option>
+                          </object>
+                          <object class="sizeritem">
+                            <option>1</option>
+                            <flag>wxEXPAND</flag>
+                            <border>0</border>
+                            <object class="wxBoxSizer">
+                              <orient>wxVERTICAL</orient>
+                              <object class="sizeritem">
+                                <option>0</option>
+                                <flag>wxEXPAND</flag>
+                                <border>0</border>
+                                <object class="wxFlexGridSizer">
+                                  <rows>0</rows>
+                                  <cols>2</cols>
+                                  <vgap>8</vgap>
+                                  <hgap>12</hgap>
+                                  <growablecols />
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxStaticText" name="i18n_control_30">
+                                      <label>Style:</label>
+                                      <size>70,-1</size>
+                                      <fg>#243042</fg>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxComboBox" name="shd_pattern">
+                                      <size>170,28</size>
+                                      <style>wxCB_READONLY</style>
+                                      <content>
+                                        <item>Clear</item>
+                                        <item>Solid (100%)</item>
+                                        <item>5%</item>
+                                        <item>10%</item>
+                                        <item>12.5%</item>
+                                        <item>20%</item>
+                                        <item>25%</item>
+                                        <item>30%</item>
+                                        <item>40%</item>
+                                        <item>50%</item>
+                                        <item>60%</item>
+                                        <item>70%</item>
+                                        <item>75%</item>
+                                        <item>80%</item>
+                                        <item>90%</item>
+                                        <item>Dk Horizontal</item>
+                                        <item>Dk Vertical</item>
+                                        <item>Dk Down Diagonal</item>
+                                        <item>Dk Up Diagonal</item>
+                                        <item>Dk Grid</item>
+                                        <item>Lt Horizontal</item>
+                                        <item>Lt Vertical</item>
+                                        <item>Lt Grid</item>
+                                      </content>
+                                      <selection>0</selection>
+                                    </object>
+                                    <minsize>170,-1</minsize>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxStaticText" name="i18n_control_32">
+                                      <label>Color:</label>
+                                      <size>70,-1</size>
+                                      <fg>#243042</fg>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxBitmapComboBox" name="shd_pattern_color">
+                                      <size>170,28</size>
+                                      <style>wxCB_READONLY</style>
+                                    </object>
+                                    <minsize>170,-1</minsize>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxStaticText" name="i18n_control_33">
+                                      <label>Apply to:</label>
+                                      <size>70,-1</size>
+                                      <fg>#243042</fg>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxComboBox" name="shd_apply">
+                                      <size>170,28</size>
+                                      <style>wxCB_READONLY</style>
+                                      <content>
+                                        <item>Paragraph</item>
+                                        <item>Text</item>
+                                      </content>
+                                      <selection>0</selection>
+                                    </object>
+                                    <minsize>170,-1</minsize>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                      <object class="sizeritem">
+                        <option>0</option>
+                        <flag>wxEXPAND|wxTOP</flag>
+                        <border>24</border>
+                        <object class="wxBoxSizer">
+                          <orient>wxHORIZONTAL</orient>
+                          <object class="sizeritem">
+                            <option>0</option>
+                            <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                            <border>10</border>
+                            <object class="wxStaticText" name="i18n_control_35">
+                              <label>Preview</label>
+                              <fg>#1d3d78</fg>
+                              <font>
+                                <weight>bold</weight>
+                              </font>
+                            </object>
+                          </object>
+                          <object class="sizeritem">
+                            <option>1</option>
+                            <flag>wxALIGN_CENTER_VERTICAL</flag>
+                            <border>0</border>
+                            <object class="wxPanel">
+                              <size>-1,1</size>
+                              <bg>#dfe4ec</bg>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                      <object class="sizeritem">
+                        <option>1</option>
+                        <flag>wxEXPAND|wxTOP</flag>
+                        <border>10</border>
+                        <object class="wxBoxSizer">
+                          <orient>wxHORIZONTAL</orient>
+                          <object class="spacer">
+                            <size>12,1</size>
+                            <option>0</option>
+                          </object>
+                          <object class="sizeritem">
+                            <option>1</option>
+                            <flag>wxEXPAND</flag>
+                            <border>0</border>
+                            <object class="wxBoxSizer">
+                              <orient>wxVERTICAL</orient>
+                              <object class="sizeritem">
+                                <option>1</option>
+                                <flag>wxEXPAND</flag>
+                                <border>0</border>
+                                <object class="wxPanel" name="shd_preview">
+                                  <bg>#ffffff</bg>
+                                  <size>-1,120</size>
+                                  <style>wxWANTS_CHARS|wxFULL_REPAINT_ON_RESIZE</style>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+              </object>
+            </object>
+          </object>
+        </object>
+      </object>
+      <object class="sizeritem">
+        <option>0</option>
+        <flag>wxEXPAND|wxALL</flag>
+        <border>12</border>
+        <object class="wxBoxSizer">
+          <orient>wxHORIZONTAL</orient>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL</flag>
+            <border>0</border>
+            <object class="wxButton" name="bdr_options">
+              <label>Horizontal Line…</label>
+              <size>128,28</size>
+              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+            </object>
+          </object>
+          <object class="spacer">
+            <size>1,1</size>
+            <option>1</option>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL</flag>
+            <border>0</border>
+            <object class="wxButton" name="bdr_ok">
+              <label>OK</label>
+              <size>88,28</size>
+              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+              <default>1</default>
+            </object>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+            <border>8</border>
+            <object class="wxButton" name="bdr_cancel">
+              <label>Cancel</label>
+              <size>88,28</size>
+              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+            </object>
+          </object>
+        </object>
+      </object>
+    </object>
+  </object>
+</resource>

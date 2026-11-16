@@ -1,0 +1,270 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resource>
+  <object class="wxDialog" name="find_window">
+    <title>Find and Replace</title>
+    <style>wxDEFAULT_DIALOG_STYLE|wxRESIZE_BORDER</style>
+    <object class="wxBoxSizer">
+      <orient>wxVERTICAL</orient>
+      <object class="sizeritem">
+        <option>1</option>
+        <flag>wxEXPAND|wxALL</flag>
+        <border>10</border>
+        <object class="wxNotebook" name="find_tabs">
+          <style>wxNB_TOP</style>
+          <object class="notebookpage">
+            <label>Find</label>
+            <selected>1</selected>
+            <object class="wxPanel" name="find_page">
+              <style>wxTAB_TRAVERSAL</style>
+              <object class="wxBoxSizer">
+                <orient>wxVERTICAL</orient>
+                <object class="sizeritem">
+                  <option>1</option>
+                  <flag>wxEXPAND|wxALL</flag>
+                  <border>12</border>
+                  <object class="wxBoxSizer">
+                    <orient>wxVERTICAL</orient>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxEXPAND|wxBOTTOM</flag>
+                      <border>6</border>
+                      <object class="wxBoxSizer">
+                        <orient>wxHORIZONTAL</orient>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                          <border>8</border>
+                          <object class="wxStaticText" name="i18n_control_2">
+                            <label>Find what:</label>
+                            <minsize>100,-1</minsize>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>1</option>
+                          <flag>wxEXPAND</flag>
+                          <object class="wxTextCtrl" name="find_query">
+                            <style>wxTE_PROCESS_ENTER</style>
+                            <minsize>360,26</minsize>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxEXPAND|wxTOP</flag>
+                      <border>4</border>
+                      <object class="wxStaticText" name="i18n_control_3">
+                        <label>Search the document without closing this window.</label>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+              </object>
+            </object>
+          </object>
+          <object class="notebookpage">
+            <label>Replace</label>
+            <object class="wxPanel" name="replace_page">
+              <style>wxTAB_TRAVERSAL</style>
+              <object class="wxBoxSizer">
+                <orient>wxVERTICAL</orient>
+                <object class="sizeritem">
+                  <option>1</option>
+                  <flag>wxEXPAND|wxALL</flag>
+                  <border>12</border>
+                  <object class="wxBoxSizer">
+                    <orient>wxVERTICAL</orient>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxEXPAND|wxBOTTOM</flag>
+                      <border>6</border>
+                      <object class="wxBoxSizer">
+                        <orient>wxHORIZONTAL</orient>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                          <border>8</border>
+                          <object class="wxStaticText" name="i18n_control_4">
+                            <label>Find what:</label>
+                            <minsize>100,-1</minsize>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>1</option>
+                          <flag>wxEXPAND</flag>
+                          <object class="wxTextCtrl" name="replace_query">
+                            <style>wxTE_PROCESS_ENTER</style>
+                            <minsize>360,26</minsize>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxEXPAND|wxBOTTOM</flag>
+                      <border>6</border>
+                      <object class="wxBoxSizer">
+                        <orient>wxHORIZONTAL</orient>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                          <border>8</border>
+                          <object class="wxStaticText" name="i18n_control_5">
+                            <label>Replace with:</label>
+                            <minsize>100,-1</minsize>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>1</option>
+                          <flag>wxEXPAND</flag>
+                          <object class="wxTextCtrl" name="replace_text">
+                            <style>wxTE_PROCESS_ENTER</style>
+                            <minsize>360,26</minsize>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxEXPAND|wxTOP</flag>
+                      <border>4</border>
+                      <object class="wxStaticText" name="i18n_control_6">
+                        <label>Replace one match, or all matches in one undoable edit.</label>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+              </object>
+            </object>
+          </object>
+        </object>
+      </object>
+      <object class="sizeritem">
+        <option>0</option>
+        <flag>wxEXPAND|wxLEFT|wxRIGHT</flag>
+        <border>12</border>
+        <object class="wxBoxSizer">
+          <orient>wxVERTICAL</orient>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxEXPAND|wxBOTTOM</flag>
+            <border>6</border>
+            <object class="wxBoxSizer">
+              <orient>wxHORIZONTAL</orient>
+              <object class="sizeritem">
+                <option>0</option>
+                <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                <border>20</border>
+                <object class="wxCheckBox" name="find_match_case">
+                  <label>Match case</label>
+                </object>
+              </object>
+              <object class="sizeritem">
+                <option>0</option>
+                <flag>wxALIGN_CENTER_VERTICAL</flag>
+                <object class="wxCheckBox" name="find_whole_word">
+                  <label>Find whole words only</label>
+                </object>
+              </object>
+            </object>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxEXPAND|wxBOTTOM</flag>
+            <border>6</border>
+            <object class="wxBoxSizer">
+              <orient>wxHORIZONTAL</orient>
+              <object class="sizeritem">
+                <option>0</option>
+                <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                <border>8</border>
+                <object class="wxStaticText" name="i18n_control_9">
+                  <label>Search in:</label>
+                  <minsize>100,-1</minsize>
+                </object>
+              </object>
+              <object class="sizeritem">
+                <option>1</option>
+                <flag>wxEXPAND</flag>
+                <object class="wxComboBox" name="find_scope">
+                  <style>wxCB_READONLY</style>
+                  <value>Entire document</value>
+                  <content>
+                    <item>Entire document</item>
+                    <item>Body, including tables</item>
+                    <item>Headers and footers</item>
+                    <item>Footnotes and endnotes</item>
+                  </content>
+                </object>
+              </object>
+            </object>
+          </object>
+        </object>
+      </object>
+      <object class="sizeritem">
+        <option>0</option>
+        <flag>wxEXPAND|wxLEFT|wxRIGHT|wxBOTTOM</flag>
+        <border>12</border>
+        <object class="wxStaticText" name="find_status">
+          <label>Enter the text to find.</label>
+          <style>wxST_NO_AUTORESIZE</style>
+          <minsize>-1,36</minsize>
+        </object>
+      </object>
+      <object class="sizeritem">
+        <option>0</option>
+        <flag>wxALIGN_RIGHT|wxALL</flag>
+        <border>10</border>
+        <object class="wxBoxSizer">
+          <orient>wxHORIZONTAL</orient>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+            <border>5</border>
+            <object class="wxButton" name="find_previous">
+              <label>Find Previous</label>
+              <minsize>86,28</minsize>
+            </object>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+            <border>5</border>
+            <object class="wxButton" name="find_next">
+              <label>Find Next</label>
+              <minsize>86,28</minsize>
+              <default>1</default>
+            </object>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+            <border>5</border>
+            <object class="wxButton" name="find_replace_one">
+              <label>Replace</label>
+              <minsize>86,28</minsize>
+            </object>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+            <border>5</border>
+            <object class="wxButton" name="find_replace_all">
+              <label>Replace All</label>
+              <minsize>86,28</minsize>
+            </object>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+            <border>5</border>
+            <object class="wxButton" name="find_close">
+              <label>Close</label>
+              <minsize>86,28</minsize>
+            </object>
+          </object>
+        </object>
+      </object>
+    </object>
+  </object>
+</resource>

@@ -1,0 +1,583 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resource>
+  <object class="wxDialog" name="citation_manager_dialog">
+    <title>Citation Manager</title>
+    <style>wxDEFAULT_DIALOG_STYLE</style>
+    <bg>#e8ecf2</bg>
+    <object class="wxBoxSizer">
+      <orient>wxVERTICAL</orient>
+      <object class="sizeritem">
+        <option>1</option>
+        <flag>wxEXPAND|wxLEFT|wxRIGHT|wxTOP</flag>
+        <border>12</border>
+        <object class="wxPanel" name="citation_manager_card">
+          <bg>#ffffff</bg>
+          <object class="wxBoxSizer">
+            <orient>wxVERTICAL</orient>
+            <object class="sizeritem">
+              <option>1</option>
+              <flag>wxEXPAND|wxALL</flag>
+              <border>16</border>
+              <object class="wxBoxSizer">
+                <orient>wxVERTICAL</orient>
+                <object class="sizeritem">
+                  <option>1</option>
+                  <flag>wxEXPAND</flag>
+                  <border>0</border>
+                  <object class="wxBoxSizer">
+                    <orient>wxHORIZONTAL</orient>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxEXPAND|wxRIGHT</flag>
+                      <border>24</border>
+                      <object class="wxBoxSizer">
+                        <orient>wxVERTICAL</orient>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND</flag>
+                          <border>0</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                              <border>10</border>
+                              <object class="wxStaticText" name="i18n_control_2">
+                                <label>Sources</label>
+                                <fg>#1d3d78</fg>
+                                <font>
+                                  <weight>bold</weight>
+                                </font>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxPanel">
+                                <size>-1,1</size>
+                                <bg>#dfe4ec</bg>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>1</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>10</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="spacer">
+                              <size>12,1</size>
+                              <option>0</option>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxEXPAND</flag>
+                              <border>0</border>
+                              <object class="wxBoxSizer">
+                                <orient>wxVERTICAL</orient>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxEXPAND|wxBOTTOM</flag>
+                                  <border>8</border>
+                                  <object class="wxTextCtrl" name="source_search_field">
+                                    <size>260,28</size>
+                                    <tooltip>Search sources</tooltip>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>1</option>
+                                  <flag>wxEXPAND</flag>
+                                  <border>0</border>
+                                  <object class="wxListBox" name="source_list">
+                                    <size>260,230</size>
+                                    <style>wxLB_SINGLE</style>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxTOP</flag>
+                                  <border>10</border>
+                                  <object class="wxBoxSizer">
+                                    <orient>wxHORIZONTAL</orient>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                      <border>0</border>
+                                      <object class="wxButton" name="add_source_button">
+                                        <label>Add source</label>
+                                        <size>104,28</size>
+                                        <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                      </object>
+                                    </object>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                      <border>6</border>
+                                      <object class="wxButton" name="remove_source_button">
+                                        <label>Remove</label>
+                                        <size>88,28</size>
+                                        <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                    <object class="sizeritem">
+                      <option>1</option>
+                      <flag>wxEXPAND</flag>
+                      <border>0</border>
+                      <object class="wxBoxSizer">
+                        <orient>wxVERTICAL</orient>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND</flag>
+                          <border>0</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                              <border>10</border>
+                              <object class="wxStaticText" name="i18n_control_6">
+                                <label>Citation style</label>
+                                <fg>#1d3d78</fg>
+                                <font>
+                                  <weight>bold</weight>
+                                </font>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxPanel">
+                                <size>-1,1</size>
+                                <bg>#dfe4ec</bg>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>10</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="spacer">
+                              <size>12,1</size>
+                              <option>0</option>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxEXPAND</flag>
+                              <border>0</border>
+                              <object class="wxBoxSizer">
+                                <orient>wxVERTICAL</orient>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxEXPAND</flag>
+                                  <border>0</border>
+                                  <object class="wxFlexGridSizer">
+                                    <rows>0</rows>
+                                    <cols>2</cols>
+                                    <vgap>8</vgap>
+                                    <hgap>12</hgap>
+                                    <growablecols>1</growablecols>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                      <border>0</border>
+                                      <object class="wxStaticText" name="i18n_control_7">
+                                        <label>Style</label>
+                                        <fg>#243042</fg>
+                                      </object>
+                                    </object>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxEXPAND|wxALIGN_CENTER_VERTICAL</flag>
+                                      <border>0</border>
+                                      <object class="wxComboBox" name="citation_style_list">
+                                        <size>220,28</size>
+                                        <style>wxCB_READONLY</style>
+                                        <content>
+                                          <item>APA</item>
+                                          <item>IEEE</item>
+                                          <item>Chicago</item>
+                                          <item>MLA</item>
+                                          <item>Harvard</item>
+                                        </content>
+                                        <selection>0</selection>
+                                        <value>APA</value>
+                                      </object>
+                                    </object>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                      <border>0</border>
+                                      <object class="wxStaticText" name="i18n_control_9">
+                                        <label>Locator</label>
+                                        <fg>#243042</fg>
+                                      </object>
+                                    </object>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxEXPAND|wxALIGN_CENTER_VERTICAL</flag>
+                                      <border>0</border>
+                                      <object class="wxTextCtrl" name="citation_locator_field">
+                                        <size>220,28</size>
+                                        <tooltip>Page, chapter or section</tooltip>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxTOP</flag>
+                                  <border>10</border>
+                                  <object class="wxBoxSizer">
+                                    <orient>wxHORIZONTAL</orient>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                      <border>0</border>
+                                      <object class="wxButton" name="new_citation_style_button">
+                                        <label>New preset</label>
+                                        <size>104,28</size>
+                                        <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                      </object>
+                                    </object>
+                                    <object class="sizeritem">
+                                      <option>1</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                      <border>6</border>
+                                      <object class="wxTextCtrl" name="new_style_name_field">
+                                        <size>120,28</size>
+                                        <tooltip>Preset name</tooltip>
+                                        <hidden>1</hidden>
+                                      </object>
+                                    </object>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                      <border>6</border>
+                                      <object class="wxComboBox" name="new_style_base_combo">
+                                        <size>96,28</size>
+                                        <style>wxCB_READONLY</style>
+                                        <content>
+                                          <item>APA</item>
+                                          <item>IEEE</item>
+                                          <item>Chicago</item>
+                                          <item>MLA</item>
+                                          <item>Harvard</item>
+                                        </content>
+                                        <selection>0</selection>
+                                        <hidden>1</hidden>
+                                        <value>APA</value>
+                                      </object>
+                                    </object>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                      <border>6</border>
+                                      <object class="wxButton" name="add_citation_style_button">
+                                        <label>Add preset</label>
+                                        <size>96,28</size>
+                                        <hidden>1</hidden>
+                                        <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>24</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                              <border>10</border>
+                              <object class="wxStaticText" name="i18n_control_15">
+                                <label>Preview</label>
+                                <fg>#1d3d78</fg>
+                                <font>
+                                  <weight>bold</weight>
+                                </font>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxPanel">
+                                <size>-1,1</size>
+                                <bg>#dfe4ec</bg>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>1</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>10</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="spacer">
+                              <size>12,1</size>
+                              <option>0</option>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxEXPAND</flag>
+                              <border>0</border>
+                              <object class="wxBoxSizer">
+                                <orient>wxVERTICAL</orient>
+                                <object class="sizeritem">
+                                  <option>1</option>
+                                  <flag>wxEXPAND</flag>
+                                  <border>0</border>
+                                  <object class="wxTextCtrl" name="citation_preview">
+                                    <size>340,110</size>
+                                    <style>wxTE_MULTILINE|wxTE_READONLY|wxTE_WORDWRAP</style>
+                                    <value>Select a source to preview its citation and bibliography entry.</value>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND</flag>
+                          <border>0</border>
+                          <object class="wxPanel" name="source_form">
+                            <bg>#ffffff</bg>
+                            <hidden>1</hidden>
+                            <object class="wxBoxSizer">
+                              <orient>wxVERTICAL</orient>
+                              <object class="sizeritem">
+                                <option>0</option>
+                                <flag>wxEXPAND|wxTOP</flag>
+                                <border>24</border>
+                                <object class="wxBoxSizer">
+                                  <orient>wxHORIZONTAL</orient>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                                    <border>10</border>
+                                    <object class="wxStaticText" name="i18n_control_16">
+                                      <label>New source</label>
+                                      <fg>#1d3d78</fg>
+                                      <font>
+                                        <weight>bold</weight>
+                                      </font>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>1</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <border>0</border>
+                                    <object class="wxPanel">
+                                      <size>-1,1</size>
+                                      <bg>#dfe4ec</bg>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                              <object class="sizeritem">
+                                <option>0</option>
+                                <flag>wxEXPAND|wxTOP</flag>
+                                <border>10</border>
+                                <object class="wxBoxSizer">
+                                  <orient>wxHORIZONTAL</orient>
+                                  <object class="spacer">
+                                    <size>12,1</size>
+                                    <option>0</option>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>1</option>
+                                    <flag>wxEXPAND</flag>
+                                    <border>0</border>
+                                    <object class="wxBoxSizer">
+                                      <orient>wxVERTICAL</orient>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxEXPAND</flag>
+                                        <border>0</border>
+                                        <object class="wxFlexGridSizer">
+                                          <rows>0</rows>
+                                          <cols>2</cols>
+                                          <vgap>8</vgap>
+                                          <hgap>12</hgap>
+                                          <growablecols>1</growablecols>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                            <border>0</border>
+                                            <object class="wxStaticText" name="i18n_control_17">
+                                              <label>Author</label>
+                                              <fg>#243042</fg>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxEXPAND|wxALIGN_CENTER_VERTICAL</flag>
+                                            <border>0</border>
+                                            <object class="wxTextCtrl" name="source_author_field">
+                                              <size>220,28</size>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                            <border>0</border>
+                                            <object class="wxStaticText" name="i18n_control_18">
+                                              <label>Title</label>
+                                              <fg>#243042</fg>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxEXPAND|wxALIGN_CENTER_VERTICAL</flag>
+                                            <border>0</border>
+                                            <object class="wxTextCtrl" name="source_title_field">
+                                              <size>220,28</size>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                            <border>0</border>
+                                            <object class="wxStaticText" name="i18n_control_19">
+                                              <label>Year</label>
+                                              <fg>#243042</fg>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxEXPAND|wxALIGN_CENTER_VERTICAL</flag>
+                                            <border>0</border>
+                                            <object class="wxTextCtrl" name="source_year_field">
+                                              <size>220,28</size>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                            <border>0</border>
+                                            <object class="wxStaticText" name="i18n_control_20">
+                                              <label>Publisher</label>
+                                              <fg>#243042</fg>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxEXPAND|wxALIGN_CENTER_VERTICAL</flag>
+                                            <border>0</border>
+                                            <object class="wxTextCtrl" name="source_container_field">
+                                              <size>220,28</size>
+                                            </object>
+                                          </object>
+                                        </object>
+                                      </object>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxTOP</flag>
+                                        <border>10</border>
+                                        <object class="wxBoxSizer">
+                                          <orient>wxHORIZONTAL</orient>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                            <border>0</border>
+                                            <object class="wxButton" name="save_source_button">
+                                              <label>Save source</label>
+                                              <size>104,28</size>
+                                              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                            </object>
+                                          </object>
+                                          <object class="sizeritem">
+                                            <option>0</option>
+                                            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                            <border>6</border>
+                                            <object class="wxButton" name="cancel_source_button">
+                                              <label>Cancel</label>
+                                              <size>88,28</size>
+                                              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                            </object>
+                                          </object>
+                                        </object>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+              </object>
+            </object>
+          </object>
+        </object>
+      </object>
+      <object class="sizeritem">
+        <option>0</option>
+        <flag>wxEXPAND|wxALL</flag>
+        <border>12</border>
+        <object class="wxBoxSizer">
+          <orient>wxHORIZONTAL</orient>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL</flag>
+            <border>0</border>
+            <object class="wxStaticText" name="citation_hint">
+              <label>Choose a source and citation style.</label>
+              <fg>#6b778a</fg>
+            </object>
+          </object>
+          <object class="spacer">
+            <size>1,1</size>
+            <option>1</option>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL</flag>
+            <border>0</border>
+            <object class="wxButton" name="citation_manager_ok">
+              <label>Insert citation</label>
+              <size>124,28</size>
+              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+              <default>1</default>
+            </object>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+            <border>8</border>
+            <object class="wxButton" name="citation_manager_cancel">
+              <label>Cancel</label>
+              <size>88,28</size>
+              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+            </object>
+          </object>
+        </object>
+      </object>
+    </object>
+  </object>
+</resource>

@@ -1,0 +1,16 @@
+[package]
+name = "format-pdf"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+model = { package = "core", path = "../core" }
+format = { path = "../format" }
+pdf-extract = { path = "../../vendor/pdf-extract" }
+image.workspace = true
+hayro = { version = "0.7.1", default-features = false }
+ocrs = { version = "0.12.2", default-features = false }
+rten = { version = "0.24", default-features = false, features = ["rten_format"] }
+euclid = "0.20"

@@ -1,0 +1,882 @@
+[
+  {
+    "preset": "accentBorderCallout1",
+    "label": "Accent border callout 1",
+    "group": "Callouts"
+  },
+  {
+    "preset": "accentBorderCallout2",
+    "label": "Accent border callout 2",
+    "group": "Callouts"
+  },
+  {
+    "preset": "accentBorderCallout3",
+    "label": "Accent border callout 3",
+    "group": "Callouts"
+  },
+  {
+    "preset": "accentCallout1",
+    "label": "Accent callout 1",
+    "group": "Callouts"
+  },
+  {
+    "preset": "accentCallout2",
+    "label": "Accent callout 2",
+    "group": "Callouts"
+  },
+  {
+    "preset": "accentCallout3",
+    "label": "Accent callout 3",
+    "group": "Callouts"
+  },
+  {
+    "preset": "actionButtonBackPrevious",
+    "label": "Back or previous",
+    "group": "Action buttons"
+  },
+  {
+    "preset": "actionButtonBeginning",
+    "label": "Beginning",
+    "group": "Action buttons"
+  },
+  {
+    "preset": "actionButtonBlank",
+    "label": "Blank",
+    "group": "Action buttons"
+  },
+  {
+    "preset": "actionButtonDocument",
+    "label": "Document",
+    "group": "Action buttons"
+  },
+  {
+    "preset": "actionButtonEnd",
+    "label": "End",
+    "group": "Action buttons"
+  },
+  {
+    "preset": "actionButtonForwardNext",
+    "label": "Forward or next",
+    "group": "Action buttons"
+  },
+  {
+    "preset": "actionButtonHelp",
+    "label": "Help",
+    "group": "Action buttons"
+  },
+  {
+    "preset": "actionButtonHome",
+    "label": "Home",
+    "group": "Action buttons"
+  },
+  {
+    "preset": "actionButtonInformation",
+    "label": "Information",
+    "group": "Action buttons"
+  },
+  {
+    "preset": "actionButtonMovie",
+    "label": "Movie",
+    "group": "Action buttons"
+  },
+  {
+    "preset": "actionButtonReturn",
+    "label": "Return",
+    "group": "Action buttons"
+  },
+  {
+    "preset": "actionButtonSound",
+    "label": "Sound",
+    "group": "Action buttons"
+  },
+  {
+    "preset": "arc",
+    "label": "Arc",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "bentArrow",
+    "label": "Bent arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "bentUpArrow",
+    "label": "Bent up arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "bevel",
+    "label": "Bevel",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "blockArc",
+    "label": "Block arc",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "borderCallout1",
+    "label": "Border callout 1",
+    "group": "Callouts"
+  },
+  {
+    "preset": "borderCallout2",
+    "label": "Border callout 2",
+    "group": "Callouts"
+  },
+  {
+    "preset": "borderCallout3",
+    "label": "Border callout 3",
+    "group": "Callouts"
+  },
+  {
+    "preset": "bracePair",
+    "label": "Brace pair",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "bracketPair",
+    "label": "Bracket pair",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "callout1",
+    "label": "Callout 1",
+    "group": "Callouts"
+  },
+  {
+    "preset": "callout2",
+    "label": "Callout 2",
+    "group": "Callouts"
+  },
+  {
+    "preset": "callout3",
+    "label": "Callout 3",
+    "group": "Callouts"
+  },
+  {
+    "preset": "can",
+    "label": "Cylinder",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "chartPlus",
+    "label": "Chart plus",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "chartStar",
+    "label": "Chart star",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "chartX",
+    "label": "Chart x",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "chevron",
+    "label": "Chevron",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "chord",
+    "label": "Chord",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "circularArrow",
+    "label": "Circular arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "cloud",
+    "label": "Cloud",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "cloudCallout",
+    "label": "Cloud callout",
+    "group": "Callouts"
+  },
+  {
+    "preset": "corner",
+    "label": "Corner",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "cornerTabs",
+    "label": "Corner tabs",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "cube",
+    "label": "Cube",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "curvedDownArrow",
+    "label": "Curved down arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "curvedLeftArrow",
+    "label": "Curved left arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "curvedRightArrow",
+    "label": "Curved right arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "curvedUpArrow",
+    "label": "Curved up arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "decagon",
+    "label": "Decagon",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "diagStripe",
+    "label": "Diagonal stripe",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "diamond",
+    "label": "Diamond",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "dodecagon",
+    "label": "Dodecagon",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "donut",
+    "label": "Donut",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "doubleWave",
+    "label": "Double wave",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "downArrow",
+    "label": "Down arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "downArrowCallout",
+    "label": "Down arrow callout",
+    "group": "Callouts"
+  },
+  {
+    "preset": "ellipse",
+    "label": "Oval",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "ellipseRibbon",
+    "label": "Ellipse ribbon",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "ellipseRibbon2",
+    "label": "Ellipse ribbon 2",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "flowChartAlternateProcess",
+    "label": "Alternate process",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartCollate",
+    "label": "Collate",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartConnector",
+    "label": "Connector",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartDecision",
+    "label": "Decision",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartDelay",
+    "label": "Delay",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartDisplay",
+    "label": "Display",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartDocument",
+    "label": "Document",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartExtract",
+    "label": "Extract",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartInputOutput",
+    "label": "Input output",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartInternalStorage",
+    "label": "Internal storage",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartMagneticDisk",
+    "label": "Magnetic disk",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartMagneticDrum",
+    "label": "Magnetic drum",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartMagneticTape",
+    "label": "Magnetic tape",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartManualInput",
+    "label": "Manual input",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartManualOperation",
+    "label": "Manual operation",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartMerge",
+    "label": "Merge",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartMultidocument",
+    "label": "Multiple documents",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartOfflineStorage",
+    "label": "Offline storage",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartOffpageConnector",
+    "label": "Off-page connector",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartOnlineStorage",
+    "label": "Online storage",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartOr",
+    "label": "Or",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartPredefinedProcess",
+    "label": "Predefined process",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartPreparation",
+    "label": "Preparation",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartProcess",
+    "label": "Process",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartPunchedCard",
+    "label": "Punched card",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartPunchedTape",
+    "label": "Punched tape",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartSort",
+    "label": "Sort",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartSummingJunction",
+    "label": "Summing junction",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "flowChartTerminator",
+    "label": "Terminator",
+    "group": "Flowchart"
+  },
+  {
+    "preset": "foldedCorner",
+    "label": "Folded corner",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "frame",
+    "label": "Frame",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "funnel",
+    "label": "Funnel",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "gear6",
+    "label": "6-tooth gear",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "gear9",
+    "label": "9-tooth gear",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "halfFrame",
+    "label": "Half frame",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "heart",
+    "label": "Heart",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "heptagon",
+    "label": "Heptagon",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "hexagon",
+    "label": "Hexagon",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "homePlate",
+    "label": "Home plate",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "horizontalScroll",
+    "label": "Horizontal scroll",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "irregularSeal1",
+    "label": "Irregular seal 1",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "irregularSeal2",
+    "label": "Irregular seal 2",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "leftArrow",
+    "label": "Left arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "leftArrowCallout",
+    "label": "Left arrow callout",
+    "group": "Callouts"
+  },
+  {
+    "preset": "leftBrace",
+    "label": "Left brace",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "leftBracket",
+    "label": "Left bracket",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "leftCircularArrow",
+    "label": "Left circular arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "leftRightArrow",
+    "label": "Left right arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "leftRightArrowCallout",
+    "label": "Left right arrow callout",
+    "group": "Callouts"
+  },
+  {
+    "preset": "leftRightCircularArrow",
+    "label": "Left right circular arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "leftRightRibbon",
+    "label": "Left right ribbon",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "leftRightUpArrow",
+    "label": "Left right up arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "leftUpArrow",
+    "label": "Left up arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "lightningBolt",
+    "label": "Lightning bolt",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "mathDivide",
+    "label": "Divide",
+    "group": "Equation shapes"
+  },
+  {
+    "preset": "mathEqual",
+    "label": "Equal",
+    "group": "Equation shapes"
+  },
+  {
+    "preset": "mathMinus",
+    "label": "Minus",
+    "group": "Equation shapes"
+  },
+  {
+    "preset": "mathMultiply",
+    "label": "Multiply",
+    "group": "Equation shapes"
+  },
+  {
+    "preset": "mathNotEqual",
+    "label": "Not equal",
+    "group": "Equation shapes"
+  },
+  {
+    "preset": "mathPlus",
+    "label": "Plus",
+    "group": "Equation shapes"
+  },
+  {
+    "preset": "moon",
+    "label": "Crescent",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "nonIsoscelesTrapezoid",
+    "label": "Irregular trapezoid",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "noSmoking",
+    "label": "Prohibited",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "notchedRightArrow",
+    "label": "Notched right arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "octagon",
+    "label": "Octagon",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "parallelogram",
+    "label": "Parallelogram",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "pentagon",
+    "label": "Pentagon",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "pie",
+    "label": "Pie",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "pieWedge",
+    "label": "Pie wedge",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "plaque",
+    "label": "Plaque",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "plaqueTabs",
+    "label": "Plaque tabs",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "plus",
+    "label": "Cross",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "quadArrow",
+    "label": "Quad arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "quadArrowCallout",
+    "label": "Quad arrow callout",
+    "group": "Callouts"
+  },
+  {
+    "preset": "rect",
+    "label": "Rectangle",
+    "group": "Rectangles"
+  },
+  {
+    "preset": "ribbon",
+    "label": "Ribbon",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "ribbon2",
+    "label": "Ribbon 2",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "rightArrow",
+    "label": "Right arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "rightArrowCallout",
+    "label": "Right arrow callout",
+    "group": "Callouts"
+  },
+  {
+    "preset": "rightBrace",
+    "label": "Right brace",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "rightBracket",
+    "label": "Right bracket",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "round1Rect",
+    "label": "One rounded corner",
+    "group": "Rectangles"
+  },
+  {
+    "preset": "round2DiagRect",
+    "label": "Diagonal rounded corners",
+    "group": "Rectangles"
+  },
+  {
+    "preset": "round2SameRect",
+    "label": "Two rounded corners",
+    "group": "Rectangles"
+  },
+  {
+    "preset": "roundRect",
+    "label": "Rounded rectangle",
+    "group": "Rectangles"
+  },
+  {
+    "preset": "rtTriangle",
+    "label": "Right triangle",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "smileyFace",
+    "label": "Smiley face",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "snip1Rect",
+    "label": "One snipped corner",
+    "group": "Rectangles"
+  },
+  {
+    "preset": "snip2DiagRect",
+    "label": "Diagonal snipped corners",
+    "group": "Rectangles"
+  },
+  {
+    "preset": "snip2SameRect",
+    "label": "Two snipped corners",
+    "group": "Rectangles"
+  },
+  {
+    "preset": "snipRoundRect",
+    "label": "Snipped and rounded rectangle",
+    "group": "Rectangles"
+  },
+  {
+    "preset": "squareTabs",
+    "label": "Square tabs",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "star10",
+    "label": "10-point star",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "star12",
+    "label": "12-point star",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "star16",
+    "label": "16-point star",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "star24",
+    "label": "24-point star",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "star32",
+    "label": "32-point star",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "star4",
+    "label": "4-point star",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "star5",
+    "label": "5-point star",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "star6",
+    "label": "6-point star",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "star7",
+    "label": "7-point star",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "star8",
+    "label": "8-point star",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "stripedRightArrow",
+    "label": "Striped right arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "sun",
+    "label": "Sun",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "swooshArrow",
+    "label": "Swoosh arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "teardrop",
+    "label": "Teardrop",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "trapezoid",
+    "label": "Trapezoid",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "triangle",
+    "label": "Triangle",
+    "group": "Basic shapes"
+  },
+  {
+    "preset": "upArrowCallout",
+    "label": "Up arrow callout",
+    "group": "Callouts"
+  },
+  {
+    "preset": "upDownArrow",
+    "label": "Up down arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "upArrow",
+    "label": "Up arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "upDownArrowCallout",
+    "label": "Up down arrow callout",
+    "group": "Callouts"
+  },
+  {
+    "preset": "uturnArrow",
+    "label": "U-turn arrow",
+    "group": "Block arrows"
+  },
+  {
+    "preset": "verticalScroll",
+    "label": "Vertical scroll",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "wave",
+    "label": "Wave",
+    "group": "Stars and banners"
+  },
+  {
+    "preset": "wedgeEllipseCallout",
+    "label": "Oval speech bubble",
+    "group": "Callouts"
+  },
+  {
+    "preset": "wedgeRectCallout",
+    "label": "Rectangular speech bubble",
+    "group": "Callouts"
+  },
+  {
+    "preset": "wedgeRoundRectCallout",
+    "label": "Rounded speech bubble",
+    "group": "Callouts"
+  }
+]

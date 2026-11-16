@@ -1,0 +1,20 @@
+Impress 0.8.6-48 — LibreOffice crop-picker icons
+
+95 matching crop choices now use LibreOffice Yaru artwork. The other 81 Word
+presets use exact geometry previews with neutral white fill and charcoal
+outlines. The compact eight-column category picker retains all 176 choices.
+Artwork is bundled; no LibreOffice installation or runtime is required.
+The document crop geometry, DOCX/native persistence and previous fixes remain.
+Original SVGs, the command mapping, generator and license notices are included.
+
+All 196 workspace Rust tests passed. Linux and Windows optimized builds completed.
+Linux GUI checks verify the smaller picker, clear previews, category switching,
+shape selection, undo/redo and blank-area deselection. All 95 imported PNGs were
+validated. Interface checks: 64 passed, one skipped, two existing baseline failures.
+Current DOC/DOCX converter code and binaries are unchanged from 0.8.6-47; their
+combined feature and CV round-trip checks are inherited. Native Windows UI
+interaction remains unverified. See PACKAGE-VERIFICATION.json for details.
+
+Latest source: Impress-0.8.6-48-source.zip.
+Auxiliary build logs and screenshots stay in the workspace. Source and binaries
+are published in the existing Impress, Backups and Binaries folders.

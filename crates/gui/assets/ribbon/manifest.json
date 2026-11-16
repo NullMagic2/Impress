@@ -1,0 +1,997 @@
+[
+  {
+    "name": "accept",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "align-center",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "align-justify",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "align-left",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "align-object-center",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "align-object-left",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "align-object-right",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "align-objects",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "align-right",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "align_center",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "align_justify",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "align_left",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "align_right",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "anchor-move",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "anchor-page",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "arrow-down",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "arrow-up",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "auto_direction",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "backward",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "bold",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "bolt",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "book",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "bookmark",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "bullets",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "calendar",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "caption",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "caret",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "chart",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "chevron-up",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "cite",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "clear",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "close",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "code-block",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "code",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "column-break",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "columns",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "comment-check",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "comment-x",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "comment",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "compare",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "compile",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "copy",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "count",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "crossref",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "cut",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "dir-auto",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "endnote",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "equation",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "error",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "export",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "eye",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "field",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "figure",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "fit",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "focus",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "font-color",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "font_color",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "footer",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "footnote",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "format",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "forward",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "function",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "globe",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "grow",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "hash",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "header-even",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "header-first",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "header-footer",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "header",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "help",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "highlight",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "hyph",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "image",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "indent-right",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "indent",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "index",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "inline-eq",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "italic",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "kern",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "landscape",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "layout-more",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "lig",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "ligatures",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "line-numbers",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "line-spacing",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "link",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "lock",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "logo",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "ltr",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "margins",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "mark",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "markup",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "navigation",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "new-window",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "new",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "numbering",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "one-page",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "open",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "orientation",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "outdent",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "outline",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "package",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "page-break",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "page-color",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "page-count",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "page-number",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "page-width",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "page",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "page_break",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "page_number",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "pane-right",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "paste-text",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "paste",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "paste_plain",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "pdf",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "picture",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "plus-lines",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "plus",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "portrait",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "position",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "print",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "recent",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "redo",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "references",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "refresh",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "reject",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "review",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "rotate",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "rtl",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "save",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "save_as",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "search",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "section-break",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "shapes",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "shrink",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "side-by-side",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "sidebar",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "size",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "sources",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "space-after",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "space-before",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "spacing",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "spell",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "split-h",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "split",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-align-center",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-align-justify",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-align-left",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-align-right",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-border-between",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-border-bottom",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-border-left",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-border-right",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-border-top",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-indent-decrease",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-indent-increase",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-line-double",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-line-onehalf",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-line-single",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-spacing-decrease",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-spacing-increase",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style-tag",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "style_heading1",
+    "width": 224,
+    "height": 72
+  },
+  {
+    "name": "style_normal",
+    "width": 224,
+    "height": 72
+  },
+  {
+    "name": "style_title",
+    "width": 224,
+    "height": 72
+  },
+  {
+    "name": "styles",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "symbol",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "sync",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "tab",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "table-figures",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "table",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "template",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "textbox",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "thesaurus",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "toc",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "track",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "trash",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "typst",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "underline",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "undo",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "variable",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "vector",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "warning",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "watermark",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "web",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "word-count",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "wrap-behind",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "wrap-front",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "wrap-inline",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "wrap-square",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "wrap-tight",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "wrap-top-bottom",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "wrap",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "x",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "zoom-in",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "zoom-out",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "zoom-reset",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "zoom_in",
+    "width": 64,
+    "height": 64
+  },
+  {
+    "name": "zoom_out",
+    "width": 64,
+    "height": 64
+  }
+]

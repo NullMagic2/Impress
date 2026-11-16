@@ -1,0 +1,811 @@
+{
+  "commit": "67032ee957631908098a72edf48dc81cac27e369",
+  "source": "https://github.com/LibreOffice/dictionaries",
+  "languages": [
+    {
+      "tag": "cs-CZ",
+      "package": "hunspell-cs",
+      "files": [
+        {
+          "path": "cs_CZ/cs_CZ.aff",
+          "sha256": "7ecb20620ecd46ebd9c36f3f33e69dd4eda385cba5b2bb4e6bc396d910e297f7",
+          "bytes": 111575
+        },
+        {
+          "path": "cs_CZ/cs_CZ.dic",
+          "sha256": "d8e8c88c006fdae72dac8c85df11b0c99a773e05a4ab0fcbe92244876668ca74",
+          "bytes": 3656362
+        },
+        {
+          "path": "cs_CZ/README_cs.txt",
+          "sha256": "24d1d07409b62e8e6f0ee114991d4749d3e97b05ea19feca835916af67312720",
+          "bytes": 59410
+        },
+        {
+          "path": "cs_CZ/README_en.txt",
+          "sha256": "0fe6d017aa91ffb58146d19160f8207900cc0c49d5fffef0b1a7d3a364cb29bd",
+          "bytes": 13105
+        },
+        {
+          "path": "cs_CZ/thesaurus/README.txt",
+          "sha256": "fc50f0fcf671240008111f740bc67078c1314aa5fba48dcd36a4f5c0ccfd5fe6",
+          "bytes": 211
+        }
+      ]
+    },
+    {
+      "tag": "da-DK",
+      "package": "hunspell-da",
+      "files": [
+        {
+          "path": "da_DK/da_DK.aff",
+          "sha256": "ee4fe193d19b72aa64bc0d2b9bcdf44ee44f11d9b4e7dcf6da36fd0e91528561",
+          "bytes": 82864
+        },
+        {
+          "path": "da_DK/da_DK.dic",
+          "sha256": "298aabeca362ee2c71836c5c7748d22080a460bd7193e6fbd2471f27a70d0fd3",
+          "bytes": 3894244
+        },
+        {
+          "path": "da_DK/HYPH_da_DK_README.txt",
+          "sha256": "6055fdab59b2d781b27a0286f8fd3b09fa3f4d706c023d6481c5044492e405ea",
+          "bytes": 555
+        },
+        {
+          "path": "da_DK/README_da_DK.txt",
+          "sha256": "9508f4ec9e14a3d2a3360dd694881440d0d73fe1fe076e547639e5fe33c7b42d",
+          "bytes": 787
+        }
+      ]
+    },
+    {
+      "tag": "nl-NL",
+      "package": "hunspell-nl",
+      "files": [
+        {
+          "path": "nl_NL/nl_NL.aff",
+          "sha256": "f0233d4f721f4661cf5f4d05ed2739549322bf3b6b66764b55a38257e1e16e6f",
+          "bytes": 46557
+        },
+        {
+          "path": "nl_NL/nl_NL.dic",
+          "sha256": "bc28af45307700a9927ad5719184da44dfd7eed4f707b8c1477f6d8a21b586a6",
+          "bytes": 2488246
+        },
+        {
+          "path": "nl_NL/LICENSE.txt",
+          "sha256": "2189c248cbc054445aeac6cd65b87eebd0a115efeb55ed498b0f2a73441805dd",
+          "bytes": 25820
+        },
+        {
+          "path": "nl_NL/README.md",
+          "sha256": "aa4685a78f32d0d24a67dd5043ef4e39acc8720c3e416fe5d201985980dbc004",
+          "bytes": 7824
+        }
+      ]
+    },
+    {
+      "tag": "en-GB",
+      "package": "hunspell-en-gb",
+      "files": [
+        {
+          "path": "en/en_GB.aff",
+          "sha256": "0fd6ed120ef28957847d98ba5149b117e27116cf81b5aa36208453f6755a36fd",
+          "bytes": 44158
+        },
+        {
+          "path": "en/en_GB.dic",
+          "sha256": "04e90f34f5263bf26780e9c4a442e9ad16584e227af49ddd1b3b21b01df5b29c",
+          "bytes": 1230571
+        },
+        {
+          "path": "en/README.txt",
+          "sha256": "b8dd4d2ace5358adf5e6ddfac720871188e6f211cf56af97db631f4ee53e0ff3",
+          "bytes": 2642
+        },
+        {
+          "path": "en/README_en_AU.txt",
+          "sha256": "f0897dcfdf058bcfc93fbc8e7e1b5da4c27ae9e175ee3a9242e887f02eb84a8b",
+          "bytes": 15732
+        },
+        {
+          "path": "en/README_en_CA.txt",
+          "sha256": "86700e39b2307dda4c087ad3505a1e634a5b4d518ab808c398a16d21ebe957e2",
+          "bytes": 15732
+        },
+        {
+          "path": "en/README_en_GB.txt",
+          "sha256": "18b5833de60a52ffcb6e5b6b5048bb5a5d910acfecd5b096985b77058223880c",
+          "bytes": 10644
+        },
+        {
+          "path": "en/README_en_GB_thes.txt",
+          "sha256": "cc8abeac37067747d66d5365e8163145be6f3c23f488005074bf255bac89f2e4",
+          "bytes": 63
+        },
+        {
+          "path": "en/README_en_US.txt",
+          "sha256": "168b4c01cb841f766a72f310b065c04d09cff46376c37a81d799593ce751c371",
+          "bytes": 15732
+        },
+        {
+          "path": "en/README_en_ZA.txt",
+          "sha256": "116ade99dd4a92715b21ae5b358a1a8cc814c76c0d6e582fdba4870835d1a6e2",
+          "bytes": 35563
+        },
+        {
+          "path": "en/README_hyph_en_GB.txt",
+          "sha256": "6f3d1dddcf62d2d452801bd86289ad5826a30d15a502c0825f5c73715372db50",
+          "bytes": 4569
+        },
+        {
+          "path": "en/README_hyph_en_US.txt",
+          "sha256": "9bcae072bff45cc0333d6b3c508c92d85b9065fc861c743c1506b303eba3f4a1",
+          "bytes": 1888
+        },
+        {
+          "path": "en/README_lightproof_en.txt",
+          "sha256": "2271b9893955aa0abae1193cf56a66badaa906c0af030edd46113d10c59f2e24",
+          "bytes": 166
+        },
+        {
+          "path": "en/WordNet_license.txt",
+          "sha256": "23dbc4f3ea771304e5ab3e5709843813d2619f3c0cfc81229b53fcdb9985f29a",
+          "bytes": 1625
+        },
+        {
+          "path": "en/license.txt",
+          "sha256": "df84246204e3c54cd24aebbc23714235f5fc41d754d53b65444a2afbf070130f",
+          "bytes": 15122
+        }
+      ]
+    },
+    {
+      "tag": "en-US",
+      "package": "hunspell-en-us",
+      "files": [
+        {
+          "path": "en/en_US.aff",
+          "sha256": "e746c882dd6f303c2c46e7452804b9201115a6942cfeb15f18f8edf774d2e24e",
+          "bytes": 3205
+        },
+        {
+          "path": "en/en_US.dic",
+          "sha256": "f0b1a234bd178bdd01875b2a392a9647f888b8fe879f79c52aae62c2759b3647",
+          "bytes": 551762
+        },
+        {
+          "path": "en/README.txt",
+          "sha256": "b8dd4d2ace5358adf5e6ddfac720871188e6f211cf56af97db631f4ee53e0ff3",
+          "bytes": 2642
+        },
+        {
+          "path": "en/README_en_AU.txt",
+          "sha256": "f0897dcfdf058bcfc93fbc8e7e1b5da4c27ae9e175ee3a9242e887f02eb84a8b",
+          "bytes": 15732
+        },
+        {
+          "path": "en/README_en_CA.txt",
+          "sha256": "86700e39b2307dda4c087ad3505a1e634a5b4d518ab808c398a16d21ebe957e2",
+          "bytes": 15732
+        },
+        {
+          "path": "en/README_en_GB.txt",
+          "sha256": "18b5833de60a52ffcb6e5b6b5048bb5a5d910acfecd5b096985b77058223880c",
+          "bytes": 10644
+        },
+        {
+          "path": "en/README_en_GB_thes.txt",
+          "sha256": "cc8abeac37067747d66d5365e8163145be6f3c23f488005074bf255bac89f2e4",
+          "bytes": 63
+        },
+        {
+          "path": "en/README_en_US.txt",
+          "sha256": "168b4c01cb841f766a72f310b065c04d09cff46376c37a81d799593ce751c371",
+          "bytes": 15732
+        },
+        {
+          "path": "en/README_en_ZA.txt",
+          "sha256": "116ade99dd4a92715b21ae5b358a1a8cc814c76c0d6e582fdba4870835d1a6e2",
+          "bytes": 35563
+        },
+        {
+          "path": "en/README_hyph_en_GB.txt",
+          "sha256": "6f3d1dddcf62d2d452801bd86289ad5826a30d15a502c0825f5c73715372db50",
+          "bytes": 4569
+        },
+        {
+          "path": "en/README_hyph_en_US.txt",
+          "sha256": "9bcae072bff45cc0333d6b3c508c92d85b9065fc861c743c1506b303eba3f4a1",
+          "bytes": 1888
+        },
+        {
+          "path": "en/README_lightproof_en.txt",
+          "sha256": "2271b9893955aa0abae1193cf56a66badaa906c0af030edd46113d10c59f2e24",
+          "bytes": 166
+        },
+        {
+          "path": "en/WordNet_license.txt",
+          "sha256": "23dbc4f3ea771304e5ab3e5709843813d2619f3c0cfc81229b53fcdb9985f29a",
+          "bytes": 1625
+        },
+        {
+          "path": "en/license.txt",
+          "sha256": "df84246204e3c54cd24aebbc23714235f5fc41d754d53b65444a2afbf070130f",
+          "bytes": 15122
+        }
+      ]
+    },
+    {
+      "tag": "fr-FR",
+      "package": "hunspell-fr",
+      "files": [
+        {
+          "path": "fr_FR/dictionaries/fr.aff",
+          "sha256": "c176610cd5dc4846806a65ddd029f422d87978bf58f224aa44222662a16a2de5",
+          "bytes": 199870
+        },
+        {
+          "path": "fr_FR/dictionaries/fr.dic",
+          "sha256": "b78a868e31dd6e373b6c3217969afb898a9acde828a5e7ef97308da42218c88c",
+          "bytes": 1236490
+        },
+        {
+          "path": "fr_FR/dictionaries/README_dict_fr.txt",
+          "sha256": "4a25abf740ad6ba5e8d0cfc0d2ffadc3c13c303f8fe389f323b061a389350f83",
+          "bytes": 2758
+        },
+        {
+          "path": "fr_FR/dictionaries/README_hyph_fr.txt",
+          "sha256": "6951d9806c65c7f757d303061ca49cd7a1ddeddc552147f5c29de6540821f2cf",
+          "bytes": 3738
+        },
+        {
+          "path": "fr_FR/dictionaries/README_thes_fr.txt",
+          "sha256": "431a690c5be7741eeaa0e9654aeb75ed2b0af337492e622e8393d090b4612b3e",
+          "bytes": 2034
+        }
+      ]
+    },
+    {
+      "tag": "de-DE",
+      "package": "hunspell-de-de",
+      "files": [
+        {
+          "path": "de/de_DE_frami.aff",
+          "sha256": "646bf3333ac69c23e9d794533ee5241d6f755c359e8fe10a648f87613743d594",
+          "bytes": 19067
+        },
+        {
+          "path": "de/de_DE_frami.dic",
+          "sha256": "4ca3c958b0e5545910999bc246f668840bf8ede3df8e5e6790d05edd5a586c38",
+          "bytes": 4356903
+        },
+        {
+          "path": "de/COPYING_GPLv2",
+          "sha256": "e7431ac20e815b6797369e802f9e4bb1b0082485060d8b096235f035d741bd89",
+          "bytes": 17992
+        },
+        {
+          "path": "de/COPYING_GPLv3",
+          "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+          "bytes": 35147
+        },
+        {
+          "path": "de/COPYING_LGPL_v2.0.txt",
+          "sha256": "b7993225104d90ddd8024fd838faf300bea5e83d91203eab98e29512acebd69c",
+          "bytes": 25383
+        },
+        {
+          "path": "de/COPYING_LGPL_v2.1.txt",
+          "sha256": "dc626520dcd53a22f727af3ee42c770e56c97a64fe3adb063799d8ab032fe551",
+          "bytes": 26530
+        },
+        {
+          "path": "de/COPYING_OASIS.txt",
+          "sha256": "2d9d81e88ecd0e837122f4688ca7a6a5bd7bb41bff6e21ff5d4663eb43372db3",
+          "bytes": 675
+        },
+        {
+          "path": "de/README_de_DE_frami.txt",
+          "sha256": "c141f4f79c428b7348b5012836f4ad3db4d124f288f15effc22696dc876512ae",
+          "bytes": 752
+        },
+        {
+          "path": "de/README_extension_owner.txt",
+          "sha256": "7662cbc363fdee12bc03a5295148587bb76923c121792a401115e654fea37b5c",
+          "bytes": 1444
+        },
+        {
+          "path": "de/README_hyph_de.txt",
+          "sha256": "be7b3c67a66ea7185a69a3ce3b1e712cd6bb904dce8ac0eecdefd2f1a948baf3",
+          "bytes": 1738
+        },
+        {
+          "path": "de/README_thesaurus.txt",
+          "sha256": "405accab10106f6d09152f2f5865ec3545fbcf40817b5416b4b99a077f303a87",
+          "bytes": 27432
+        }
+      ]
+    },
+    {
+      "tag": "el-GR",
+      "package": "hunspell-el",
+      "files": [
+        {
+          "path": "el_GR/el_GR.aff",
+          "sha256": "868dfe13ad7d34251915a745e44d38542831463d56e60732ba3a5bc1dcca582a",
+          "bytes": 15647
+        },
+        {
+          "path": "el_GR/el_GR.dic",
+          "sha256": "e5b9b9c2cf05bbc59e03fe302b462dae85968f822f4fc219a8ed2879d6943720",
+          "bytes": 10125390
+        },
+        {
+          "path": "el_GR/README_el_GR.txt",
+          "sha256": "8b942846bba64ac1b28c38aee294f1667d0063e2162d59030d0da09332e8c342",
+          "bytes": 2245
+        },
+        {
+          "path": "el_GR/README_hyph_el_GR.txt",
+          "sha256": "0b3e117f4ab079e7cbcdd7f4645f9a4f193ae123e6c781928597b27d22706aa7",
+          "bytes": 525
+        }
+      ]
+    },
+    {
+      "tag": "hu-HU",
+      "package": "hunspell-hu",
+      "files": [
+        {
+          "path": "hu_HU/hu_HU.aff",
+          "sha256": "f3a2748dd535cfde2142ab17d0f7f8e4787b03fb25a60829c69ac8d493db4802",
+          "bytes": 2316267
+        },
+        {
+          "path": "hu_HU/hu_HU.dic",
+          "sha256": "97293d670ad4a3b8e7eebef7e25c6e8e939b914c64b6b4672b2bf416b768f990",
+          "bytes": 1786144
+        },
+        {
+          "path": "hu_HU/README_hu_HU.txt",
+          "sha256": "52b17fc3d53b6935eab747a71894507d702f7f0fde379c819c16cc803005fc84",
+          "bytes": 1190
+        },
+        {
+          "path": "hu_HU/README_hyph_hu_HU.txt",
+          "sha256": "d18ff3a0b4e8d2b537982085bc19de03ed77cb29bdfabc67f728bb547e10853a",
+          "bytes": 544
+        },
+        {
+          "path": "hu_HU/README_lightproof_hu_HU.txt",
+          "sha256": "84256d8d9163d0cbaab43789bc0ebebdcb57a227d8e2b88879d2e17069a9c2a9",
+          "bytes": 183
+        },
+        {
+          "path": "hu_HU/README_th_hu_HU_v2.txt",
+          "sha256": "41ac75c804e93bd3335dcfef7a4d86838b8b8082b1c877f63194b31702b44c73",
+          "bytes": 18089
+        }
+      ]
+    },
+    {
+      "tag": "it-IT",
+      "package": "hunspell-it",
+      "files": [
+        {
+          "path": "it_IT/it_IT.aff",
+          "sha256": "951afaa19272f13555b8823e8bcf9ccf78f8fe1a07835bdfb912ab3e4d537c2b",
+          "bytes": 70054
+        },
+        {
+          "path": "it_IT/it_IT.dic",
+          "sha256": "bae1e3501dcd2a923669592493b3fde6c02aae7c7aab83bf5e5b49077e73dd64",
+          "bytes": 1295083
+        },
+        {
+          "path": "it_IT/README_hyph_it_IT.txt",
+          "sha256": "e6f356c3c49bc6016b6a635c20b468468eef6d011953a7051bbdfd56e17f0d3b",
+          "bytes": 949
+        },
+        {
+          "path": "it_IT/README_it_IT.txt",
+          "sha256": "34c3e93595cf3cf5f3afc9bc0d98eea12593750383f1e82ed1d3ca29f9681283",
+          "bytes": 38902
+        },
+        {
+          "path": "it_IT/README_th_it_IT.txt",
+          "sha256": "07cd83b0d7664ebc620f589524069549f6ead33bccedb7f27d04ed0311e62905",
+          "bytes": 43451
+        },
+        {
+          "path": "it_IT/legacy/it_IT_COPYING",
+          "sha256": "3e41d215a0d9ce21c1fa982d48d2958d539a51011f469f741b51f97e2595ec7e",
+          "bytes": 34695
+        },
+        {
+          "path": "it_IT/legacy/it_IT_README.1st",
+          "sha256": "0328874f246fa9511fb19be6fc38db57f1351b00356e7c7187de59529fb04e6f",
+          "bytes": 3099
+        },
+        {
+          "path": "it_IT/legacy/it_IT_README.txt",
+          "sha256": "ec6332fd60cca5d4cd1b69c78aebae33bb49ccea856ed1d69722e3a23f0dfc82",
+          "bytes": 18501
+        },
+        {
+          "path": "it_IT/legacy/it_IT_license.txt",
+          "sha256": "4de624abc748506298e7be68f2213e422673b43e1674da4b376804096b87dcec",
+          "bytes": 1099
+        },
+        {
+          "path": "it_IT/legacy/th_it_IT_COPYING",
+          "sha256": "3e41d215a0d9ce21c1fa982d48d2958d539a51011f469f741b51f97e2595ec7e",
+          "bytes": 34695
+        },
+        {
+          "path": "it_IT/legacy/th_it_IT_README",
+          "sha256": "3097ecbc3ebd844266b556768748b7c07bde915dd5dd0b70eee30670a91a2599",
+          "bytes": 7478
+        },
+        {
+          "path": "it_IT/legacy/th_it_IT_copyright_licenza.txt",
+          "sha256": "ebcfbfb163a4de05aea7a981bb33619d085c909df82abb4cd47cabb566937f02",
+          "bytes": 1098
+        }
+      ]
+    },
+    {
+      "tag": "nb-NO",
+      "package": "hunspell-no",
+      "files": [
+        {
+          "path": "no/nb_NO.aff",
+          "sha256": "b9e828538222b3580d8adb4660d5bae9bc1fbe42e7c21fd3e01970efed96b4f8",
+          "bytes": 17382
+        },
+        {
+          "path": "no/nb_NO.dic",
+          "sha256": "aadaf9ea6b437b4edada54a2084e1c8dc00029addc6dfb4e15637f8e798dacc1",
+          "bytes": 9336265
+        },
+        {
+          "path": "no/COPYING",
+          "sha256": "e7431ac20e815b6797369e802f9e4bb1b0082485060d8b096235f035d741bd89",
+          "bytes": 17992
+        },
+        {
+          "path": "no/README",
+          "sha256": "0fb3b682bbe5fd3fe23a22d26cc7c417115016bb5f40ec4cf5a62aabe6e5c9c9",
+          "bytes": 4286
+        },
+        {
+          "path": "no/README_NO.txt",
+          "sha256": "0fb3b682bbe5fd3fe23a22d26cc7c417115016bb5f40ec4cf5a62aabe6e5c9c9",
+          "bytes": 4286
+        },
+        {
+          "path": "no/README_hyph_NO.txt",
+          "sha256": "5dd6d4fa61585062d8774afff75d0c51d76bb8126078fef0c0e69740eb093ce0",
+          "bytes": 342
+        }
+      ]
+    },
+    {
+      "tag": "pl-PL",
+      "package": "hunspell-pl",
+      "files": [
+        {
+          "path": "pl_PL/pl_PL.aff",
+          "sha256": "82973651651aa930335c865b339b98db376ca3dbf3a661b70b9eeb71fdf41dca",
+          "bytes": 257542
+        },
+        {
+          "path": "pl_PL/pl_PL.dic",
+          "sha256": "c0848440599eb88e5aca500418d5f389e562ec2c157b63dbe39d354658ffba49",
+          "bytes": 5252096
+        },
+        {
+          "path": "pl_PL/README_en.txt",
+          "sha256": "fb5f9b4a0643821cf88775c0932810c1cd05f236136c913e3eaf1e24806f3f44",
+          "bytes": 2282
+        },
+        {
+          "path": "pl_PL/README_pl.txt",
+          "sha256": "ce3ad7ab1d3a8b767b8f7dcc870796fbda76bc7ad8cde22f6312b0cf86a5bd11",
+          "bytes": 27814
+        },
+        {
+          "path": "pl_PL/README_pl_PL.txt",
+          "sha256": "e691ed1e79934293b0cd6996a14af1520ff893c02f920c09ed0c90aa5f0a8abc",
+          "bytes": 593
+        }
+      ]
+    },
+    {
+      "tag": "pt-BR",
+      "package": "hunspell-pt-br",
+      "files": [
+        {
+          "path": "pt_BR/pt_BR.aff",
+          "sha256": "21d8ad2a769a60e17e2b5ea4ef11d4d593a58b9e2a82d642ef82d6a4c5523865",
+          "bytes": 979792
+        },
+        {
+          "path": "pt_BR/pt_BR.dic",
+          "sha256": "a38bfb26b68ece2834e79fe83e48d5792652970ace12db89d1b9674bf9933183",
+          "bytes": 4477695
+        },
+        {
+          "path": "pt_BR/README_Lightproof_pt_BR.txt",
+          "sha256": "9300db07784a8575743e68cd4c9b966c66f9212c708bd3bbf0190df61e75114a",
+          "bytes": 229
+        },
+        {
+          "path": "pt_BR/README_en.txt",
+          "sha256": "bb064f3db7ba5f5536da7d079773f692c5f928822e8aebc3d78259ff6cceb9e5",
+          "bytes": 1461
+        },
+        {
+          "path": "pt_BR/README_hyph_pt_BR.txt",
+          "sha256": "07400608865ce4c964cc443a9f354c733ca7f3f7d31f4463222b927cb7c54b87",
+          "bytes": 19284
+        },
+        {
+          "path": "pt_BR/README_pt_BR.txt",
+          "sha256": "9974ce691fdc1fe731717d7a2dc668244405fdc2bf9bf3367eb9b29e85177c88",
+          "bytes": 16348
+        },
+        {
+          "path": "pt_BR/license-thes.readme",
+          "sha256": "253031afa265c7bec5d2e195c659129a7ff254f9d57c57a08eba4a9051868840",
+          "bytes": 1707
+        }
+      ]
+    },
+    {
+      "tag": "pt-PT",
+      "package": "hunspell-pt-pt",
+      "files": [
+        {
+          "path": "pt_PT/pt_PT.aff",
+          "sha256": "975a209fcc892cb382fa5f34a28c391a39668661ce373ae071287809c5fcae24",
+          "bytes": 95089
+        },
+        {
+          "path": "pt_PT/pt_PT.dic",
+          "sha256": "e29ba2d7aa8a2ad43e9cb46ac6473064b661545c87002aea90e18899d98d3cc9",
+          "bytes": 1485977
+        },
+        {
+          "path": "pt_PT/LICENSES.txt",
+          "sha256": "d2c1cfe2e2dd81c651aec3fda5d1b4b4e7679b9e04f8cdc37586e521837384d1",
+          "bytes": 1830
+        },
+        {
+          "path": "pt_PT/README_hyph_pt_PT.txt",
+          "sha256": "62f19b9d8b42f2b0ff165ab434f40cfb4210a464f0662c31f6f99d77d0306e06",
+          "bytes": 486
+        },
+        {
+          "path": "pt_PT/README_pt_PT.txt",
+          "sha256": "36de7d88a406a4947bf646a64145f00827566808988632e3df969aa95776060c",
+          "bytes": 1106
+        },
+        {
+          "path": "pt_PT/README_th_pt_PT.txt",
+          "sha256": "4a7ae3ba634478c8af6f3fbdc5cd27aa150d0bb653e4bb0b2c226d6068175771",
+          "bytes": 26537
+        }
+      ]
+    },
+    {
+      "tag": "ro-RO",
+      "package": "hunspell-ro",
+      "files": [
+        {
+          "path": "ro/ro_RO.aff",
+          "sha256": "0c83a02f0ac5202c068e60e1aef5ce99e13d7f6c92ae8e68ca8b9e06829edfd1",
+          "bytes": 55195
+        },
+        {
+          "path": "ro/ro_RO.dic",
+          "sha256": "c26a9356f598a0ae89e7be650f6bdd9ba70acce66b41d7ab14c0c68639b6ed33",
+          "bytes": 2202394
+        },
+        {
+          "path": "ro/COPYING.GPL",
+          "sha256": "2233a3eecf299bc271f1a9f57f0b3198343ad4ab16571d70320133002c51496b",
+          "bytes": 18325
+        },
+        {
+          "path": "ro/COPYING.LGPL",
+          "sha256": "5bbcbb737e60fe9deba08ecbd00920cfcc3403ba2e534c64fdeea49d6bb87509",
+          "bytes": 26532
+        },
+        {
+          "path": "ro/COPYING.MPL",
+          "sha256": "53692a2ed6c6a2c6ec9b32dd0b820dfae91e0a1fcdf625ca9ed0bdf8705fcc4f",
+          "bytes": 25755
+        },
+        {
+          "path": "ro/README_EN.txt",
+          "sha256": "854c3b7e6575da37d066d5a09945af336a8ecc62c5e3c1049e97504dc67cbd81",
+          "bytes": 1633
+        }
+      ]
+    },
+    {
+      "tag": "ru-RU",
+      "package": "hunspell-ru",
+      "files": [
+        {
+          "path": "ru_RU/ru_RU.aff",
+          "sha256": "38ce7d4af78e211e9bafe4bf7e3d6a2c420591136cb738ec6648f8fdf6524cd7",
+          "bytes": 71236
+        },
+        {
+          "path": "ru_RU/ru_RU.dic",
+          "sha256": "f6047416a0204adbecf3a451b874ec8a97ee37e2cbc714466ef04d8dbcc0d6fc",
+          "bytes": 3473191
+        },
+        {
+          "path": "ru_RU/README_Lightproof_ru_RU.txt",
+          "sha256": "8de865eb2f5a83a182d96964d1fe0eee05ae0d68a94f9e9938e4f6349075f5c4",
+          "bytes": 224
+        },
+        {
+          "path": "ru_RU/README_ru_RU.txt",
+          "sha256": "262af2f6ad70a61e5ee1332ff44fa8ee50edca819cf33207d8ad6ba6a0c9be52",
+          "bytes": 1886
+        },
+        {
+          "path": "ru_RU/README_thes_ru_RU_M_aot_and_v2.txt",
+          "sha256": "faf06127db60c80b4deefc26a86b3c8a18e1ba46e89d29db8f232501ea850b69",
+          "bytes": 784
+        }
+      ]
+    },
+    {
+      "tag": "sk-SK",
+      "package": "hunspell-sk",
+      "files": [
+        {
+          "path": "sk_SK/sk_SK.aff",
+          "sha256": "af67bbe8ea9dea74968ec01acd266b3f74177ca087ee6eb7898c576e0aef7a3d",
+          "bytes": 225271
+        },
+        {
+          "path": "sk_SK/sk_SK.dic",
+          "sha256": "3e3dbd5c6af8431a3a47652c69692f3f86d0cd82deb4418e49a057a33ef56063",
+          "bytes": 3362212
+        },
+        {
+          "path": "sk_SK/LICENSE.txt",
+          "sha256": "dc06f891b13dcb6fe1ede36c0c9020f0e57e6777aca951ecaceefa95a19d7cfc",
+          "bytes": 67574
+        },
+        {
+          "path": "sk_SK/README_en.txt",
+          "sha256": "a36af75654ae6e65614f7821b2c401ea1f3b4adfdcba9b59efcb1a06c96df14d",
+          "bytes": 2027
+        },
+        {
+          "path": "sk_SK/README_sk.txt",
+          "sha256": "0872fff851274cd95535752e1ac682b76d12614c10e6f7ffb7ae7fdf7e9d4f44",
+          "bytes": 2081
+        },
+        {
+          "path": "sk_SK/README_th_sk_SK_v2.txt",
+          "sha256": "c67e2052ca1faae1bb0973c4434111aadca859db311597f0baec450029a65f9d",
+          "bytes": 2397
+        }
+      ]
+    },
+    {
+      "tag": "es-ES",
+      "package": "hunspell-es",
+      "files": [
+        {
+          "path": "es/es_ES.aff",
+          "sha256": "e73a9bf8e1383f4986a5dc9e2fbed49371c0c61f511c626d15586bd433c1cad9",
+          "bytes": 169202
+        },
+        {
+          "path": "es/es_ES.dic",
+          "sha256": "6975dddec3d5d2c676069537bc67b4b5f786c65c5d4cf6703a82acf779ac9ec1",
+          "bytes": 715989
+        },
+        {
+          "path": "es/LICENSE.md",
+          "sha256": "2b70fd5cb8d3b34cc6ae322c969557a2270b99017594addb2531ef5ffd9e1b17",
+          "bytes": 991
+        },
+        {
+          "path": "es/README_hunspell_es.txt",
+          "sha256": "0b5c39a863ecb61f5c5631ec1cd977667ef9bda6da6f90e80e9fc0edcbfadd97",
+          "bytes": 2615
+        },
+        {
+          "path": "es/README_hyph_es.txt",
+          "sha256": "1f1088dce1140d981660faf3f5acc825e74aa1f943a8bec88cb046e4c528a1fb",
+          "bytes": 1821
+        },
+        {
+          "path": "es/README_th_es.txt",
+          "sha256": "874580e808ffd19bd28b9b6bddc3c1c1b691fd092287cc26bacf29060a0faa83",
+          "bytes": 677
+        }
+      ]
+    },
+    {
+      "tag": "sv-SE",
+      "package": "hunspell-sv",
+      "files": [
+        {
+          "path": "sv_SE/dictionaries/sv_SE.aff",
+          "sha256": "b721c9d44bee912feb182b601a1bc2ae3e7dffef660f4130cf2751867488a9dd",
+          "bytes": 18583
+        },
+        {
+          "path": "sv_SE/dictionaries/sv_SE.dic",
+          "sha256": "384a2126eff333f5f6f9790ae892554546f53948d2988c600397cb5ad6ce66e8",
+          "bytes": 2344202
+        },
+        {
+          "path": "sv_SE/LICENSE_en_US.txt",
+          "sha256": "1314b6004bff32053ca25aca5fc419e905d75a6d49f9f9825baf4f02298af6d9",
+          "bytes": 378
+        },
+        {
+          "path": "sv_SE/LICENSE_sv_SE.txt",
+          "sha256": "841736f210169ce2c9c6907c0d88495e6d41ff7d067a3033c56ae1179ce62127",
+          "bytes": 353
+        },
+        {
+          "path": "sv_SE/README_hyph_sv.txt",
+          "sha256": "eee15b8d93b2413256ae1cb8af7d1489935571e0eaf15d9b27bab1203d3aafc2",
+          "bytes": 650
+        },
+        {
+          "path": "sv_SE/README_th_sv_SE.txt",
+          "sha256": "adf528037993e89c7c892798a5f857fd075ccdcc4b7d84fb317bc6f0fd3c8ee9",
+          "bytes": 1092
+        }
+      ]
+    },
+    {
+      "tag": "uk-UA",
+      "package": "hunspell-uk",
+      "files": [
+        {
+          "path": "uk_UA/uk_UA.aff",
+          "sha256": "2219dd15e9802adebc45722c60943b1472640260491af38dd3e43b07e75585e6",
+          "bytes": 211759
+        },
+        {
+          "path": "uk_UA/uk_UA.dic",
+          "sha256": "2e5a9e67be63bdb089b3459addb5d71113319d13768e277bcae20f3cc1ad5a93",
+          "bytes": 8919324
+        },
+        {
+          "path": "uk_UA/README_hyph_uk_UA.txt",
+          "sha256": "b5866714694f0e9a7c9d044984b4b39ec6289ade07fa7d2a083a31f5072f3529",
+          "bytes": 957
+        },
+        {
+          "path": "uk_UA/README_th_uk_UA.txt",
+          "sha256": "29aed1f76c8552b9ba22b00f9f3a5f8316498f95b50f5c1aad3a9743a560ba6c",
+          "bytes": 450
+        },
+        {
+          "path": "uk_UA/README_uk_UA.txt",
+          "sha256": "664436fee625b4a3e712483947d1711a2f467670f4c389bcf10abca2a564e1dc",
+          "bytes": 362
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+[package]
+name = "render"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+typography = { path = "../typography" }
+thiserror.workspace = true
+ttf-parser.workspace = true
+image.workspace = true
+
+tiny-skia = "0.11.4"

@@ -1,0 +1,20146 @@
+//! Native typesetting renderer: `DocModel` → A4 **PDF** via `parley` (layout,
+//! shaping, Korean/CJK line-breaking + font fallback) and `krilla` (PDF emit with
+//! subsetted embedded fonts and selectable text). Behind the `render` feature.
+//!
+//! Pipeline: blocks are laid out into a stream of flow items — text lines and
+//! table rows — which are flowed top-to-bottom onto fixed A4 pages, then each
+//! page's glyph runs and table borders are drawn with krilla. A table that spans
+//! pages repeats its header rows after each break. Opened DOCX rows may split at
+//! legal cell line boundaries unless effective `w:cantSplit` from direct row
+//! properties or a resolved table-style chain keeps a fitting row together.
+//! Nested tables reuse the same grid layout recursively and expose legal row
+//! fragments to the outer paginator, retaining protected boundaries while an
+//! over-tall row still splits to guarantee progress.
+//! Tables are rendered as a
+//! real grid: columns are reconstructed
+//! (including `col_span`/`row_span` placement), sized to authored `col_widths_pct`
+//! or to content, then bordered; cells carry rich per-run text (bold/italic/color/
+//! size/font), background shading, and vertical alignment. Images (block-level
+//! and inline) are decoded and drawn as raster pictures; model-backed clockwise
+//! rotation contributes to their fitted visual bounds and pagination.
+//!
+//! Fonts come from the system font collection (parley's default `FontContext`),
+//! so Korean renders when a Hangul-capable face is installed. For headless/server
+//! use without system CJK fonts, a caller can register its own font bytes via
+//! [`crate::render_pdf_with_fonts`] (the renderer does not embed a multi-megabyte
+//! CJK font into the crate; install one — e.g. Noto Sans CJK — or supply it).
+
+#[cfg(test)]
+mod flow;
+mod paginate;
+mod paragraph_flow;
+mod pdf;
+mod scene;
+mod shape;
+mod table;
+
+use paginate::*;
+#[cfg(test)]
+use paragraph_flow::layout_paragraph;
+use paragraph_flow::{
+    reserve_paragraph_page_fields, BlockFlowSink, BodyFlowQueue, ParagraphFlowRequest,
+    TableFlowRequest,
+};
+use shape::*;
+use table::*;
+
+#[cfg(test)]
+use scene::SceneLinkRect;
+use scene::{
+    LinkClip, PageScene, PageSceneOp, SceneFontId, SceneFontResource, SceneGlyph, SceneGlyphRun,
+    SceneImageEncoding, SceneImageId, SceneImageResource, ScenePoint, SceneRect, SceneTransform,
+    TextDecoration,
+};
+
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::num::NonZeroUsize;
+use std::rc::Rc;
+use std::sync::Arc;
+
+use krilla::color::rgb;
+use krilla::image::Image as PdfImage;
+use krilla::page::PageSettings;
+use krilla::text::{Font, GlyphId, KrillaGlyph};
+use krilla::{Data, Document as PdfDoc};
+use parley::layout::{Alignment, IndentOptions};
+use parley::style::{FontFamily, FontFamilyName, FontStyle, FontWeight, StyleProperty};
+use parley::{FontContext, Layout, LayoutContext};
+
+use crate::annotation::{
+    apply_field_text_format, instruction_parts, page_field_format_syntax_tail, FieldTextFormat,
+};
+use crate::model::{
+    Align, Block, Cell, CellMargins, CharProps, Chart, ChartKind, ChartShape, Color, DocModel,
+    FieldRole, Image, LineSpacingHint, ListInfo, PageSetup, PaginationHint, ParaProps, Paragraph,
+    Run, RunningSurfaceDistanceHints, RunningSurfaceLineSpacingHints, RunningSurfaceTabStopHints,
+    RunningSurfaceTableCellTabStopHints, SectionBreakKind, SectionColumnLayoutHints, SectionSetup,
+    Spacing, TabAlignment, TabLeader, TabStop, Table, TableBorderSide, TableCellLineSpacingHints,
+    TableCellNestedPaginationHints, TableCellPaginationHints, TableCellTabStopHints,
+    TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
+};
+use crate::page_number::{format_page_number, PageNumberFormat};
+use crate::report::{self, FeatureInventory, RenderReport, RenderWarning, RenderedPdf};
+use crate::{Error, Result};
+use crate::{FieldKind, FloatingShape, ShapePosition};
+
+// A4 fallback page geometry, in PDF points (used when the model has no page setup).
+const PAGE_W: f32 = 595.0;
+const PAGE_H: f32 = 842.0;
+const MARGIN: f32 = 56.0;
+
+/// Per-document page geometry in PDF points, derived from the model's `PageSetup`
+/// (so Letter, A3, custom margins, and landscape all render at the right size
+/// instead of a fixed A4). Replaces the former page-size constants.
+#[derive(Clone, Copy, PartialEq)]
+struct Geom {
+    page_w: f32,
+    page_h: f32,
+    left: f32,
+    right: f32,
+    top_m: f32,
+    bottom_m: f32,
+}
+
+impl Geom {
+    fn from_setup(p: &PageSetup) -> Geom {
+        let page_w = if p.width_pt > 72.0 {
+            p.width_pt
+        } else {
+            PAGE_W
+        };
+        let page_h = if p.height_pt > 72.0 {
+            p.height_pt
+        } else {
+            PAGE_H
+        };
+        // Clamp each side so the content box stays positive even on odd margins.
+        let max_h = (page_w / 2.0 - 20.0).max(0.0);
+        let max_v = (page_h / 2.0 - 20.0).max(0.0);
+        let pick = |v: f32, dflt: f32, max: f32| (if v > 0.0 { v } else { dflt }).min(max);
+        Geom {
+            page_w,
+            page_h,
+            left: pick(p.left(), MARGIN, max_h),
+            right: pick(p.right(), MARGIN, max_h),
+            top_m: pick(p.top(), MARGIN, max_v),
+            bottom_m: pick(p.bottom(), MARGIN, max_v),
+        }
+    }
+    fn content_w(&self) -> f32 {
+        (self.page_w - self.left - self.right).max(20.0)
+    }
+    fn top(&self) -> f32 {
+        self.top_m
+    }
+    fn bottom(&self) -> f32 {
+        self.page_h - self.bottom_m
+    }
+
+    fn with_content_width(self, width: f32) -> Self {
+        let width = width.clamp(MIN_COLUMN_WIDTH_PT, self.content_w());
+        Self {
+            right: (self.page_w - self.left - width).max(0.0),
+            ..self
+        }
+    }
+
+    fn from_section(setup: &SectionSetup) -> Self {
+        Self::from_setup(&setup.page)
+    }
+}
+
+const PARA_GAP: f32 = 6.0;
+const CELL_PAD: f32 = 3.0;
+const BORDER: f32 = 0.4;
+const MAX_TABLE_BORDER_SIZE_EIGHTHS: u16 = 96;
+/// Left indent added per list nesting level, in points.
+const LIST_INDENT: f32 = 18.0;
+/// Max nesting depth for tables-in-cells laid out by `shape_cell` (panic-free
+/// bound against pathologically nested tables).
+const MAX_CELL_DEPTH: u32 = 32;
+/// Max laid-out lines kept for a single table cell. A cell taller than ~78 pages is not a
+/// real document, but an unbounded line count makes the page-split paginator O(L²) (it peels
+/// one page-worth per `split_row` pass). Far above any real cell; bounds the worst case.
+const MAX_CELL_LINES: usize = 4096;
+/// Top of the running-header text band (within the top margin).
+const HEADER_Y: f32 = 24.0;
+/// Gap below the content box before the running-footer band.
+const FOOTER_GAP: f32 = 8.0;
+/// Hard cap on grid columns / a cell's column or row span, so a hostile model
+/// (e.g. `col_span = u16::MAX`) cannot amplify into millions of cells/elements.
+/// Far above any real document (Excel maxes at 16384 columns).
+const MAX_TABLE_COLS: usize = 1024;
+const EMU_PER_PT: f32 = 12_700.0;
+const MAX_FLOATING_SHAPE_OVERLAYS: usize = 64;
+const SMALL_CAPS_SCALE: f32 = 0.8;
+const VERTICAL_ALIGN_SCALE: f32 = 0.65;
+const MAX_CELL_INSET_PT: f32 = 720.0;
+const DEFAULT_TAB_STOP_PT: f32 = 36.0;
+const COLUMN_GAP_PT: f32 = 18.0;
+const COLUMN_SEPARATOR_WIDTH_PT: f32 = 0.5;
+const MIN_COLUMN_WIDTH_PT: f32 = 20.0;
+const MAX_SECTION_COLUMNS: usize = 64;
+const MAX_TARGET_COLUMN_REWRAP_PASSES: usize = 4;
+// Keep hostile numeric attributes away from PDF-coordinate overflow while
+// leaving every practical document value untouched.
+const MAX_ABSOLUTE_LINE_HEIGHT_PT: f32 = 1_000_000.0;
+const RIGHT_TO_LEFT_MARK: char = '\u{200F}';
+const RIGHT_TO_LEFT_ISOLATE: char = '\u{2067}';
+const POP_DIRECTIONAL_ISOLATE: char = '\u{2069}';
+
+#[derive(Clone, Copy, Default)]
+pub(crate) struct SourceRenderHints<'a> {
+    pub(crate) pagination: &'a [PaginationHint],
+    pub(crate) pagination_boundaries: &'a [usize],
+    pub(crate) line_spacing: &'a [Option<LineSpacingHint>],
+    pub(crate) tab_stops: &'a [Vec<TabStop>],
+    pub(crate) column_break_offsets: &'a [Vec<usize>],
+    pub(crate) section_column_gap_pt: &'a [Option<f32>],
+    pub(crate) section_column_layouts: &'a [Option<SectionColumnLayoutHints>],
+    pub(crate) section_column_separators: &'a [bool],
+    pub(crate) section_column_rtl: &'a [bool],
+    pub(crate) final_section_column_gap_pt: Option<f32>,
+    pub(crate) final_section_column_layout: Option<&'a SectionColumnLayoutHints>,
+    pub(crate) final_section_column_separator: bool,
+    pub(crate) final_section_column_rtl: bool,
+    pub(crate) default_tab_stop_pt: Option<f32>,
+    pub(crate) table_row_pagination: &'a [Vec<TableRowPaginationHint>],
+    pub(crate) table_cell_pagination: &'a [TableCellPaginationHints],
+    pub(crate) table_cell_line_spacing: &'a [TableCellLineSpacingHints],
+    pub(crate) table_nested_pagination: &'a [TableCellNestedPaginationHints],
+    pub(crate) table_cell_tab_stops: &'a [TableCellTabStopHints],
+    pub(crate) running_line_spacing: &'a [RunningSurfaceLineSpacingHints],
+    pub(crate) running_tab_stops: &'a [RunningSurfaceTabStopHints],
+    pub(crate) running_table_cell_tab_stops: &'a [RunningSurfaceTableCellTabStopHints],
+    pub(crate) running_surface_distances: &'a [RunningSurfaceDistanceHints],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DynamicTextKind {
+    PageNumber,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DynamicTextRun {
+    kind: DynamicTextKind,
+    page_field_index: Option<usize>,
+    number_format: Option<PageNumberFormat>,
+    text_format: Option<FieldTextFormat>,
+    props: CharProps,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PageDisplayNumber {
+    value: usize,
+    format: Option<PageNumberFormat>,
+}
+
+impl PageDisplayNumber {
+    fn decimal(value: usize) -> Self {
+        Self {
+            value,
+            format: None,
+        }
+    }
+
+    fn text(self) -> Option<String> {
+        format_page_number(self.value, self.format)
+    }
+}
+
+/// One drawable run on a line: its x offset within the content box, neutral
+/// glyph and font data, the size, the fill color, and the source text (for the
+/// ToUnicode map that keeps the PDF text selectable).
+#[derive(Clone)]
+struct RunDraw {
+    x: f32,
+    glyphs: Vec<KrillaGlyph>,
+    scene_font: SceneFontResource,
+    size: f32,
+    color: rgb::Color,
+    highlight: Option<rgb::Color>,
+    ascent: f32,
+    descent: f32,
+    baseline_shift: f32,
+    underline: Option<TextDecoration>,
+    strikethrough: Option<TextDecoration>,
+    /// Hyperlink target, if this run is part of a `FieldRole::Hyperlink` range.
+    link: Option<Rc<str>>,
+    /// Dynamic text to re-shape when the final page context is known.
+    dynamic: Option<DynamicTextRun>,
+    text: Rc<str>,
+    is_rtl: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RunPaint {
+    color: rgb::Color,
+    highlight: Option<rgb::Color>,
+    baseline_shift: f32,
+    underline: bool,
+    strikethrough: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct LineBackground {
+    color: rgb::Color,
+    width: f32,
+}
+
+#[derive(Clone, Copy)]
+struct TabLeaderSpan {
+    start: f32,
+    end: f32,
+    style: TabLeader,
+    color: rgb::Color,
+}
+
+impl RunDraw {
+    /// Advance width of the run in points (sum of glyph advances × size).
+    fn width(&self) -> f32 {
+        self.glyphs.iter().map(|g| g.x_advance).sum::<f32>() * self.size
+    }
+}
+
+impl SceneGlyph {
+    fn from_krilla(glyph: &KrillaGlyph, text: &str) -> Option<Self> {
+        let range = glyph.text_range.clone();
+        if glyph.location.is_some()
+            || range.start >= range.end
+            || range.end > text.len()
+            || !text.is_char_boundary(range.start)
+            || !text.is_char_boundary(range.end)
+            || ![
+                glyph.x_advance,
+                glyph.x_offset,
+                glyph.y_offset,
+                glyph.y_advance,
+            ]
+            .into_iter()
+            .all(f32::is_finite)
+        {
+            return None;
+        }
+        Some(Self {
+            glyph_id: glyph.glyph_id.to_u32(),
+            text_range: range,
+            x_advance: glyph.x_advance,
+            x_offset: glyph.x_offset,
+            y_offset: glyph.y_offset,
+            y_advance: glyph.y_advance,
+        })
+    }
+}
+
+impl PageScene {
+    fn push_glyph_run(&mut self, run: &RunDraw, x_abs: f32, baseline_y: f32) -> Result<usize> {
+        let Some(origin) = ScenePoint::new(x_abs + run.x, baseline_y + run.baseline_shift) else {
+            return Err(Error::Render(
+                "page scene contains an invalid glyph run".into(),
+            ));
+        };
+        let decoration_is_valid = |decoration: Option<TextDecoration>| {
+            decoration.is_none_or(|decoration| {
+                decoration.offset.is_finite()
+                    && decoration.thickness.is_finite()
+                    && decoration.thickness > 0.0
+            })
+        };
+        if run.glyphs.is_empty()
+            || run.text.is_empty()
+            || !run.scene_font.is_valid()
+            || ![run.size, run.ascent, run.descent]
+                .into_iter()
+                .all(f32::is_finite)
+            || run.size <= 0.0
+            || !decoration_is_valid(run.underline)
+            || !decoration_is_valid(run.strikethrough)
+        {
+            return Err(Error::Render(
+                "page scene contains an invalid glyph run".into(),
+            ));
+        }
+        if self.operations.len() >= self.operation_limit {
+            return Err(Error::Render(format!(
+                "page scene exceeds the {}-operation limit",
+                self.operation_limit
+            )));
+        }
+        let Some(next_glyph_count) = self.glyph_count.checked_add(run.glyphs.len()) else {
+            return Err(Error::Render(format!(
+                "page scene exceeds the {}-glyph limit",
+                self.glyph_limit
+            )));
+        };
+        if next_glyph_count > self.glyph_limit {
+            return Err(Error::Render(format!(
+                "page scene exceeds the {}-glyph limit",
+                self.glyph_limit
+            )));
+        }
+        let glyphs = run
+            .glyphs
+            .iter()
+            .map(|glyph| SceneGlyph::from_krilla(glyph, &run.text))
+            .collect::<Option<Vec<_>>>()
+            .ok_or_else(|| Error::Render("page scene contains an invalid glyph run".into()))?;
+        let existing = self
+            .font_resources
+            .iter()
+            .position(|candidate| candidate.shares_source_with(&run.scene_font));
+        let font = match existing {
+            Some(index) => SceneFontId(index),
+            None => {
+                if self.font_resources.len() >= self.font_limit {
+                    return Err(Error::Render(format!(
+                        "page scene exceeds the {}-font-resource limit",
+                        self.font_limit
+                    )));
+                }
+                let id = SceneFontId(self.font_resources.len());
+                self.font_resources.push(run.scene_font.clone());
+                id
+            }
+        };
+        let operation_index = self.operations.len();
+        self.operations.push(PageSceneOp::GlyphRun(SceneGlyphRun {
+            font,
+            origin,
+            glyphs: glyphs.into_boxed_slice(),
+            text: run.text.clone(),
+            size: run.size,
+            color: run.color,
+            highlight: run.highlight,
+            ascent: run.ascent,
+            descent: run.descent,
+            underline: run.underline,
+            strikethrough: run.strikethrough,
+            link: run.link.clone(),
+            is_rtl: run.is_rtl,
+        }));
+        self.glyph_count = next_glyph_count;
+        Ok(operation_index)
+    }
+}
+
+/// A laid-out line: its advance height, the baseline offset from the line top,
+/// its left indent (0 inside table cells; set for indented/list paragraphs), and
+/// its runs.
+#[derive(Clone)]
+struct LineLayout {
+    height: f32,
+    baseline: f32,
+    clip_to_height: bool,
+    x_indent: f32,
+    char_range: Option<LineCharRange>,
+    background: Option<LineBackground>,
+    cell_spacing: CellLineSpacing,
+    cell_paragraph: Option<CellParagraphLine>,
+    cell_cant_split_group: Option<NonZeroUsize>,
+    cell_visual: Option<CellVisual>,
+    leaders: Vec<TabLeaderSpan>,
+    runs: Vec<RunDraw>,
+}
+
+impl LineLayout {
+    fn cell_extent(&self) -> f32 {
+        self.cell_spacing.before + self.height + self.cell_spacing.after
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+struct CellLineSpacing {
+    before: f32,
+    after: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CellParagraphLine {
+    scope_id: usize,
+    paragraph_id: usize,
+    line_index: usize,
+    line_count: usize,
+    pagination: PaginationHint,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct LineCharRange {
+    start: usize,
+    end: usize,
+}
+
+impl LineCharRange {
+    fn contains(self, offset: usize) -> bool {
+        self.start <= offset && offset <= self.end
+    }
+}
+
+/// A bordered table cell: its canonical horizontal edges and modeled width
+/// (relative to the content origin), its wrapped rich text lines, the background
+/// fill, and the vertical alignment.
+#[derive(Clone)]
+struct CellBox {
+    x: f32,
+    right: f32,
+    width: f32,
+    lines: Vec<LineLayout>,
+    insets: CellInsets,
+    shading: Option<rgb::Color>,
+    valign: VCell,
+    border_edges: CellBorderEdges,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CellInsets {
+    top: f32,
+    right: f32,
+    bottom: f32,
+    left: f32,
+}
+
+impl CellInsets {
+    fn zero() -> Self {
+        Self {
+            top: 0.0,
+            right: 0.0,
+            bottom: 0.0,
+            left: 0.0,
+        }
+    }
+}
+
+/// One table row: its height and the cells across it (including empty cells where
+/// a `row_span` from an earlier row covers a column).
+#[derive(Clone)]
+struct RowLayout {
+    height: f32,
+    cells: Vec<CellBox>,
+    cant_split: bool,
+    border: TableBorderPaints,
+    table_id: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TableBorderPaint {
+    color: rgb::Color,
+    width: f32,
+}
+
+impl Default for TableBorderPaint {
+    fn default() -> Self {
+        Self {
+            color: rgb::Color::black(),
+            width: BORDER,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TableBorderPaints {
+    top: TableBorderPaint,
+    left: TableBorderPaint,
+    bottom: TableBorderPaint,
+    right: TableBorderPaint,
+    inside_h: TableBorderPaint,
+    inside_v: TableBorderPaint,
+}
+
+impl TableBorderPaints {
+    fn get(self, side: TableBorderSide) -> TableBorderPaint {
+        match side {
+            TableBorderSide::Top => self.top,
+            TableBorderSide::Left => self.left,
+            TableBorderSide::Bottom => self.bottom,
+            TableBorderSide::Right => self.right,
+            TableBorderSide::InsideHorizontal => self.inside_h,
+            TableBorderSide::InsideVertical => self.inside_v,
+        }
+    }
+
+    fn with_max_width(self, max_width: f32) -> Self {
+        let bound = |paint: TableBorderPaint| TableBorderPaint {
+            width: paint.width.min(max_width),
+            ..paint
+        };
+        Self {
+            top: bound(self.top),
+            left: bound(self.left),
+            bottom: bound(self.bottom),
+            right: bound(self.right),
+            inside_h: bound(self.inside_h),
+            inside_v: bound(self.inside_v),
+        }
+    }
+}
+
+impl Default for TableBorderPaints {
+    fn default() -> Self {
+        let paint = TableBorderPaint::default();
+        Self {
+            top: paint,
+            left: paint,
+            bottom: paint,
+            right: paint,
+            inside_h: paint,
+            inside_v: paint,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CellBorderEdges {
+    top: Option<TableBorderSide>,
+    left: Option<TableBorderSide>,
+    bottom: Option<TableBorderSide>,
+    right: Option<TableBorderSide>,
+}
+
+impl CellBorderEdges {
+    #[cfg(test)]
+    fn outer() -> Self {
+        Self {
+            top: Some(TableBorderSide::Top),
+            left: Some(TableBorderSide::Left),
+            bottom: Some(TableBorderSide::Bottom),
+            right: Some(TableBorderSide::Right),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CellBorderPaints {
+    top: Option<TableBorderPaint>,
+    left: Option<TableBorderPaint>,
+    bottom: Option<TableBorderPaint>,
+    right: Option<TableBorderPaint>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct VerticalBorderLine {
+    x: f32,
+    paint: TableBorderPaint,
+}
+
+struct RenderedRowBorders {
+    table_id: usize,
+    bottom: f32,
+    vertical: Vec<VerticalBorderLine>,
+}
+
+impl CellBorderPaints {
+    fn resolve(edges: CellBorderEdges, paints: TableBorderPaints) -> Self {
+        Self {
+            top: edges.top.map(|side| paints.get(side)),
+            left: edges.left.map(|side| paints.get(side)),
+            bottom: edges.bottom.map(|side| paints.get(side)),
+            right: edges.right.map(|side| paints.get(side)),
+        }
+    }
+
+    #[cfg(test)]
+    fn uniform(paint: TableBorderPaint) -> Self {
+        Self {
+            top: Some(paint),
+            left: Some(paint),
+            bottom: Some(paint),
+            right: Some(paint),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+struct TopBottomBand {
+    top: f32,
+    bottom: f32,
+    anchor_offset: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ImageLayout {
+    image_w: f32,
+    image_h: f32,
+    bounds_w: f32,
+    bounds_h: f32,
+    rotation_degrees: i32,
+}
+
+#[derive(Clone)]
+struct RenderImage {
+    scene: SceneImageResource,
+}
+
+#[derive(Clone)]
+enum CellVisual {
+    Picture {
+        image: RenderImage,
+        layout: ImageLayout,
+    },
+    Chart {
+        chart: Chart,
+        width: f32,
+        height: f32,
+        layout: ScaledChartLayout,
+    },
+    NestedRow {
+        row: Box<RowLayout>,
+    },
+}
+
+impl CellVisual {
+    fn fit_to_height(&mut self, max_height: f32) -> Option<f32> {
+        match self {
+            Self::Picture { layout, .. } => {
+                let fitted = fit_image_layout_to_box(*layout, layout.bounds_w, max_height)?;
+                *layout = fitted;
+                Some(fitted.bounds_h)
+            }
+            Self::Chart {
+                width,
+                height,
+                layout,
+                ..
+            } => {
+                let fitted = fit_chart_layout_to_box(*width, *height, layout.bounds_w, max_height)?;
+                *layout = fitted;
+                Some(fitted.bounds_h)
+            }
+            Self::NestedRow { .. } => None,
+        }
+    }
+}
+
+/// A unit of block flow, paginated top-to-bottom. `Table` groups its rows (with the
+/// header-row count) so pagination can repeat headers and split oversized rows;
+/// `Row` is an individual placed row produced during pagination.
+enum FlowItem {
+    BlockStart {
+        index: usize,
+        pagination: PaginationHint,
+    },
+    TopBottomBand {
+        top: f32,
+        bottom: f32,
+        anchor_offset: usize,
+    },
+    PaginationBoundary,
+    Gap(f32),
+    Line(LineLayout),
+    Row(RowLayout),
+    PageBreak,
+    ColumnBreak,
+    SectionColumnGap(f32),
+    SectionColumnLayout(Rc<SectionColumnLayoutHints>),
+    SectionColumnRtl,
+    SectionBreak(SectionSetup),
+    Table {
+        rows: Vec<RowLayout>,
+        header_rows: usize,
+    },
+    Picture {
+        image: RenderImage,
+        layout: ImageLayout,
+    },
+    Chart {
+        chart: Chart,
+        w: f32,
+        h: f32,
+    },
+}
+
+#[derive(Default)]
+struct LayoutCapture {
+    collect_page_fields: bool,
+    page_fields: Vec<Option<usize>>,
+    next_table_id: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct LayoutCaptureCheckpoint {
+    collect_page_fields: bool,
+    page_field_count: usize,
+    next_table_id: usize,
+}
+
+impl LayoutCapture {
+    fn page_fields() -> Self {
+        Self {
+            collect_page_fields: true,
+            page_fields: Vec::new(),
+            next_table_id: 0,
+        }
+    }
+
+    fn from_checkpoint(checkpoint: LayoutCaptureCheckpoint) -> Self {
+        Self {
+            collect_page_fields: checkpoint.collect_page_fields,
+            page_fields: vec![None; checkpoint.page_field_count],
+            next_table_id: checkpoint.next_table_id,
+        }
+    }
+
+    fn register_page_field(&mut self) -> Option<usize> {
+        if !self.collect_page_fields {
+            return None;
+        }
+        let index = self.page_fields.len();
+        self.page_fields.push(None);
+        Some(index)
+    }
+
+    fn allocate_table_id(&mut self) -> usize {
+        let id = self.next_table_id;
+        self.next_table_id = self.next_table_id.saturating_add(1);
+        id
+    }
+
+    fn checkpoint(&self) -> LayoutCaptureCheckpoint {
+        LayoutCaptureCheckpoint {
+            collect_page_fields: self.collect_page_fields,
+            page_field_count: self.page_fields.len(),
+            next_table_id: self.next_table_id,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct RenderPageSection {
+    setup: SectionSetup,
+    first_page_index: usize,
+    section_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct FloatingShapeOverlay {
+    page_index: usize,
+    behind_doc: bool,
+    label: String,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct BlockLinePage {
+    page_index: usize,
+    range: LineCharRange,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum ShapeAxis {
+    Horizontal,
+    Vertical,
+}
+
+/// Decode embedded image bytes into a neutral scene resource plus the current PDF
+/// backend handle, by MIME when known and otherwise by magic-byte sniffing.
+fn decode_image(bytes: &[u8], mime: Option<&str>) -> Option<(RenderImage, u32, u32)> {
+    let is_webp = bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP";
+    let encoding = match mime {
+        Some("image/png") => SceneImageEncoding::Png,
+        Some("image/jpeg") => SceneImageEncoding::Jpeg,
+        Some("image/gif") => SceneImageEncoding::Gif,
+        Some("image/webp") => SceneImageEncoding::Webp,
+        _ if bytes.starts_with(&[0x89, 0x50, 0x4E, 0x47]) => SceneImageEncoding::Png,
+        _ if bytes.starts_with(&[0xFF, 0xD8]) => SceneImageEncoding::Jpeg,
+        _ if bytes.starts_with(b"GIF8") => SceneImageEncoding::Gif,
+        _ if is_webp => SceneImageEncoding::Webp,
+        _ => return None,
+    };
+    let bytes = Arc::new(bytes.to_vec());
+    let data: Data = bytes.clone().into();
+    let pdf = match encoding {
+        SceneImageEncoding::Png => PdfImage::from_png(data, false),
+        SceneImageEncoding::Jpeg => PdfImage::from_jpeg(data, false),
+        SceneImageEncoding::Gif => PdfImage::from_gif(data, false),
+        SceneImageEncoding::Webp => PdfImage::from_webp(data, false),
+        SceneImageEncoding::Rgba8 => return None,
+    }
+    .ok()?;
+    let (width_px, height_px) = pdf.size();
+    let scene = SceneImageResource {
+        encoding,
+        bytes,
+        width_px,
+        height_px,
+    };
+    Some((RenderImage { scene }, width_px, height_px))
+}
+
+fn decode_model_image(img: &Image) -> Option<(RenderImage, u32, u32)> {
+    let bytes = img.bytes.as_ref()?;
+    if img.mime.as_deref() == Some(crate::image::MIME_RAW_RGBA) {
+        let (width, height) = (img.width_px?, img.height_px?);
+        let expected = (width as usize)
+            .checked_mul(height as usize)?
+            .checked_mul(4)?;
+        if bytes.len() != expected {
+            return None;
+        }
+        let scene = SceneImageResource {
+            encoding: SceneImageEncoding::Rgba8,
+            bytes: Arc::new(bytes.clone()),
+            width_px: width,
+            height_px: height,
+        };
+        return Some((RenderImage { scene }, width, height));
+    }
+    decode_image(bytes, img.mime.as_deref())
+}
+
+fn clockwise_rotation_components(degrees: i32) -> (f32, f32) {
+    match degrees.rem_euclid(360) {
+        0 => (1.0, 0.0),
+        90 => (0.0, 1.0),
+        180 => (-1.0, 0.0),
+        270 => (0.0, -1.0),
+        degrees => {
+            let radians = (degrees as f32).to_radians();
+            (radians.cos(), radians.sin())
+        }
+    }
+}
+
+fn image_layout(
+    width_px: u32,
+    height_px: u32,
+    rotation_degrees: Option<i32>,
+    max_w: f32,
+    max_h: f32,
+) -> Option<ImageLayout> {
+    let mut image_w = width_px as f32 * 0.75;
+    let mut image_h = height_px as f32 * 0.75;
+    let rotation_degrees = rotation_degrees.unwrap_or(0).rem_euclid(360);
+    let (cos, sin) = clockwise_rotation_components(rotation_degrees);
+    let mut bounds_w = image_w * cos.abs() + image_h * sin.abs();
+    let mut bounds_h = image_w * sin.abs() + image_h * cos.abs();
+    if ![image_w, image_h, bounds_w, bounds_h, max_w, max_h]
+        .into_iter()
+        .all(|value| value.is_finite() && value > 0.0)
+    {
+        return None;
+    }
+
+    if bounds_w > max_w {
+        let scale = max_w / bounds_w;
+        image_w *= scale;
+        image_h *= scale;
+        bounds_w = max_w;
+        bounds_h *= scale;
+    }
+    if bounds_h > max_h {
+        let scale = max_h / bounds_h;
+        image_w *= scale;
+        image_h *= scale;
+        bounds_w *= scale;
+        bounds_h = max_h;
+    }
+    if ![image_w, image_h, bounds_w, bounds_h]
+        .into_iter()
+        .all(|value| value.is_finite() && value > 0.0)
+    {
+        return None;
+    }
+    Some(ImageLayout {
+        image_w,
+        image_h,
+        bounds_w,
+        bounds_h,
+        rotation_degrees,
+    })
+}
+
+fn image_paint_transform(layout: ImageLayout, bounds_x: f32, bounds_y: f32) -> SceneTransform {
+    if layout.rotation_degrees == 0 {
+        return SceneTransform::from_translate(bounds_x, bounds_y);
+    }
+    let (cos, sin) = clockwise_rotation_components(layout.rotation_degrees);
+    let center_x = bounds_x + layout.bounds_w * 0.5;
+    let center_y = bounds_y + layout.bounds_h * 0.5;
+    let image_center_x = layout.image_w * 0.5;
+    let image_center_y = layout.image_h * 0.5;
+    SceneTransform::from_row(
+        cos,
+        sin,
+        -sin,
+        cos,
+        center_x - cos * image_center_x + sin * image_center_y,
+        center_y - sin * image_center_x - cos * image_center_y,
+    )
+}
+
+/// Decode a model image and size it to a [`FlowItem::Picture`] (96-dpi px → PDF
+/// points, rotated bounds fit to the content box and one page, aspect preserved).
+/// `None` if there are no bytes or the format is undecodable.
+fn image_flow_item(img: &Image, geom: Geom) -> Option<FlowItem> {
+    let (image, width_px, height_px) = decode_model_image(img)?;
+    let layout = image_layout(
+        width_px,
+        height_px,
+        img.rotation_degrees,
+        geom.content_w(),
+        geom.bottom() - geom.top(),
+    )?;
+    Some(FlowItem::Picture { image, layout })
+}
+
+fn image_is_undecodable(img: &Image) -> bool {
+    img.bytes.is_some() && decode_model_image(img).is_none()
+}
+
+fn image_missing_bytes(img: &Image) -> bool {
+    img.bytes.is_none()
+}
+
+fn count_images_matching(blocks: &[Block], matches: fn(&Image) -> bool) -> usize {
+    let mut count = 0;
+    for block in blocks {
+        match block {
+            Block::Paragraph(paragraph) => {
+                count += paragraph
+                    .runs
+                    .iter()
+                    .filter(|run| !run.props.hidden)
+                    .filter_map(|run| run.image.as_ref())
+                    .filter(|image| matches(image))
+                    .count();
+            }
+            Block::Table(table) => {
+                for row in &table.rows {
+                    for cell in &row.cells {
+                        count += count_images_matching(&cell.blocks, matches);
+                    }
+                }
+            }
+            Block::Image(image) if matches(image) => count += 1,
+            Block::Image(_) | Block::Chart(_) | Block::PageBreak | Block::SectionBreak(_) => {}
+        }
+    }
+    count
+}
+
+fn count_undecodable_images(blocks: &[Block]) -> usize {
+    count_images_matching(blocks, image_is_undecodable)
+}
+
+fn count_missing_image_bytes(blocks: &[Block]) -> usize {
+    count_images_matching(blocks, image_missing_bytes)
+}
+
+fn render_warnings_for_model(
+    unsupported: &FeatureInventory,
+    model: &DocModel,
+) -> Vec<RenderWarning> {
+    let mut warnings = report::render_warnings_for(unsupported);
+    let missing_image_bytes = count_missing_image_bytes(&model.blocks);
+    if missing_image_bytes > 0 {
+        warnings.push(RenderWarning::MissingImageBytes {
+            count: missing_image_bytes,
+        });
+    }
+    let undecodable_images = count_undecodable_images(&model.blocks);
+    if undecodable_images > 0 {
+        warnings.push(RenderWarning::UndecodableRasterImages {
+            count: undecodable_images,
+        });
+    }
+    warnings
+}
+
+/// Size an authored chart block for PDF flow (96-dpi px -> PDF points, fit to
+/// the content box and one page). Empty charts are skipped rather than rendered
+/// as misleading empty axes.
+fn authored_chart_dimensions(chart: &Chart) -> Option<(f32, f32)> {
+    if chart.categories.is_empty() || chart.series.is_empty() {
+        return None;
+    }
+    let width = chart.width_px.unwrap_or(480) as f32 * 0.75;
+    let height = chart.height_px.unwrap_or(320) as f32 * 0.75;
+    (width.is_finite() && height.is_finite() && width > 0.0 && height > 0.0)
+        .then_some((width, height))
+}
+
+fn chart_flow_item(chart: &Chart, geom: Geom) -> Option<FlowItem> {
+    let (width, height) = authored_chart_dimensions(chart)?;
+    let layout =
+        fit_chart_layout_to_box(width, height, geom.content_w(), geom.bottom() - geom.top())?;
+    Some(FlowItem::Chart {
+        chart: chart.clone(),
+        w: layout.bounds_w,
+        h: layout.bounds_h,
+    })
+}
+
+/// The system font stack, with Windows/Noto Korean faces preferred so Hangul
+/// shapes even before fontique's automatic per-script fallback kicks in.
+fn font_stack() -> FontFamily<'static> {
+    FontFamily::List(Cow::Borrowed(&[
+        FontFamilyName::Named(Cow::Borrowed("Malgun Gothic")),
+        FontFamilyName::Named(Cow::Borrowed("Noto Sans CJK KR")),
+        FontFamilyName::Named(Cow::Borrowed("Noto Sans KR")),
+        FontFamilyName::Named(Cow::Borrowed("Noto Sans Arabic")),
+        FontFamilyName::Named(Cow::Borrowed("Noto Sans Hebrew")),
+        FontFamilyName::Named(Cow::Borrowed("Arial")),
+    ]))
+}
+
+/// The system stack with a named face tried first (for an authored `CharProps.font`),
+/// then the Korean-capable fallbacks.
+fn named_stack(name: &str) -> FontFamily<'static> {
+    FontFamily::List(Cow::Owned(vec![
+        FontFamilyName::Named(Cow::Owned(name.to_string())),
+        FontFamilyName::Named(Cow::Borrowed("Malgun Gothic")),
+        FontFamilyName::Named(Cow::Borrowed("Noto Sans CJK KR")),
+        FontFamilyName::Named(Cow::Borrowed("Noto Sans KR")),
+        FontFamilyName::Named(Cow::Borrowed("Noto Sans Arabic")),
+        FontFamilyName::Named(Cow::Borrowed("Noto Sans Hebrew")),
+        FontFamilyName::Named(Cow::Borrowed("Arial")),
+    ]))
+}
+
+/// The `CharProps` range covering byte `pos`.
+fn props_at(ranges: &[(usize, usize, CharProps)], pos: usize) -> Option<&CharProps> {
+    // `ranges` are appended in run order, so they are sorted by start and non-overlapping:
+    // binary-search the one covering `pos` instead of scanning from the front per cluster,
+    // which made shaping O(clusters × runs) = O(N²) on a paragraph of many tiny runs.
+    let i = ranges.partition_point(|(s, _, _)| *s <= pos);
+    if i == 0 {
+        return None;
+    }
+    let (_, e, p) = &ranges[i - 1];
+    (pos < *e).then_some(p)
+}
+
+fn model_color(color: Color) -> rgb::Color {
+    rgb::Color::new(color.r, color.g, color.b)
+}
+
+#[cfg(test)]
+fn color_at(ranges: &[(usize, usize, CharProps)], pos: usize) -> rgb::Color {
+    props_at(ranges, pos)
+        .and_then(|props| props.color)
+        .map(model_color)
+        .unwrap_or_else(|| rgb::Color::new(0, 0, 0))
+}
+
+fn word_highlight(value: Option<&str>) -> Option<rgb::Color> {
+    let value = value?.trim();
+    let color = match value.to_ascii_lowercase().as_str() {
+        "black" => (0x00, 0x00, 0x00),
+        "blue" => (0x00, 0x00, 0xFF),
+        "cyan" => (0x00, 0xFF, 0xFF),
+        "green" => (0x00, 0xFF, 0x00),
+        "magenta" => (0xFF, 0x00, 0xFF),
+        "red" => (0xFF, 0x00, 0x00),
+        "yellow" => (0xFF, 0xFF, 0x00),
+        "white" => (0xFF, 0xFF, 0xFF),
+        "darkblue" => (0x00, 0x00, 0x80),
+        "darkcyan" => (0x00, 0x80, 0x80),
+        "darkgreen" => (0x00, 0x80, 0x00),
+        "darkmagenta" => (0x80, 0x00, 0x80),
+        "darkred" => (0x80, 0x00, 0x00),
+        "darkyellow" => (0x80, 0x80, 0x00),
+        "darkgray" | "darkgrey" => (0x80, 0x80, 0x80),
+        "lightgray" | "lightgrey" => (0xC0, 0xC0, 0xC0),
+        _ => return None,
+    };
+    Some(rgb::Color::new(color.0, color.1, color.2))
+}
+
+fn synthetic_font_scale(props: &CharProps) -> f32 {
+    let small_caps = if props.small_caps {
+        SMALL_CAPS_SCALE
+    } else {
+        1.0
+    };
+    let vertical = if props.vert_align == VertAlign::Baseline {
+        1.0
+    } else {
+        VERTICAL_ALIGN_SCALE
+    };
+    small_caps * vertical
+}
+
+fn paint_at(ranges: &[(usize, usize, CharProps)], pos: usize, font_size: f32) -> RunPaint {
+    let Some(props) = props_at(ranges, pos) else {
+        return default_run_paint();
+    };
+    let baseline_shift = match props.vert_align {
+        VertAlign::Baseline => 0.0,
+        VertAlign::Super => -font_size * 0.55,
+        VertAlign::Sub => font_size * 0.25,
+    };
+    RunPaint {
+        color: props
+            .color
+            .map(model_color)
+            .unwrap_or_else(|| rgb::Color::new(0, 0, 0)),
+        highlight: word_highlight(props.highlight.as_deref()),
+        baseline_shift,
+        underline: props.underline,
+        strikethrough: props.strike,
+    }
+}
+
+fn default_run_paint() -> RunPaint {
+    RunPaint {
+        color: rgb::Color::new(0, 0, 0),
+        highlight: None,
+        baseline_shift: 0.0,
+        underline: false,
+        strikethrough: false,
+    }
+}
+
+/// Apply `w:caps`/`w:smallCaps` to a run's text for rendering — both display
+/// uppercased (small-caps is approximated as full caps). Render-only: the stored
+/// model text keeps its original case, so `text()`/exporters match the source.
+fn cased(props: &CharProps, text: &str) -> String {
+    if props.caps || props.small_caps {
+        text.to_uppercase()
+    } else {
+        text.to_string()
+    }
+}
+
+fn font_mapped_text(props: &CharProps, text: &str) -> String {
+    let Some(font) = props.font.as_deref() else {
+        return text.to_string();
+    };
+    let normalized = font
+        .chars()
+        .filter(|ch| !ch.is_whitespace() && *ch != '-' && *ch != '_')
+        .flat_map(char::to_lowercase)
+        .collect::<String>();
+    if normalized.contains("wingdings") {
+        map_chars(text, wingdings_char)
+    } else if normalized == "symbol" || normalized.ends_with("symbol") {
+        map_chars(text, symbol_char)
+    } else {
+        text.to_string()
+    }
+}
+
+fn display_text(props: &CharProps, text: &str) -> String {
+    font_mapped_text(props, &cased(props, text))
+}
+
+struct StyledDisplaySegment {
+    text: String,
+    props: CharProps,
+    source_start: usize,
+    source_end: usize,
+}
+
+fn styled_display_segments(props: &CharProps, text: &str) -> Vec<StyledDisplaySegment> {
+    let source_len = text.chars().count();
+    if text.is_empty() {
+        return Vec::new();
+    }
+    if props.caps || !props.small_caps {
+        let mut shaped_props = props.clone();
+        // Casing is materialized into the display string. With both properties
+        // set, all-caps wins and authored capitals retain their full size.
+        shaped_props.caps = false;
+        if props.caps {
+            shaped_props.small_caps = false;
+        }
+        return vec![StyledDisplaySegment {
+            text: display_text(props, text),
+            props: shaped_props,
+            source_start: 0,
+            source_end: source_len,
+        }];
+    }
+
+    let mut segments: Vec<StyledDisplaySegment> = Vec::new();
+    for (source_start, ch) in text.chars().enumerate() {
+        let synthetic_small_cap = ch.is_lowercase();
+        let visible = if synthetic_small_cap {
+            ch.to_uppercase().collect::<String>()
+        } else {
+            ch.to_string()
+        };
+        let mut shaped_props = props.clone();
+        shaped_props.caps = false;
+        shaped_props.small_caps = synthetic_small_cap;
+        let visible = font_mapped_text(&shaped_props, &visible);
+        if let Some(last) = segments.last_mut() {
+            if last.props == shaped_props && last.source_end == source_start {
+                last.text.push_str(&visible);
+                last.source_end += 1;
+                continue;
+            }
+        }
+        segments.push(StyledDisplaySegment {
+            text: visible,
+            props: shaped_props,
+            source_start,
+            source_end: source_start + 1,
+        });
+    }
+    segments
+}
+
+fn append_directional_control(
+    text: &mut String,
+    ranges: &mut Vec<(usize, usize, CharProps)>,
+    source_char_ranges: Option<&mut Vec<(usize, usize)>>,
+    props: CharProps,
+    control: char,
+    source_offset: usize,
+) {
+    let start = text.len();
+    text.push(control);
+    ranges.push((start, text.len(), props));
+    if let Some(source_char_ranges) = source_char_ranges {
+        source_char_ranges.push((source_offset, source_offset));
+    }
+}
+
+fn has_visible_text(text: &str) -> bool {
+    text.chars()
+        .any(|ch| !ch.is_whitespace() && !is_injected_directional_control(ch))
+}
+
+fn is_injected_directional_control(ch: char) -> bool {
+    matches!(
+        ch,
+        RIGHT_TO_LEFT_MARK | RIGHT_TO_LEFT_ISOLATE | POP_DIRECTIONAL_ISOLATE
+    )
+}
+
+fn drawable_text_range(text: &str, mut range: std::ops::Range<usize>) -> std::ops::Range<usize> {
+    while range.start < range.end {
+        let Some(ch) = text[range.clone()].chars().next() else {
+            break;
+        };
+        if !is_injected_directional_control(ch) {
+            break;
+        }
+        range.start += ch.len_utf8();
+    }
+    while range.start < range.end {
+        let Some(ch) = text[range.clone()].chars().next_back() else {
+            break;
+        };
+        if !is_injected_directional_control(ch) {
+            break;
+        }
+        range.end -= ch.len_utf8();
+    }
+    range
+}
+
+fn placeholder_label(count: usize, singular: &str, plural: &str, suffix: &str) -> String {
+    let label = if count == 1 { singular } else { plural };
+    format!("[rwml preview placeholder: {count} {label} {suffix}]")
+}
+
+fn emu_to_pt(value: i64) -> f32 {
+    value as f32 / EMU_PER_PT
+}
+
+fn format_pt(value: f32) -> String {
+    let rounded = value.round();
+    if (value - rounded).abs() < 0.05 {
+        format!("{}", rounded as i32)
+    } else {
+        format!("{value:.1}")
+    }
+}
+
+fn shape_position_label(axis: ShapeAxis, pos: Option<&ShapePosition>) -> String {
+    let axis_label = match axis {
+        ShapeAxis::Horizontal => "x",
+        ShapeAxis::Vertical => "y",
+    };
+    let Some(pos) = pos else {
+        return format!("{axis_label} page");
+    };
+    let relative_from = pos.relative_from.as_deref().unwrap_or("page");
+    if let Some(offset) = pos.offset_emu {
+        let sign = if offset < 0 { "-" } else { "+" };
+        return format!(
+            "{axis_label} {relative_from} {sign} {} pt",
+            format_pt(emu_to_pt(offset.saturating_abs()))
+        );
+    }
+    if let Some(align) = pos.align.as_deref() {
+        return format!("{axis_label} {relative_from} {align}");
+    }
+    format!("{axis_label} {relative_from}")
+}
+
+fn shape_simple_position_label(axis: ShapeAxis, shape: &FloatingShape) -> Option<String> {
+    if shape.simple_position_enabled != Some(true) {
+        return None;
+    }
+    let point = shape.simple_position?;
+    let (axis_label, value) = match axis {
+        ShapeAxis::Horizontal => ("x", point.x_emu),
+        ShapeAxis::Vertical => ("y", point.y_emu),
+    };
+    Some(format!(
+        "{axis_label} simplePos {} pt",
+        format_pt(emu_to_pt(value))
+    ))
+}
+
+fn floating_shape_axis_label(shape: &FloatingShape, axis: ShapeAxis) -> String {
+    shape_simple_position_label(axis, shape).unwrap_or_else(|| match axis {
+        ShapeAxis::Horizontal => shape_position_label(axis, shape.horizontal_position.as_ref()),
+        ShapeAxis::Vertical => shape_position_label(axis, shape.vertical_position.as_ref()),
+    })
+}
+
+fn floating_shape_name(shape: &FloatingShape, index: usize) -> String {
+    for value in [
+        shape.name.as_deref(),
+        shape.description.as_deref(),
+        (!shape.id.is_empty()).then_some(shape.id.as_str()),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        let trimmed = value.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    format!("#{index}")
+}
+
+fn compact_shape_text_label(prefix: &str, text: &str) -> Option<String> {
+    let normalized = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if normalized.is_empty() {
+        return None;
+    }
+    let max_chars = 48;
+    let value = if normalized.chars().count() > max_chars {
+        let mut truncated = normalized.chars().take(max_chars - 3).collect::<String>();
+        truncated.push_str("...");
+        truncated
+    } else {
+        normalized
+    };
+    Some(format!("{prefix} {value}"))
+}
+
+fn shape_color_label(prefix: &str, color: crate::Color) -> String {
+    format!("{prefix} #{:02X}{:02X}{:02X}", color.r, color.g, color.b)
+}
+
+fn shape_effect_extent_label(effect: crate::ShapeEffectExtent) -> String {
+    format!(
+        "effect l {} pt, t {} pt, r {} pt, b {} pt",
+        format_pt(emu_to_pt(effect.left_emu)),
+        format_pt(emu_to_pt(effect.top_emu)),
+        format_pt(emu_to_pt(effect.right_emu)),
+        format_pt(emu_to_pt(effect.bottom_emu))
+    )
+}
+
+fn shape_distance_label(prefix: &str, distance: crate::ShapeDistance) -> Option<String> {
+    let values = [
+        ("t", distance.top_emu),
+        ("b", distance.bottom_emu),
+        ("l", distance.left_emu),
+        ("r", distance.right_emu),
+    ]
+    .into_iter()
+    .filter_map(|(label, value)| {
+        value.map(|value| format!("{label} {} pt", format_pt(emu_to_pt(value))))
+    })
+    .collect::<Vec<_>>();
+    (!values.is_empty()).then(|| format!("{prefix} {}", values.join(", ")))
+}
+
+fn floating_shape_label(shape: &FloatingShape, index: usize, w: f32, h: f32) -> String {
+    let mut layout = vec![
+        floating_shape_axis_label(shape, ShapeAxis::Horizontal),
+        floating_shape_axis_label(shape, ShapeAxis::Vertical),
+    ];
+    if let Some(relative_height) = shape.relative_height {
+        layout.push(format!("z {relative_height}"));
+    }
+    if let Some(behind_doc) = shape.behind_doc {
+        layout.push(if behind_doc { "behind" } else { "front" }.to_string());
+    }
+    if let Some(distance_label) = shape_distance_label("anchor dist", shape.distance) {
+        layout.push(distance_label);
+    }
+    if let Some(wrapping) = shape.wrapping.as_ref() {
+        layout.push(match wrapping.text.as_deref() {
+            Some(text) if !text.trim().is_empty() => {
+                format!("wrap {} {}", wrapping.kind, text.trim())
+            }
+            _ => format!("wrap {}", wrapping.kind),
+        });
+        if let Some(distance_label) = shape_distance_label("wrap dist", wrapping.distance) {
+            if let Some(last) = layout.last_mut() {
+                last.push(' ');
+                last.push_str(&distance_label);
+            }
+        }
+        if !wrapping.polygon.is_empty() {
+            if let Some(last) = layout.last_mut() {
+                last.push_str(&format!(" wrap polygon {} pts", wrapping.polygon.len()));
+            }
+        }
+    }
+    if let Some(geometry) = shape.preset_geometry.as_deref() {
+        let geometry = geometry.trim();
+        if !geometry.is_empty() {
+            layout.push(format!("geometry {geometry}"));
+        }
+    }
+    if let Some(effect) = shape.effect_extent {
+        layout.push(shape_effect_extent_label(effect));
+    }
+    if let Some(color) = shape.fill_color {
+        layout.push(shape_color_label("fill", color));
+    }
+    if let Some(color) = shape.outline_color {
+        layout.push(shape_color_label("outline", color));
+    }
+    if let Some(anchor_label) = shape
+        .anchor_text
+        .as_deref()
+        .and_then(|text| compact_shape_text_label("anchor", text))
+    {
+        layout.push(anchor_label);
+    }
+    if let Some(text_label) = shape
+        .text
+        .as_deref()
+        .and_then(|text| compact_shape_text_label("text", text))
+    {
+        layout.push(text_label);
+    }
+    format!(
+        "floating shape {index}: {} ({} x {} pt, {})",
+        floating_shape_name(shape, index),
+        format_pt(w),
+        format_pt(h),
+        layout.join(", ")
+    )
+}
+
+fn floating_shape_size(shape: &FloatingShape, geom: Geom) -> (f32, f32) {
+    let (mut w, mut h) = shape
+        .extent
+        .map(|extent| (emu_to_pt(extent.cx_emu), emu_to_pt(extent.cy_emu)))
+        .unwrap_or((96.0, 48.0));
+    let max_w = (geom.page_w - 8.0).max(24.0);
+    let max_h = (geom.page_h - 8.0).max(18.0);
+    w = w.clamp(24.0, max_w);
+    h = h.clamp(18.0, max_h);
+    (w, h)
+}
+
+fn shape_reference(axis: ShapeAxis, relative_from: Option<&str>, geom: Geom) -> (f32, f32) {
+    let relative_from = relative_from.unwrap_or("page").to_ascii_lowercase();
+    match axis {
+        ShapeAxis::Horizontal => match relative_from.as_str() {
+            "page" => (0.0, geom.page_w),
+            "leftmargin" => (0.0, geom.left),
+            "rightmargin" => (geom.page_w - geom.right, geom.right),
+            "margin" => (geom.left, geom.content_w()),
+            _ => (geom.left, geom.content_w()),
+        },
+        ShapeAxis::Vertical => match relative_from.as_str() {
+            "page" => (0.0, geom.page_h),
+            "topmargin" => (0.0, geom.top_m),
+            "bottommargin" => (geom.page_h - geom.bottom_m, geom.bottom_m),
+            "margin" => (geom.top(), (geom.bottom() - geom.top()).max(1.0)),
+            _ => (geom.top(), (geom.bottom() - geom.top()).max(1.0)),
+        },
+    }
+}
+
+fn aligned_shape_coordinate(base: f32, span: f32, size: f32, align: Option<&str>) -> f32 {
+    match align.unwrap_or("left").to_ascii_lowercase().as_str() {
+        "center" | "middle" => base + ((span - size) * 0.5).max(0.0),
+        "right" | "bottom" | "outside" => base + (span - size).max(0.0),
+        _ => base,
+    }
+}
+
+fn floating_shape_coordinate(
+    pos: Option<&ShapePosition>,
+    axis: ShapeAxis,
+    geom: Geom,
+    size: f32,
+) -> f32 {
+    let (base, span) = shape_reference(axis, pos.and_then(|p| p.relative_from.as_deref()), geom);
+    let raw = match pos {
+        Some(pos) => pos
+            .offset_emu
+            .map(|offset| base + emu_to_pt(offset))
+            .unwrap_or_else(|| aligned_shape_coordinate(base, span, size, pos.align.as_deref())),
+        None => base,
+    };
+    let page_span = match axis {
+        ShapeAxis::Horizontal => geom.page_w,
+        ShapeAxis::Vertical => geom.page_h,
+    };
+    raw.clamp(0.0, (page_span - size).max(0.0))
+}
+
+fn floating_shape_simple_coordinate(
+    shape: &FloatingShape,
+    axis: ShapeAxis,
+    size: f32,
+    geom: Geom,
+) -> Option<f32> {
+    if shape.simple_position_enabled != Some(true) {
+        return None;
+    }
+    let point = shape.simple_position?;
+    let raw = match axis {
+        ShapeAxis::Horizontal => emu_to_pt(point.x_emu),
+        ShapeAxis::Vertical => emu_to_pt(point.y_emu),
+    };
+    let page_span = match axis {
+        ShapeAxis::Horizontal => geom.page_w,
+        ShapeAxis::Vertical => geom.page_h,
+    };
+    Some(raw.clamp(0.0, (page_span - size).max(0.0)))
+}
+
+fn bounded_top_bottom_vertical_coordinate(
+    shape: &FloatingShape,
+    geom: Geom,
+    height: f32,
+) -> Option<f32> {
+    if shape.simple_position_enabled == Some(true) {
+        return floating_shape_simple_coordinate(shape, ShapeAxis::Vertical, height, geom);
+    }
+    let position = shape.vertical_position.as_ref()?;
+    let relative_from = position.relative_from.as_deref()?.to_ascii_lowercase();
+    if !matches!(
+        relative_from.as_str(),
+        "page" | "margin" | "topmargin" | "bottommargin"
+    ) {
+        return None;
+    }
+    let has_supported_coordinate = position.offset_emu.is_some()
+        || matches!(
+            position
+                .align
+                .as_deref()
+                .map(str::to_ascii_lowercase)
+                .as_deref(),
+            Some("top" | "center" | "middle" | "bottom")
+        );
+    has_supported_coordinate.then(|| {
+        floating_shape_coordinate(
+            shape.vertical_position.as_ref(),
+            ShapeAxis::Vertical,
+            geom,
+            height,
+        )
+    })
+}
+
+fn nonnegative_emu_pt(value: Option<i64>) -> f32 {
+    emu_to_pt(value.unwrap_or(0).max(0))
+}
+
+fn top_bottom_bands_by_block(
+    model: &DocModel,
+    shapes: &[FloatingShape],
+    base_geom: Geom,
+) -> Vec<Vec<TopBottomBand>> {
+    let mut bands = vec![Vec::new(); model.blocks.len()];
+    let geometries = section_geometries_by_block(&model.blocks, base_geom);
+    for shape in shapes.iter().take(MAX_FLOATING_SHAPE_OVERLAYS) {
+        let Some(wrapping) = shape
+            .wrapping
+            .as_ref()
+            .filter(|wrapping| wrapping.kind.eq_ignore_ascii_case("topAndBottom"))
+        else {
+            continue;
+        };
+        if shape.behind_doc == Some(true) {
+            continue;
+        }
+        let Some(block_index) = shape
+            .anchor_block_index
+            .filter(|&index| matches!(model.blocks.get(index), Some(Block::Paragraph(_))))
+        else {
+            continue;
+        };
+        let geom = geometries.get(block_index).copied().unwrap_or(base_geom);
+        let Some(extent) = shape
+            .extent
+            .filter(|extent| extent.cx_emu > 0 && extent.cy_emu > 0)
+        else {
+            continue;
+        };
+        let Some(anchor_offset) = shape.anchor_char_offset else {
+            continue;
+        };
+        let height = emu_to_pt(extent.cy_emu).min(geom.page_h.max(0.0));
+        let Some(y) = bounded_top_bottom_vertical_coordinate(shape, geom, height) else {
+            continue;
+        };
+        let effect_top = nonnegative_emu_pt(shape.effect_extent.map(|effect| effect.top_emu));
+        let effect_bottom = nonnegative_emu_pt(shape.effect_extent.map(|effect| effect.bottom_emu));
+        let distance_top = nonnegative_emu_pt(wrapping.distance.top_emu.or(shape.distance.top_emu));
+        let distance_bottom =
+            nonnegative_emu_pt(wrapping.distance.bottom_emu.or(shape.distance.bottom_emu));
+        let top = (y - effect_top - distance_top).max(geom.top());
+        let bottom = (y + height + effect_bottom + distance_bottom).min(geom.bottom());
+        if top < bottom {
+            bands[block_index].push(TopBottomBand {
+                top,
+                bottom,
+                anchor_offset,
+            });
+        }
+    }
+    bands
+}
+
+fn floating_shape_overlays_for_pages(
+    shapes: &[FloatingShape],
+    base_geom: Geom,
+    page_geometries: &[Geom],
+    block_pages: &HashMap<usize, usize>,
+    block_line_pages: &HashMap<usize, Vec<BlockLinePage>>,
+) -> Vec<FloatingShapeOverlay> {
+    let mut ordered_shapes = shapes
+        .iter()
+        .take(MAX_FLOATING_SHAPE_OVERLAYS)
+        .enumerate()
+        .collect::<Vec<_>>();
+    ordered_shapes.sort_by_key(|(i, shape)| {
+        (
+            shape.behind_doc != Some(true),
+            shape.relative_height.unwrap_or(0),
+            *i,
+        )
+    });
+    ordered_shapes
+        .into_iter()
+        .map(|(i, shape)| {
+            let index = i + 1;
+            let page_index =
+                floating_shape_anchor_page(shape, block_pages, block_line_pages).unwrap_or(0);
+            let geom = page_geometries
+                .get(page_index)
+                .copied()
+                .unwrap_or(base_geom);
+            let (w, h) = floating_shape_size(shape, geom);
+            let x = floating_shape_simple_coordinate(shape, ShapeAxis::Horizontal, w, geom)
+                .unwrap_or_else(|| {
+                    floating_shape_coordinate(
+                        shape.horizontal_position.as_ref(),
+                        ShapeAxis::Horizontal,
+                        geom,
+                        w,
+                    )
+                });
+            let y = floating_shape_simple_coordinate(shape, ShapeAxis::Vertical, h, geom)
+                .unwrap_or_else(|| {
+                    floating_shape_coordinate(
+                        shape.vertical_position.as_ref(),
+                        ShapeAxis::Vertical,
+                        geom,
+                        h,
+                    )
+                });
+            FloatingShapeOverlay {
+                page_index,
+                behind_doc: shape.behind_doc == Some(true),
+                label: floating_shape_label(shape, index, w, h),
+                x,
+                y,
+                w,
+                h,
+            }
+        })
+        .collect()
+}
+
+fn floating_shape_anchor_page(
+    shape: &FloatingShape,
+    block_pages: &HashMap<usize, usize>,
+    block_line_pages: &HashMap<usize, Vec<BlockLinePage>>,
+) -> Option<usize> {
+    let block_index = shape.anchor_block_index?;
+    let block_page = block_pages.get(&block_index).copied();
+    let Some(anchor_offset) = shape.anchor_char_offset else {
+        return block_page;
+    };
+    block_line_pages
+        .get(&block_index)
+        .and_then(|lines| {
+            lines
+                .iter()
+                .find(|line| line.range.contains(anchor_offset))
+                .map(|line| line.page_index)
+        })
+        .or(block_page)
+}
+
+fn unsupported_placeholder_texts(features: &FeatureInventory) -> Vec<String> {
+    let mut placeholders = Vec::new();
+    if features.floating_shapes > 0 {
+        placeholders.push(placeholder_label(
+            features.floating_shapes,
+            "floating shape",
+            "floating shapes",
+            "preserved but not positioned",
+        ));
+    }
+    if features.charts > 0 {
+        placeholders.push(placeholder_label(
+            features.charts,
+            "chart",
+            "charts",
+            "preserved but not modeled",
+        ));
+    }
+    if features.ole_objects > 0 {
+        placeholders.push(placeholder_label(
+            features.ole_objects,
+            "OLE object",
+            "OLE objects",
+            "preserved but not modeled",
+        ));
+    }
+    if features.unsupported_metafiles > 0 {
+        placeholders.push(placeholder_label(
+            features.unsupported_metafiles,
+            "WMF/EMF image",
+            "WMF/EMF images",
+            "preserved but not rendered",
+        ));
+    }
+    placeholders
+}
+
+fn unsupported_placeholder_texts_with_known_shapes(
+    features: &FeatureInventory,
+    known_floating_shapes: usize,
+) -> Vec<String> {
+    let mut features = features.clone();
+    features.floating_shapes = features
+        .floating_shapes
+        .saturating_sub(known_floating_shapes);
+    unsupported_placeholder_texts(&features)
+}
+
+fn undecodable_image_placeholder_texts(count: usize) -> Vec<String> {
+    if count == 0 {
+        Vec::new()
+    } else {
+        vec![placeholder_label(
+            count,
+            "raster image",
+            "raster images",
+            "skipped because the PDF backend could not decode them",
+        )]
+    }
+}
+
+fn missing_image_placeholder_texts(count: usize) -> Vec<String> {
+    if count == 0 {
+        Vec::new()
+    } else {
+        vec![placeholder_label(
+            count,
+            "image",
+            "images",
+            "unavailable because their bytes were not extracted",
+        )]
+    }
+}
+
+fn placeholder_blocks(texts: Vec<String>) -> Vec<Block> {
+    texts
+        .into_iter()
+        .map(|text| {
+            Block::Paragraph(Paragraph {
+                props: ParaProps {
+                    spacing: Spacing {
+                        before_pt: Some(0.0),
+                        after_pt: Some(2.0),
+                        ..Spacing::default()
+                    },
+                    ..ParaProps::default()
+                },
+                runs: vec![Run {
+                    text,
+                    props: CharProps {
+                        italic: true,
+                        color: Some(Color::rgb(90, 90, 90)),
+                        size_half_pt: Some(18),
+                        ..CharProps::default()
+                    },
+                    ..Run::default()
+                }],
+            })
+        })
+        .collect()
+}
+
+fn unsupported_placeholder_blocks(
+    features: &FeatureInventory,
+    known_floating_shapes: usize,
+) -> Vec<Block> {
+    placeholder_blocks(unsupported_placeholder_texts_with_known_shapes(
+        features,
+        known_floating_shapes,
+    ))
+}
+
+fn missing_image_placeholder_blocks(count: usize) -> Vec<Block> {
+    placeholder_blocks(missing_image_placeholder_texts(count))
+}
+
+fn undecodable_image_placeholder_blocks(count: usize) -> Vec<Block> {
+    placeholder_blocks(undecodable_image_placeholder_texts(count))
+}
+
+#[cfg(test)]
+fn page_field_text(
+    props: &CharProps,
+    text: &str,
+    field: &FieldRole,
+    page_number: Option<usize>,
+) -> String {
+    match (field, page_number) {
+        (FieldRole::Simple { instruction }, Some(page_number))
+            if FieldKind::from_instruction(instruction) == FieldKind::Page =>
+        {
+            display_text(props, &page_number.to_string())
+        }
+        _ => display_text(props, text),
+    }
+}
+
+fn is_page_field(field: &FieldRole) -> bool {
+    matches!(
+        field,
+        FieldRole::Simple { instruction }
+            if FieldKind::from_instruction(instruction) == FieldKind::Page
+    )
+}
+
+fn page_field_index_for_field(field: &FieldRole, capture: &mut LayoutCapture) -> Option<usize> {
+    if is_page_field(field) {
+        capture.register_page_field()
+    } else {
+        None
+    }
+}
+
+fn dynamic_text_for_field(
+    field: &FieldRole,
+    props: &CharProps,
+    page_field_index: Option<usize>,
+) -> Option<DynamicTextRun> {
+    match field {
+        FieldRole::Simple { instruction }
+            if FieldKind::from_instruction(instruction) == FieldKind::Page =>
+        {
+            let tokens = instruction_parts(instruction);
+            let mut parts = tokens.iter().map(String::as_str);
+            let kind = parts.next()?;
+            if !kind.eq_ignore_ascii_case("PAGE") {
+                return None;
+            }
+            let format = page_field_format_syntax_tail(&mut parts)?;
+            let mut props = props.clone();
+            props.caps = false;
+            props.small_caps = false;
+            Some(DynamicTextRun {
+                kind: DynamicTextKind::PageNumber,
+                page_field_index,
+                number_format: format.number_format.map(Into::into),
+                text_format: format.text_format,
+                props,
+            })
+        }
+        _ => None,
+    }
+}
+
+fn dynamic_page_number_text(
+    dynamic: &DynamicTextRun,
+    page_number: PageDisplayNumber,
+) -> Option<String> {
+    let format = dynamic.number_format.or(page_number.format);
+    let text = format_page_number(page_number.value, format)?;
+    Some(apply_field_text_format(text, dynamic.text_format))
+}
+
+fn map_chars(text: &str, map: fn(char) -> Option<char>) -> String {
+    let mut changed = false;
+    let mapped = text
+        .chars()
+        .map(|ch| {
+            if let Some(mapped) = map(ch) {
+                changed = true;
+                mapped
+            } else {
+                ch
+            }
+        })
+        .collect::<String>();
+    if changed {
+        mapped
+    } else {
+        text.to_string()
+    }
+}
+
+fn symbol_char(ch: char) -> Option<char> {
+    Some(match ch {
+        'A' => 'Α',
+        'B' => 'Β',
+        'C' => 'Χ',
+        'D' => 'Δ',
+        'E' => 'Ε',
+        'F' => 'Φ',
+        'G' => 'Γ',
+        'H' => 'Η',
+        'I' => 'Ι',
+        'K' => 'Κ',
+        'L' => 'Λ',
+        'M' => 'Μ',
+        'N' => 'Ν',
+        'O' => 'Ο',
+        'P' => 'Π',
+        'Q' => 'Θ',
+        'R' => 'Ρ',
+        'S' => 'Σ',
+        'T' => 'Τ',
+        'U' => 'Υ',
+        'W' => 'Ω',
+        'X' => 'Ξ',
+        'Y' => 'Ψ',
+        'Z' => 'Ζ',
+        'a' => 'α',
+        'b' => 'β',
+        'c' => 'χ',
+        'd' => 'δ',
+        'e' => 'ε',
+        'f' => 'φ',
+        'g' => 'γ',
+        'h' => 'η',
+        'i' => 'ι',
+        'k' => 'κ',
+        'l' => 'λ',
+        'm' => 'μ',
+        'n' => 'ν',
+        'o' => 'ο',
+        'p' => 'π',
+        'q' => 'θ',
+        'r' => 'ρ',
+        's' => 'σ',
+        't' => 'τ',
+        'u' => 'υ',
+        'w' => 'ω',
+        'x' => 'ξ',
+        'y' => 'ψ',
+        'z' => 'ζ',
+        '\u{00B7}' => '•',
+        '\u{00D3}' => '©',
+        _ => return None,
+    })
+}
+
+fn wingdings_char(ch: char) -> Option<char> {
+    Some(match ch {
+        'A' => '✌',
+        'J' => '☺',
+        '\u{00FC}' => '✓',
+        '\u{00FB}' => '☑',
+        '\u{00FE}' => '☒',
+        '\u{00A8}' => '◊',
+        '\u{00D8}' => '➢',
+        '\u{00E0}' => '➔',
+        '\u{00E8}' => '➣',
+        'l' => '●',
+        'n' => '■',
+        'u' => '◆',
+        _ => return None,
+    })
+}
+
+/// The hyperlink URL covering byte `pos`, if any. Like color, a link is not a
+/// shaping property, so we look it up per cluster and split draw segments on it.
+fn link_at(links: &[(usize, usize, Rc<str>)], pos: usize) -> Option<Rc<str>> {
+    // Sorted, non-overlapping (appended in run order) — binary-search rather than scan per
+    // cluster, which made shaping O(clusters × link-runs).
+    let i = links.partition_point(|(s, _, _)| *s <= pos);
+    if i == 0 {
+        return None;
+    }
+    let (_, e, u) = &links[i - 1];
+    (pos < *e).then(|| u.clone())
+}
+
+fn dynamic_at(ranges: &[(usize, usize, DynamicTextRun)], pos: usize) -> Option<DynamicTextRun> {
+    let i = ranges.partition_point(|(s, _, _)| *s <= pos);
+    if i == 0 {
+        return None;
+    }
+    let (_, e, dynamic) = &ranges[i - 1];
+    (pos < *e).then(|| dynamic.clone())
+}
+
+fn heading_size(level: Option<u8>) -> f32 {
+    match level {
+        Some(1) => 20.0,
+        Some(2) => 17.0,
+        Some(3) => 15.0,
+        Some(4) => 13.5,
+        Some(_) => 12.5,
+        None => 11.0,
+    }
+}
+
+/// The shaping/emit context threaded through layout and drawing: parley's font
+/// collection and layout arena plus the parley→krilla font cache. These three
+/// always travel together, so they are bundled to keep call signatures small.
+struct TextCx<'a> {
+    font_cx: &'a mut FontContext,
+    layout_cx: &'a mut LayoutContext<rgb::Color>,
+    font_cache: &'a mut HashMap<u64, Font>,
+}
+
+/// The per-character overlay ranges for a shaped string: color/style ranges,
+/// hyperlink ranges, and dynamic (page-number) ranges. They are always built and
+/// passed as a set, so they travel together.
+#[derive(Clone, Copy)]
+struct StyledText<'a> {
+    ranges: &'a [(usize, usize, CharProps)],
+    links: &'a [(usize, usize, Rc<str>)],
+    dynamic_ranges: &'a [(usize, usize, DynamicTextRun)],
+}
+
+#[derive(Clone, Copy, Default)]
+struct ShapeOptions<'a> {
+    line_height: Option<f32>,
+    text_indent: f32,
+    hanging_indent: bool,
+    tab_origin: f32,
+    tab_stops: &'a [TabStop],
+    default_tab_stop_pt: Option<f32>,
+    rtl_tabs: bool,
+}
+
+#[derive(Clone, Copy)]
+struct ParagraphIndentLayout {
+    x_indent: f32,
+    wrap_width: f32,
+    text_indent: f32,
+    hanging_indent: bool,
+}
+
+/// Per-document ordered-list counters (levels 0..=8). Bullets and reader-captured
+/// labels need no counter; an authored ordered item without a label is numbered
+/// here.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ListState {
+    counters: [u32; 9],
+}
+
+impl ListState {
+    /// The marker for a list item, advancing/resetting the ordered counters.
+    /// Prefers the reader's captured label; otherwise synthesizes `1.`/`2.`… for
+    /// ordered lists or a per-level bullet glyph.
+    fn marker(&mut self, list: &ListInfo) -> String {
+        let lvl = (list.level as usize).min(8);
+        if list.ordered {
+            for c in self.counters.iter_mut().skip(lvl + 1) {
+                *c = 0;
+            }
+            self.counters[lvl] += 1;
+        }
+        if !list.label.trim().is_empty() {
+            return list.label.trim().to_string();
+        }
+        if list.ordered {
+            format!("{}.", self.counters[lvl])
+        } else {
+            match lvl % 3 {
+                0 => "•",
+                1 => "◦",
+                _ => "▪",
+            }
+            .to_string()
+        }
+    }
+}
+
+fn paragraph_list_marker(p: &Paragraph, lists: &mut ListState) -> Option<String> {
+    match (&p.props.list, p.props.heading_level) {
+        (Some(list), None) => Some(lists.marker(list)),
+        _ => None,
+    }
+}
+
+/// Lay out one paragraph into flow items, with an optional list `marker` and the
+/// paragraph's left/right indent (list level adds a per-level indent).
+struct ShapedParagraph<'a> {
+    lines: Vec<LineLayout>,
+    images: Vec<&'a Image>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn shape_paragraph_content<'a>(
+    p: &'a Paragraph,
+    marker: Option<&str>,
+    tab_stops: &[TabStop],
+    default_tab_stop_pt: Option<f32>,
+    line_spacing_hint: Option<LineSpacingHint>,
+    available_width: f32,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    track_source_ranges: bool,
+) -> ShapedParagraph<'a> {
+    shape_paragraph_content_with_page_fields(
+        p,
+        marker,
+        tab_stops,
+        default_tab_stop_pt,
+        line_spacing_hint,
+        available_width,
+        cx,
+        capture,
+        track_source_ranges,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn shape_paragraph_content_with_page_fields<'a>(
+    p: &'a Paragraph,
+    marker: Option<&str>,
+    tab_stops: &[TabStop],
+    default_tab_stop_pt: Option<f32>,
+    line_spacing_hint: Option<LineSpacingHint>,
+    available_width: f32,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    track_source_ranges: bool,
+    page_field_indices: Option<&[Option<usize>]>,
+) -> ShapedParagraph<'a> {
+    let list_level = p.props.list.as_ref().map(|l| l.level).unwrap_or(0) as f32;
+    let indent = paragraph_indent_layout(&p.props, available_width, list_level * LIST_INDENT);
+
+    let mut text = String::new();
+    let mut ranges: Vec<(usize, usize, CharProps)> = Vec::new();
+    let mut links: Vec<(usize, usize, Rc<str>)> = Vec::new();
+    let mut dynamic_ranges: Vec<(usize, usize, DynamicTextRun)> = Vec::new();
+    let mut images: Vec<&Image> = Vec::new();
+    let mut source_char_ranges = track_source_ranges.then(Vec::new);
+    let mut source_chars = 0usize;
+    if p.props.bidi {
+        append_directional_control(
+            &mut text,
+            &mut ranges,
+            source_char_ranges.as_mut(),
+            CharProps {
+                rtl: true,
+                ..CharProps::default()
+            },
+            RIGHT_TO_LEFT_MARK,
+            source_chars,
+        );
+    }
+    if let Some(m) = marker {
+        if !m.is_empty() {
+            let marker_start = text.len();
+            text.push_str(m);
+            text.push(' ');
+            ranges.push((marker_start, text.len(), CharProps::default()));
+            if let Some(source_char_ranges) = source_char_ranges.as_mut() {
+                source_char_ranges.extend(std::iter::repeat_n(
+                    (source_chars, source_chars),
+                    m.chars().count() + 1,
+                ));
+            }
+        }
+    }
+    for (run_index, r) in p.runs.iter().enumerate() {
+        let run_source_chars = source_char_ranges
+            .as_ref()
+            .map_or(0, |_| r.text.chars().count());
+        if r.props.hidden {
+            source_chars = source_chars.saturating_add(run_source_chars);
+            continue;
+        }
+        // The reader carries images as inline runs (Run.image); flow them as
+        // block pictures after the paragraph's text.
+        if let Some(img) = &r.image {
+            images.push(img);
+        }
+        let page_field_index = match page_field_indices {
+            Some(indices) => indices.get(run_index).copied().flatten(),
+            None => page_field_index_for_field(&r.field, capture),
+        };
+        if r.text.is_empty() {
+            continue;
+        }
+        if r.props.rtl {
+            append_directional_control(
+                &mut text,
+                &mut ranges,
+                source_char_ranges.as_mut(),
+                r.props.clone(),
+                RIGHT_TO_LEFT_ISOLATE,
+                source_chars,
+            );
+        }
+        let s = text.len();
+        for segment in styled_display_segments(&r.props, &r.text) {
+            let segment_start = text.len();
+            text.push_str(&segment.text);
+            ranges.push((segment_start, text.len(), segment.props));
+            if let Some(source_char_ranges) = source_char_ranges.as_mut() {
+                let rendered_chars = segment.text.chars().count();
+                let segment_source_chars = segment.source_end.saturating_sub(segment.source_start);
+                for index in 0..rendered_chars {
+                    let source_start = index.saturating_mul(segment_source_chars) / rendered_chars;
+                    let source_end = (index + 1)
+                        .saturating_mul(segment_source_chars)
+                        .saturating_add(rendered_chars - 1)
+                        / rendered_chars;
+                    source_char_ranges.push((
+                        source_chars
+                            .saturating_add(segment.source_start)
+                            .saturating_add(source_start),
+                        source_chars
+                            .saturating_add(segment.source_start)
+                            .saturating_add(source_end.min(segment_source_chars)),
+                    ));
+                }
+            }
+        }
+        source_chars = source_chars.saturating_add(run_source_chars);
+        if let FieldRole::Hyperlink { url } = &r.field {
+            links.push((s, text.len(), Rc::from(url.as_str())));
+        }
+        if let Some(dynamic) = dynamic_text_for_field(&r.field, &r.props, page_field_index) {
+            dynamic_ranges.push((s, text.len(), dynamic));
+        }
+        if r.props.rtl {
+            append_directional_control(
+                &mut text,
+                &mut ranges,
+                source_char_ranges.as_mut(),
+                r.props.clone(),
+                POP_DIRECTIONAL_ISOLATE,
+                source_chars,
+            );
+        }
+    }
+    let mut lines = Vec::new();
+    if has_visible_text(&text) {
+        let align = match p.props.align {
+            Align::Left => Alignment::Left,
+            Align::Center => Alignment::Center,
+            Align::Right => Alignment::Right,
+            Align::Justify => Alignment::Justify,
+        };
+        for mut line in shape_with_options(
+            &text,
+            StyledText {
+                ranges: &ranges,
+                links: &links,
+                dynamic_ranges: &dynamic_ranges,
+            },
+            p.props.heading_level,
+            align,
+            indent.wrap_width,
+            ShapeOptions {
+                line_height: p.props.spacing.line_pct,
+                text_indent: indent.text_indent,
+                hanging_indent: indent.hanging_indent,
+                tab_origin: if p.props.bidi {
+                    (available_width - indent.x_indent - indent.wrap_width).max(0.0)
+                } else {
+                    indent.x_indent
+                },
+                tab_stops,
+                default_tab_stop_pt,
+                rtl_tabs: p.props.bidi,
+            },
+            cx,
+        ) {
+            line.x_indent = indent.x_indent;
+            line.background = p.props.shading.map(|color| LineBackground {
+                color: model_color(color),
+                width: indent.wrap_width,
+            });
+            if let Some(source_char_ranges) = source_char_ranges.as_ref() {
+                if let Some(range) = line.char_range {
+                    line.char_range = (range.start < range.end)
+                        .then(|| source_char_ranges.get(range.start..range.end))
+                        .flatten()
+                        .and_then(|mapped| {
+                            mapped
+                                .first()
+                                .zip(mapped.last())
+                                .map(|(first, last)| LineCharRange {
+                                    start: first.0,
+                                    end: last.1,
+                                })
+                        });
+                }
+            } else {
+                line.char_range = None;
+            }
+            lines.push(line);
+        }
+    }
+    apply_line_spacing_hint(&mut lines, line_spacing_hint);
+    ShapedParagraph { lines, images }
+}
+
+enum RunningSurfaceItem {
+    Gap(f32),
+    Line(LineLayout),
+    Picture {
+        image: RenderImage,
+        layout: ImageLayout,
+    },
+    Chart {
+        chart: Chart,
+        w: f32,
+        h: f32,
+    },
+    Table {
+        rows: Vec<RowLayout>,
+    },
+}
+
+#[derive(Clone, Copy, Default)]
+struct RunningSurfaceLayoutHints<'a> {
+    line_spacing: &'a [Option<LineSpacingHint>],
+    tab_stops: &'a [Vec<TabStop>],
+    table_cell_line_spacing: &'a [TableCellLineSpacingHints],
+    table_cell_tab_stops: &'a [TableCellTabStopHints],
+    default_tab_stop_pt: Option<f32>,
+}
+
+/// Lay out compact running-surface content while retaining paragraph gaps,
+/// decoded pictures, model-authored charts, and modeled table rows. Pagination
+/// controls remain outside this bounded margin-band path.
+fn layout_running_surface_items(
+    blocks: &[Block],
+    hints: RunningSurfaceLayoutHints<'_>,
+    geom: Geom,
+    cx: &mut TextCx<'_>,
+) -> Vec<RunningSurfaceItem> {
+    let mut items = Vec::new();
+    let mut capture = LayoutCapture::default();
+    collect_blocks_inner(
+        blocks,
+        &mut items,
+        geom,
+        cx,
+        &mut capture,
+        BlockCollectionOptions {
+            line_spacing_hints: Some(hints.line_spacing),
+            tab_stops: Some(hints.tab_stops),
+            table_cell_line_spacing: Some(hints.table_cell_line_spacing),
+            table_cell_tab_stops: Some(hints.table_cell_tab_stops),
+            default_tab_stop_pt: hints.default_tab_stop_pt,
+            ..BlockCollectionOptions::default()
+        },
+    );
+    items
+        .into_iter()
+        .filter_map(|i| match i {
+            FlowItem::Gap(gap) if gap.is_finite() && gap > 0.0 => {
+                Some(RunningSurfaceItem::Gap(gap))
+            }
+            FlowItem::Line(line) => Some(RunningSurfaceItem::Line(line)),
+            FlowItem::Picture { image, layout } => {
+                Some(RunningSurfaceItem::Picture { image, layout })
+            }
+            FlowItem::Chart { chart, w, h } => Some(RunningSurfaceItem::Chart { chart, w, h }),
+            FlowItem::Table { rows, .. } => Some(RunningSurfaceItem::Table { rows }),
+            _ => None,
+        })
+        .collect()
+}
+
+fn normalized_running_surface_distance(distance_pt: Option<f32>) -> Option<f32> {
+    distance_pt.filter(|distance| distance.is_finite() && *distance >= 0.0)
+}
+
+fn running_surface_items_extent(items: &[RunningSurfaceItem], geom: Geom) -> Option<f32> {
+    let mut extent = 0.0_f32;
+    for item in items {
+        let item_extent = match item {
+            RunningSurfaceItem::Gap(gap) => *gap,
+            RunningSurfaceItem::Line(line) => line.height,
+            RunningSurfaceItem::Picture { layout, .. } => {
+                fit_image_layout_to_box(*layout, geom.content_w(), f32::MAX)?.bounds_h
+            }
+            RunningSurfaceItem::Chart { w, h, .. } => {
+                fit_chart_layout_to_box(*w, *h, geom.content_w(), f32::MAX)?.bounds_h
+            }
+            RunningSurfaceItem::Table { rows } => {
+                let mut table_extent = 0.0_f32;
+                for row in rows {
+                    if !row.height.is_finite() || row.height < 0.0 {
+                        return None;
+                    }
+                    table_extent += row.height;
+                    if !table_extent.is_finite() {
+                        return None;
+                    }
+                }
+                table_extent
+            }
+        };
+        if !item_extent.is_finite() || item_extent < 0.0 {
+            return None;
+        }
+        extent += item_extent;
+        if !extent.is_finite() {
+            return None;
+        }
+    }
+    Some(extent)
+}
+
+fn running_header_vertical_bounds(geom: Geom, distance_pt: Option<f32>) -> (f32, f32) {
+    let limit = geom.top();
+    let Some(distance) = normalized_running_surface_distance(distance_pt) else {
+        return (HEADER_Y, limit);
+    };
+    if !limit.is_finite() || limit <= 0.0 {
+        return (limit, limit);
+    }
+    (distance.min(limit), limit)
+}
+
+fn running_footer_vertical_bounds(
+    geom: Geom,
+    distance_pt: Option<f32>,
+    content_extent: Option<f32>,
+) -> (f32, f32) {
+    let Some(distance) = normalized_running_surface_distance(distance_pt) else {
+        return (geom.bottom() + FOOTER_GAP, geom.page_h);
+    };
+    if !geom.page_h.is_finite() || geom.page_h <= 0.0 || !geom.bottom().is_finite() {
+        return (0.0, 0.0);
+    }
+    let body_bottom = geom.bottom().max(0.0).min(geom.page_h);
+    let limit = (geom.page_h - distance).max(body_bottom).min(geom.page_h);
+    let inner = (body_bottom + FOOTER_GAP).min(limit);
+    let start = content_extent
+        .filter(|extent| extent.is_finite() && *extent >= 0.0)
+        .map(|extent| (limit - extent).max(inner))
+        .unwrap_or(inner);
+    (start, limit)
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ScaledChartLayout {
+    scale: f32,
+    bounds_w: f32,
+    bounds_h: f32,
+}
+
+fn fit_chart_layout_to_box(
+    width: f32,
+    height: f32,
+    max_width: f32,
+    max_height: f32,
+) -> Option<ScaledChartLayout> {
+    if !width.is_finite()
+        || !height.is_finite()
+        || !max_width.is_finite()
+        || !max_height.is_finite()
+        || width <= 0.0
+        || height <= 0.0
+        || max_width <= 0.0
+        || max_height <= 0.0
+    {
+        return None;
+    }
+    let scale = (max_width / width).min(max_height / height).min(1.0);
+    let bounds_w = width * scale;
+    let bounds_h = height * scale;
+    if !scale.is_finite()
+        || !bounds_w.is_finite()
+        || !bounds_h.is_finite()
+        || scale <= 0.0
+        || bounds_w <= 0.0
+        || bounds_h <= 0.0
+    {
+        return None;
+    }
+    Some(ScaledChartLayout {
+        scale,
+        bounds_w,
+        bounds_h,
+    })
+}
+
+fn fit_image_layout_to_box(
+    layout: ImageLayout,
+    max_width: f32,
+    max_height: f32,
+) -> Option<ImageLayout> {
+    if !max_width.is_finite()
+        || !max_height.is_finite()
+        || max_width <= 0.0
+        || max_height <= 0.0
+        || !layout.image_w.is_finite()
+        || !layout.image_h.is_finite()
+        || !layout.bounds_w.is_finite()
+        || !layout.bounds_h.is_finite()
+        || layout.image_w <= 0.0
+        || layout.image_h <= 0.0
+        || layout.bounds_w <= 0.0
+        || layout.bounds_h <= 0.0
+    {
+        return None;
+    }
+    let scale = (max_width / layout.bounds_w)
+        .min(max_height / layout.bounds_h)
+        .min(1.0);
+    if !scale.is_finite() || scale <= 0.0 {
+        return None;
+    }
+    Some(ImageLayout {
+        image_w: layout.image_w * scale,
+        image_h: layout.image_h * scale,
+        bounds_w: layout.bounds_w * scale,
+        bounds_h: layout.bounds_h * scale,
+        rotation_degrees: layout.rotation_degrees,
+    })
+}
+
+fn draw_running_surface_items(
+    scene: &mut PageScene,
+    items: Vec<RunningSurfaceItem>,
+    placement: RunningSurfacePaintPlacement,
+    cx: &mut TextCx<'_>,
+) -> Result<f32> {
+    let (mut y, limit_y) = placement.vertical_bounds;
+    let geom = placement.geom;
+    let page_number = placement.page_number;
+    for item in items {
+        match item {
+            RunningSurfaceItem::Gap(gap) => {
+                let remaining = limit_y - y;
+                if !remaining.is_finite() || remaining <= 0.0 {
+                    break;
+                }
+                if gap >= remaining {
+                    y = limit_y;
+                    break;
+                }
+                y += gap;
+            }
+            RunningSurfaceItem::Line(line) => {
+                if y + line.height > limit_y {
+                    break;
+                }
+                let baseline = y + line.baseline;
+                let x0 = geom.left + line.x_indent;
+                let clip_content = if line.clip_to_height {
+                    push_page_scene_clip(scene, 0.0, y, line.height, geom.page_w)?
+                } else {
+                    false
+                };
+                project_page_scene_line_paint(scene, &line, x0, y, baseline)?;
+                for run in line.runs {
+                    if let Some(url) = run.link.clone() {
+                        let left = x0 + run.x;
+                        scene.push_link_ltrb(
+                            [left, y, left + run.width(), y + line.height],
+                            url,
+                            LinkClip::from_ltrb([0.0, y, geom.page_w, limit_y]),
+                        )?;
+                    }
+                    project_page_scene_run_with_page_context(
+                        scene,
+                        run,
+                        x0,
+                        baseline,
+                        page_number,
+                        cx,
+                    )?;
+                }
+                if clip_content {
+                    pop_page_scene_clip(scene)?;
+                }
+                y += line.height;
+            }
+            RunningSurfaceItem::Picture { image, layout } => {
+                let Some(layout) = fit_image_layout_to_box(layout, geom.content_w(), limit_y - y)
+                else {
+                    break;
+                };
+                let bounds_x = geom.left + ((geom.content_w() - layout.bounds_w) * 0.5).max(0.0);
+                if project_page_scene_image(scene, image, layout, bounds_x, y)? {
+                    y += layout.bounds_h;
+                }
+            }
+            RunningSurfaceItem::Chart { chart, w, h } => {
+                let Some(layout) = fit_chart_layout_to_box(w, h, geom.content_w(), limit_y - y)
+                else {
+                    break;
+                };
+                let x = geom.left + ((geom.content_w() - layout.bounds_w) * 0.5).max(0.0);
+                if !push_page_scene_clip(scene, x, y, layout.bounds_h, layout.bounds_w)? {
+                    break;
+                }
+                let transform =
+                    SceneTransform::from_row(layout.scale, 0.0, 0.0, layout.scale, x, y);
+                if !push_page_scene_transform(scene, transform)? {
+                    pop_page_scene_clip(scene)?;
+                    break;
+                }
+                draw_authored_chart(
+                    scene,
+                    &chart,
+                    ChartRect {
+                        x: 0.0,
+                        y: 0.0,
+                        w,
+                        h,
+                    },
+                    cx,
+                )?;
+                pop_page_scene_transform(scene)?;
+                pop_page_scene_clip(scene)?;
+                y += layout.bounds_h;
+            }
+            RunningSurfaceItem::Table { rows } => {
+                let mut previous_row_borders = None;
+                for row in rows {
+                    let remaining = limit_y - y;
+                    if !remaining.is_finite() || remaining <= 0.0 {
+                        break;
+                    }
+                    let clipped = row.height > remaining;
+                    let band_clip = if clipped {
+                        if !push_page_scene_clip(scene, 0.0, y, remaining, geom.page_w)? {
+                            break;
+                        }
+                        true
+                    } else {
+                        false
+                    };
+                    let row_height = row.height;
+                    let row_top = y;
+                    let row_bottom = (y + row_height).min(limit_y);
+                    previous_row_borders = draw_row_layout(
+                        scene,
+                        row,
+                        RowPaintPlacement {
+                            x_offset: geom.left,
+                            top: y,
+                            page_number,
+                            link_clip: LinkClip::from_ltrb([0.0, row_top, geom.page_w, row_bottom]),
+                        },
+                        cx,
+                        previous_row_borders.as_ref(),
+                    )?;
+                    if band_clip {
+                        pop_page_scene_clip(scene)?;
+                        y = limit_y;
+                        break;
+                    }
+                    y += row_height;
+                }
+            }
+        }
+    }
+    Ok(y)
+}
+
+trait RunningSurfaceSetup {
+    fn header(&self) -> &[Block];
+    fn first_header(&self) -> &[Block];
+    fn even_header(&self) -> &[Block];
+    fn footer(&self) -> &[Block];
+    fn first_footer(&self) -> &[Block];
+    fn even_footer(&self) -> &[Block];
+    fn title_page(&self) -> bool;
+}
+
+#[derive(Clone, Copy)]
+enum RunningSurfaceVariant {
+    Default,
+    First,
+    Even,
+}
+
+fn running_surface_variants_for_page<T: RunningSurfaceSetup + ?Sized>(
+    setup: &T,
+    page_number: usize,
+    is_first_section_page: bool,
+) -> (RunningSurfaceVariant, RunningSurfaceVariant) {
+    let title_page = is_first_section_page
+        && (setup.title_page()
+            || !setup.first_header().is_empty()
+            || !setup.first_footer().is_empty());
+    let header = if title_page {
+        RunningSurfaceVariant::First
+    } else if page_number.is_multiple_of(2) && !setup.even_header().is_empty() {
+        RunningSurfaceVariant::Even
+    } else {
+        RunningSurfaceVariant::Default
+    };
+    let footer = if title_page {
+        RunningSurfaceVariant::First
+    } else if page_number.is_multiple_of(2) && !setup.even_footer().is_empty() {
+        RunningSurfaceVariant::Even
+    } else {
+        RunningSurfaceVariant::Default
+    };
+    (header, footer)
+}
+
+fn running_surface_line_spacing(
+    hints: &RunningSurfaceLineSpacingHints,
+    variant: RunningSurfaceVariant,
+    header: bool,
+) -> &[Option<LineSpacingHint>] {
+    match (header, variant) {
+        (true, RunningSurfaceVariant::Default) => &hints.header,
+        (true, RunningSurfaceVariant::First) => &hints.first_header,
+        (true, RunningSurfaceVariant::Even) => &hints.even_header,
+        (false, RunningSurfaceVariant::Default) => &hints.footer,
+        (false, RunningSurfaceVariant::First) => &hints.first_footer,
+        (false, RunningSurfaceVariant::Even) => &hints.even_footer,
+    }
+}
+
+fn running_surface_tab_stops(
+    hints: &RunningSurfaceTabStopHints,
+    variant: RunningSurfaceVariant,
+    header: bool,
+) -> &[Vec<TabStop>] {
+    match (header, variant) {
+        (true, RunningSurfaceVariant::Default) => &hints.header,
+        (true, RunningSurfaceVariant::First) => &hints.first_header,
+        (true, RunningSurfaceVariant::Even) => &hints.even_header,
+        (false, RunningSurfaceVariant::Default) => &hints.footer,
+        (false, RunningSurfaceVariant::First) => &hints.first_footer,
+        (false, RunningSurfaceVariant::Even) => &hints.even_footer,
+    }
+}
+
+fn running_surface_table_cell_line_spacing(
+    hints: &RunningSurfaceLineSpacingHints,
+    variant: RunningSurfaceVariant,
+    header: bool,
+) -> &[TableCellLineSpacingHints] {
+    match (header, variant) {
+        (true, RunningSurfaceVariant::Default) => &hints.header_table_cells,
+        (true, RunningSurfaceVariant::First) => &hints.first_header_table_cells,
+        (true, RunningSurfaceVariant::Even) => &hints.even_header_table_cells,
+        (false, RunningSurfaceVariant::Default) => &hints.footer_table_cells,
+        (false, RunningSurfaceVariant::First) => &hints.first_footer_table_cells,
+        (false, RunningSurfaceVariant::Even) => &hints.even_footer_table_cells,
+    }
+}
+
+fn running_surface_table_cell_tab_stops(
+    hints: &RunningSurfaceTableCellTabStopHints,
+    variant: RunningSurfaceVariant,
+    header: bool,
+) -> &[TableCellTabStopHints] {
+    match (header, variant) {
+        (true, RunningSurfaceVariant::Default) => &hints.header,
+        (true, RunningSurfaceVariant::First) => &hints.first_header,
+        (true, RunningSurfaceVariant::Even) => &hints.even_header,
+        (false, RunningSurfaceVariant::Default) => &hints.footer,
+        (false, RunningSurfaceVariant::First) => &hints.first_footer,
+        (false, RunningSurfaceVariant::Even) => &hints.even_footer,
+    }
+}
+
+impl RunningSurfaceSetup for crate::model::DocSetup {
+    fn header(&self) -> &[Block] {
+        &self.header
+    }
+
+    fn first_header(&self) -> &[Block] {
+        &self.first_header
+    }
+
+    fn even_header(&self) -> &[Block] {
+        &self.even_header
+    }
+
+    fn footer(&self) -> &[Block] {
+        &self.footer
+    }
+
+    fn first_footer(&self) -> &[Block] {
+        &self.first_footer
+    }
+
+    fn even_footer(&self) -> &[Block] {
+        &self.even_footer
+    }
+
+    fn title_page(&self) -> bool {
+        self.title_page
+    }
+}
+
+impl RunningSurfaceSetup for SectionSetup {
+    fn header(&self) -> &[Block] {
+        &self.header
+    }
+
+    fn first_header(&self) -> &[Block] {
+        &self.first_header
+    }
+
+    fn even_header(&self) -> &[Block] {
+        &self.even_header
+    }
+
+    fn footer(&self) -> &[Block] {
+        &self.footer
+    }
+
+    fn first_footer(&self) -> &[Block] {
+        &self.first_footer
+    }
+
+    fn even_footer(&self) -> &[Block] {
+        &self.even_footer
+    }
+
+    fn title_page(&self) -> bool {
+        self.title_page
+    }
+}
+
+fn running_header_footer_blocks_for_page<T: RunningSurfaceSetup + ?Sized>(
+    setup: &T,
+    page_number: usize,
+    is_first_section_page: bool,
+) -> (&[Block], &[Block]) {
+    let (header_variant, footer_variant) =
+        running_surface_variants_for_page(setup, page_number, is_first_section_page);
+    let header = match header_variant {
+        RunningSurfaceVariant::Default => setup.header(),
+        RunningSurfaceVariant::First => setup.first_header(),
+        RunningSurfaceVariant::Even => setup.even_header(),
+    };
+    let footer = match footer_variant {
+        RunningSurfaceVariant::Default => setup.footer(),
+        RunningSurfaceVariant::First => setup.first_footer(),
+        RunningSurfaceVariant::Even => setup.even_footer(),
+    };
+    (header, footer)
+}
+
+fn assign_section_to_render_pages(
+    page_sections: &mut [Option<RenderPageSection>],
+    start_page_index: usize,
+    end_page_index: usize,
+    setup: &SectionSetup,
+    section_index: usize,
+) {
+    if page_sections.is_empty() {
+        return;
+    }
+    let last_page_index = page_sections.len() - 1;
+    let start = start_page_index.min(last_page_index);
+    let end = end_page_index.min(last_page_index);
+    if start > end {
+        return;
+    }
+    for page_section in &mut page_sections[start..=end] {
+        *page_section = Some(RenderPageSection {
+            setup: setup.clone(),
+            first_page_index: start,
+            section_index,
+        });
+    }
+}
+
+fn display_page_numbers(
+    page_sections: &[Option<RenderPageSection>],
+    fallback_setup: &SectionSetup,
+) -> Vec<PageDisplayNumber> {
+    let mut active_section = None;
+    let mut next_value = 1usize;
+    let mut format = None;
+    page_sections
+        .iter()
+        .map(|section| {
+            let (section_index, setup) = section
+                .as_ref()
+                .map(|section| (section.section_index, &section.setup))
+                .unwrap_or((usize::MAX, fallback_setup));
+            if active_section != Some(section_index) {
+                active_section = Some(section_index);
+                if let Some(start) = setup.page_number_start {
+                    next_value = (start as usize).max(1);
+                }
+                if let Some(section_format) = setup.page_number_format {
+                    format = Some(section_format.into());
+                }
+            }
+            let page_number = PageDisplayNumber {
+                value: next_value,
+                format,
+            };
+            next_value = next_value.saturating_add(1);
+            page_number
+        })
+        .collect()
+}
+
+fn layout_page_number_line(
+    page_number: PageDisplayNumber,
+    geom: Geom,
+    cx: &mut TextCx<'_>,
+) -> Option<LineLayout> {
+    let text = page_number.text()?;
+    shape(
+        &text,
+        StyledText::plain(&[(0, text.len(), CharProps::default())]),
+        None,
+        Alignment::Center,
+        geom.content_w(),
+        cx,
+    )
+    .into_iter()
+    .next()
+}
+
+fn collect_blocks(
+    blocks: &[Block],
+    out: &mut Vec<FlowItem>,
+    geom: Geom,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+) {
+    collect_blocks_inner(
+        blocks,
+        out,
+        geom,
+        cx,
+        capture,
+        BlockCollectionOptions::default(),
+    );
+}
+
+#[derive(Default)]
+struct BlockCollectionOptions<'source, 'options> {
+    include_block_anchors: bool,
+    paragraph_widths: Option<&'options [Option<f32>]>,
+    section_columns: Option<&'options [Option<u16>]>,
+    section_column_gap_pt: Option<&'options [Option<f32>]>,
+    section_column_layouts: Option<&'options [Option<&'options SectionColumnLayoutHints>]>,
+    section_column_rtl: Option<&'options [bool]>,
+    section_geometries: Option<&'options [Geom]>,
+    pagination_hints: Option<&'options [PaginationHint]>,
+    pagination_boundaries: Option<&'options [usize]>,
+    line_spacing_hints: Option<&'options [Option<LineSpacingHint>]>,
+    tab_stops: Option<&'source [Vec<TabStop>]>,
+    column_break_offsets: Option<&'source [Vec<usize>]>,
+    default_tab_stop_pt: Option<f32>,
+    table_row_pagination: Option<&'source [Vec<TableRowPaginationHint>]>,
+    table_cell_pagination: Option<&'source [TableCellPaginationHints]>,
+    table_cell_line_spacing: Option<&'source [TableCellLineSpacingHints]>,
+    table_nested_pagination: Option<&'source [TableCellNestedPaginationHints]>,
+    table_cell_tab_stops: Option<&'source [TableCellTabStopHints]>,
+    top_bottom_bands: Option<&'options [Vec<TopBottomBand>]>,
+}
+
+struct BodyCollectionSidecars<'source, 'options> {
+    paragraph_widths: Option<&'options [Option<f32>]>,
+    section_columns: &'options [Option<u16>],
+    section_column_gap_pt: &'options [Option<f32>],
+    section_column_layouts: &'options [Option<&'options SectionColumnLayoutHints>],
+    section_column_rtl: &'options [bool],
+    section_geometries: &'options [Geom],
+    pagination_hints: &'options [PaginationHint],
+    pagination_boundaries: &'options [usize],
+    line_spacing_hints: &'options [Option<LineSpacingHint>],
+    tab_stops: &'source [Vec<TabStop>],
+    column_break_offsets: &'source [Vec<usize>],
+    default_tab_stop_pt: Option<f32>,
+    table_row_pagination: &'source [Vec<TableRowPaginationHint>],
+    table_cell_pagination: &'source [TableCellPaginationHints],
+    table_cell_line_spacing: &'source [TableCellLineSpacingHints],
+    table_nested_pagination: &'source [TableCellNestedPaginationHints],
+    table_cell_tab_stops: &'source [TableCellTabStopHints],
+    top_bottom_bands: &'options [Vec<TopBottomBand>],
+}
+
+fn collect_blocks_with_block_anchors<'source, 'options, S: BlockFlowSink<'source>>(
+    blocks: &'source [Block],
+    out: &mut S,
+    geom: Geom,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    sidecars: BodyCollectionSidecars<'source, 'options>,
+) {
+    collect_blocks_inner(
+        blocks,
+        out,
+        geom,
+        cx,
+        capture,
+        BlockCollectionOptions {
+            include_block_anchors: true,
+            paragraph_widths: sidecars.paragraph_widths,
+            section_columns: Some(sidecars.section_columns),
+            section_column_gap_pt: Some(sidecars.section_column_gap_pt),
+            section_column_layouts: Some(sidecars.section_column_layouts),
+            section_column_rtl: Some(sidecars.section_column_rtl),
+            section_geometries: Some(sidecars.section_geometries),
+            pagination_hints: Some(sidecars.pagination_hints),
+            pagination_boundaries: Some(sidecars.pagination_boundaries),
+            line_spacing_hints: Some(sidecars.line_spacing_hints),
+            tab_stops: Some(sidecars.tab_stops),
+            column_break_offsets: Some(sidecars.column_break_offsets),
+            default_tab_stop_pt: sidecars.default_tab_stop_pt,
+            table_row_pagination: Some(sidecars.table_row_pagination),
+            table_cell_pagination: Some(sidecars.table_cell_pagination),
+            table_cell_line_spacing: Some(sidecars.table_cell_line_spacing),
+            table_nested_pagination: Some(sidecars.table_nested_pagination),
+            table_cell_tab_stops: Some(sidecars.table_cell_tab_stops),
+            top_bottom_bands: Some(sidecars.top_bottom_bands),
+        },
+    );
+}
+
+fn collect_blocks_inner<'source, 'options, S: BlockFlowSink<'source>>(
+    blocks: &'source [Block],
+    out: &mut S,
+    geom: Geom,
+    cx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    options: BlockCollectionOptions<'source, 'options>,
+) {
+    let mut lists = ListState::default();
+    for (block_index, b) in blocks.iter().enumerate() {
+        if options
+            .pagination_boundaries
+            .is_some_and(|boundaries| boundaries.binary_search(&block_index).is_ok())
+        {
+            out.ready_items().push(FlowItem::PaginationBoundary);
+        }
+        let section_geom = options
+            .section_geometries
+            .and_then(|geometries| geometries.get(block_index).copied())
+            .unwrap_or(geom);
+        let block_geom = options
+            .section_columns
+            .and_then(|columns| columns.get(block_index).copied())
+            .map(|columns| {
+                let gap_pt = options
+                    .section_column_gap_pt
+                    .and_then(|gaps| gaps.get(block_index).copied())
+                    .flatten();
+                let column_layout = options
+                    .section_column_layouts
+                    .and_then(|layouts| layouts.get(block_index).copied())
+                    .flatten();
+                section_geom.with_content_width(
+                    ColumnLayout::new_with_layout(section_geom, columns, gap_pt, column_layout)
+                        .shaping_width(),
+                )
+            })
+            .unwrap_or(section_geom);
+        if options.include_block_anchors {
+            out.ready_items().push(FlowItem::BlockStart {
+                index: block_index,
+                pagination: options
+                    .pagination_hints
+                    .and_then(|hints| hints.get(block_index))
+                    .copied()
+                    .unwrap_or_default(),
+            });
+        }
+        match b {
+            Block::Paragraph(p) => {
+                let paragraph_geom = options
+                    .paragraph_widths
+                    .and_then(|widths| widths.get(block_index))
+                    .copied()
+                    .flatten()
+                    .filter(|width| width.is_finite() && *width > 0.0)
+                    .map(|width| section_geom.with_content_width(width))
+                    .unwrap_or(block_geom);
+                if p.props.page_break_before && out.has_non_anchor(cx, capture) {
+                    out.ready_items().push(FlowItem::PageBreak);
+                }
+                if let Some(bands) = options
+                    .top_bottom_bands
+                    .and_then(|bands| bands.get(block_index))
+                {
+                    out.ready_items()
+                        .extend(bands.iter().map(|band| FlowItem::TopBottomBand {
+                            top: band.top,
+                            bottom: band.bottom,
+                            anchor_offset: band.anchor_offset,
+                        }));
+                }
+                let marker = paragraph_list_marker(p, &mut lists);
+                if let Some(before) = p.props.spacing.before_pt.filter(|b| *b > 0.0) {
+                    out.ready_items().push(FlowItem::Gap(before));
+                }
+                let tab_stops = options
+                    .tab_stops
+                    .and_then(|stops| stops.get(block_index))
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                let column_break_offsets = options
+                    .column_break_offsets
+                    .and_then(|breaks| breaks.get(block_index))
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                let line_spacing_hint = options
+                    .line_spacing_hints
+                    .and_then(|hints| hints.get(block_index))
+                    .copied()
+                    .flatten();
+                let page_field_indices = reserve_paragraph_page_fields(p, capture);
+                out.push_paragraph(
+                    ParagraphFlowRequest {
+                        paragraph: p,
+                        marker: marker.map(Cow::Owned),
+                        tab_stops,
+                        column_break_offsets,
+                        default_tab_stop_pt: options.default_tab_stop_pt,
+                        line_spacing_hint,
+                        geom: paragraph_geom,
+                        page_field_indices,
+                    },
+                    cx,
+                    capture,
+                );
+                let after = p
+                    .props
+                    .spacing
+                    .after_pt
+                    .filter(|value| value.is_finite())
+                    .map(|value| value.max(0.0))
+                    .unwrap_or(PARA_GAP);
+                if after > 0.0 {
+                    out.ready_items().push(FlowItem::Gap(after));
+                }
+            }
+            Block::Table(t) => {
+                let row_pagination = options
+                    .table_row_pagination
+                    .and_then(|tables| tables.get(block_index))
+                    .map(Vec::as_slice);
+                let cell_pagination = options
+                    .table_cell_pagination
+                    .and_then(|tables| tables.get(block_index));
+                let cell_line_spacing = options
+                    .table_cell_line_spacing
+                    .and_then(|tables| tables.get(block_index));
+                let nested_pagination = options
+                    .table_nested_pagination
+                    .and_then(|tables| tables.get(block_index));
+                let cell_tab_stops = options
+                    .table_cell_tab_stops
+                    .and_then(|tables| tables.get(block_index));
+                let pagination = TablePaginationView {
+                    rows: row_pagination,
+                    cells: cell_pagination,
+                    cell_line_spacing,
+                    nested: nested_pagination,
+                    cell_tabs: cell_tab_stops,
+                    default_tab_stop_pt: options.default_tab_stop_pt,
+                    depth: 0,
+                };
+                let lists_before = lists.clone();
+                let capture_start = capture.checkpoint();
+                layout_table_with_row_pagination_and_lists(
+                    t,
+                    out.ready_items(),
+                    block_geom,
+                    cx,
+                    capture,
+                    pagination,
+                    &mut lists,
+                );
+                out.retain_table(TableFlowRequest {
+                    table: t,
+                    pagination,
+                    geom: block_geom,
+                    lists_before,
+                    lists_after: lists.clone(),
+                    capture_start,
+                    capture_end: capture.checkpoint(),
+                });
+                out.ready_items().push(FlowItem::Gap(PARA_GAP));
+            }
+            Block::Image(img) => {
+                if let Some(item) = image_flow_item(img, block_geom) {
+                    out.ready_items().push(item);
+                    out.ready_items().push(FlowItem::Gap(PARA_GAP));
+                }
+            }
+            Block::Chart(chart) => {
+                if let Some(item) = chart_flow_item(chart, block_geom) {
+                    out.ready_items().push(item);
+                    out.ready_items().push(FlowItem::Gap(PARA_GAP));
+                }
+            }
+            Block::PageBreak => out.ready_items().push(FlowItem::PageBreak),
+            Block::SectionBreak(section) => {
+                if let Some(gap_pt) = options
+                    .section_column_gap_pt
+                    .and_then(|gaps| gaps.get(block_index).copied())
+                    .flatten()
+                {
+                    out.ready_items().push(FlowItem::SectionColumnGap(gap_pt));
+                }
+                if let Some(layout) = options
+                    .section_column_layouts
+                    .and_then(|layouts| layouts.get(block_index).copied())
+                    .flatten()
+                {
+                    out.ready_items()
+                        .push(FlowItem::SectionColumnLayout(Rc::new(layout.clone())));
+                }
+                if options
+                    .section_column_rtl
+                    .and_then(|directions| directions.get(block_index))
+                    .copied()
+                    .unwrap_or(false)
+                {
+                    out.ready_items().push(FlowItem::SectionColumnRtl);
+                }
+                out.ready_items()
+                    .push(FlowItem::SectionBreak(section.clone()));
+            }
+        }
+    }
+}
+
+fn fill_circle_color(
+    scene: &mut PageScene,
+    cx: f32,
+    cy: f32,
+    radius: f32,
+    color: rgb::Color,
+) -> Result<()> {
+    if radius <= 0.0 {
+        return Ok(());
+    }
+    let steps = 28usize;
+    project_page_scene_fill_polygon_iter(
+        scene,
+        (0..=steps).map(move |step| {
+            let angle = std::f32::consts::TAU * step as f32 / steps as f32;
+            (cx + radius * angle.cos(), cy + radius * angle.sin())
+        }),
+        color,
+    )
+}
+
+fn fill_chart_bar_shape(
+    scene: &mut PageScene,
+    rect: ChartRect,
+    shape: ChartShape,
+    color: rgb::Color,
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
+    if w <= 0.0 || h <= 0.0 {
+        return Ok(());
+    }
+    match shape {
+        ChartShape::Cylinder => {
+            let radius = (h * 0.5).min(w * 0.5);
+            project_page_scene_fill_rect(
+                scene,
+                x + radius * 0.5,
+                y,
+                (w - radius).max(1.0),
+                h,
+                color,
+            )?;
+            fill_circle_color(scene, x + radius, y + h * 0.5, radius, color)?;
+            fill_circle_color(scene, x + w - radius, y + h * 0.5, radius, color)?;
+        }
+        ChartShape::Cone
+        | ChartShape::ConeToMax
+        | ChartShape::Pyramid
+        | ChartShape::PyramidToMax => {
+            project_page_scene_fill_polygon(
+                scene,
+                &[(x, y), (x, y + h), (x + w, y + h * 0.5)],
+                color,
+            )?;
+        }
+        ChartShape::Box => {
+            project_page_scene_fill_rect(scene, x, y, w, h, color)?;
+        }
+    }
+    Ok(())
+}
+
+fn fill_chart_column_shape(
+    scene: &mut PageScene,
+    rect: ChartRect,
+    shape: ChartShape,
+    color: rgb::Color,
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
+    if w <= 0.0 || h <= 0.0 {
+        return Ok(());
+    }
+    match shape {
+        ChartShape::Cylinder => {
+            let radius = (w * 0.5).min(h * 0.5);
+            project_page_scene_fill_rect(
+                scene,
+                x,
+                y + radius * 0.5,
+                w,
+                (h - radius).max(1.0),
+                color,
+            )?;
+            fill_circle_color(scene, x + w * 0.5, y + radius, radius, color)?;
+            fill_circle_color(scene, x + w * 0.5, y + h - radius, radius, color)?;
+        }
+        ChartShape::Cone
+        | ChartShape::ConeToMax
+        | ChartShape::Pyramid
+        | ChartShape::PyramidToMax => {
+            project_page_scene_fill_polygon(
+                scene,
+                &[(x + w * 0.5, y), (x, y + h), (x + w, y + h)],
+                color,
+            )?;
+        }
+        ChartShape::Box => {
+            project_page_scene_fill_rect(scene, x, y, w, h, color)?;
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BorderRect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+fn cell_border_rects(
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+    paints: CellBorderPaints,
+) -> Option<[Option<BorderRect>; 4]> {
+    if !left.is_finite()
+        || !top.is_finite()
+        || !right.is_finite()
+        || !bottom.is_finite()
+        || right <= left
+        || bottom <= top
+    {
+        return None;
+    }
+
+    let width = |paint: Option<TableBorderPaint>| {
+        paint.map_or(0.0, |paint| {
+            if paint.width.is_finite() && paint.width > 0.0 {
+                paint.width
+            } else {
+                f32::NAN
+            }
+        })
+    };
+    let top_width = width(paints.top);
+    let left_width = width(paints.left);
+    let bottom_width = width(paints.bottom);
+    let right_width = width(paints.right);
+    if [top_width, left_width, bottom_width, right_width]
+        .into_iter()
+        .any(|width| !width.is_finite())
+    {
+        return None;
+    }
+
+    let horizontal_x = left - left_width * 0.5;
+    let horizontal_width = right - left + (left_width + right_width) * 0.5;
+    let vertical_y = top - top_width * 0.5;
+    let vertical_height = bottom - top + (top_width + bottom_width) * 0.5;
+    Some([
+        paints.top.map(|_| BorderRect {
+            x: horizontal_x,
+            y: top - top_width * 0.5,
+            w: horizontal_width,
+            h: top_width,
+        }),
+        paints.bottom.map(|_| BorderRect {
+            x: horizontal_x,
+            y: bottom - bottom_width * 0.5,
+            w: horizontal_width,
+            h: bottom_width,
+        }),
+        paints.left.map(|_| BorderRect {
+            x: left - left_width * 0.5,
+            y: vertical_y,
+            w: left_width,
+            h: vertical_height,
+        }),
+        paints.right.map(|_| BorderRect {
+            x: right - right_width * 0.5,
+            y: vertical_y,
+            w: right_width,
+            h: vertical_height,
+        }),
+    ])
+}
+
+fn row_vertical_border_lines(row: &RowLayout, x_offset: f32) -> Vec<VerticalBorderLine> {
+    let mut lines = Vec::with_capacity(row.cells.len().saturating_mul(2));
+    for cell in &row.cells {
+        for (x, side) in [
+            (cell.x, cell.border_edges.left),
+            (cell.right, cell.border_edges.right),
+        ] {
+            if let Some(side) = side {
+                lines.push(VerticalBorderLine {
+                    x: x_offset + x,
+                    paint: row.border.get(side),
+                });
+            }
+        }
+    }
+    lines.sort_by(|left, right| left.x.total_cmp(&right.x));
+    lines.dedup_by(|left, right| left.x == right.x);
+    lines
+}
+
+fn top_horizontal_paint_at(row: &RowLayout, x_offset: f32, x: f32) -> Option<TableBorderPaint> {
+    let local_x = x - x_offset;
+    row.cells.iter().find_map(|cell| {
+        let side = cell.border_edges.top?;
+        (local_x >= cell.x && local_x <= cell.right).then(|| row.border.get(side))
+    })
+}
+
+fn terminal_vertical_junctions(
+    previous: &[VerticalBorderLine],
+    current: &RowLayout,
+    current_vertical: &[VerticalBorderLine],
+    x_offset: f32,
+) -> Vec<(VerticalBorderLine, f32)> {
+    previous
+        .iter()
+        .copied()
+        .filter(|line| !current_vertical.iter().any(|current| current.x == line.x))
+        .filter_map(|line| {
+            let horizontal = top_horizontal_paint_at(current, x_offset, line.x)?;
+            (line.paint != horizontal).then_some((line, horizontal.width))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+fn table_border_rects(
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+    requested_width: f32,
+) -> Option<[BorderRect; 4]> {
+    let paint = TableBorderPaint {
+        color: rgb::Color::black(),
+        width: requested_width,
+    };
+    cell_border_rects(left, top, right, bottom, CellBorderPaints::uniform(paint))
+        .map(|rects| rects.map(|rect| rect.expect("uniform paint has every edge")))
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TableCellPaintPlacement {
+    x_offset: f32,
+    top: f32,
+    bottom: f32,
+    row_height: f32,
+}
+
+fn project_table_cell_paint(
+    scene: &mut PageScene,
+    cell: &CellBox,
+    placement: TableCellPaintPlacement,
+    border: TableBorderPaints,
+) -> Result<std::ops::Range<usize>> {
+    let start = scene.operations.len();
+    let left = placement.x_offset + cell.x;
+    let right = placement.x_offset + cell.right;
+    if let Some(fill) = cell.shading {
+        scene.push_fill_rect(left, placement.top, cell.width, placement.row_height, fill)?;
+    }
+    let paints = CellBorderPaints::resolve(cell.border_edges, border);
+    if let Some(rects) = cell_border_rects(left, placement.top, right, placement.bottom, paints) {
+        for (rect, paint) in [
+            (rects[0], paints.top),
+            (rects[1], paints.bottom),
+            (rects[2], paints.left),
+            (rects[3], paints.right),
+        ] {
+            let (Some(rect), Some(paint)) = (rect, paint) else {
+                continue;
+            };
+            scene.push_fill_rect(rect.x, rect.y, rect.w, rect.h, paint.color)?;
+        }
+    }
+    Ok(start..scene.operations.len())
+}
+
+fn project_page_scene_fill_rect(
+    scene: &mut PageScene,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    color: rgb::Color,
+) -> Result<()> {
+    scene.push_fill_rect(x, y, width, height, color)?;
+    Ok(())
+}
+
+fn project_page_scene_fill_polygon(
+    scene: &mut PageScene,
+    points: &[(f32, f32)],
+    color: rgb::Color,
+) -> Result<()> {
+    scene.push_fill_polygon(points, color)?;
+    Ok(())
+}
+
+fn project_page_scene_fill_polygon_iter<I>(
+    scene: &mut PageScene,
+    points: I,
+    color: rgb::Color,
+) -> Result<()>
+where
+    I: Clone + Iterator<Item = (f32, f32)>,
+{
+    scene.push_fill_polygon_iter(points, color)?;
+    Ok(())
+}
+
+fn project_page_scene_glyph_run(
+    scene: &mut PageScene,
+    run: RunDraw,
+    x_abs: f32,
+    baseline_y: f32,
+) -> Result<()> {
+    scene.push_glyph_run(&run, x_abs, baseline_y)?;
+    Ok(())
+}
+
+fn push_page_scene_clip(
+    scene: &mut PageScene,
+    left: f32,
+    top: f32,
+    height: f32,
+    width: f32,
+) -> Result<bool> {
+    if !scene.push_clip_rect(left, top, width, height)? {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+fn pop_page_scene_clip(scene: &mut PageScene) -> Result<()> {
+    scene.pop_clip()?;
+    Ok(())
+}
+
+fn push_page_scene_transform(scene: &mut PageScene, transform: SceneTransform) -> Result<bool> {
+    if !scene.push_transform(transform)? {
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+fn pop_page_scene_transform(scene: &mut PageScene) -> Result<()> {
+    scene.pop_transform()?;
+    Ok(())
+}
+
+fn project_page_scene_image(
+    scene: &mut PageScene,
+    image: RenderImage,
+    layout: ImageLayout,
+    bounds_x: f32,
+    bounds_y: f32,
+) -> Result<bool> {
+    let RenderImage { scene: resource } = image;
+    let transform = image_paint_transform(layout, bounds_x, bounds_y);
+    Ok(scene
+        .push_image(resource, layout.image_w, layout.image_h, transform)?
+        .is_some())
+}
+
+fn draw_terminal_vertical_junction(
+    scene: &mut PageScene,
+    top: f32,
+    line: VerticalBorderLine,
+    horizontal_width: f32,
+) -> Result<()> {
+    project_page_scene_fill_rect(
+        scene,
+        line.x - line.paint.width * 0.5,
+        top - horizontal_width * 0.5,
+        line.paint.width,
+        horizontal_width,
+        line.paint.color,
+    )
+}
+
+fn draw_table_cell_background_and_borders(
+    scene: &mut PageScene,
+    cell: &CellBox,
+    placement: TableCellPaintPlacement,
+    border: TableBorderPaints,
+) -> Result<()> {
+    project_table_cell_paint(scene, cell, placement, border)?;
+    Ok(())
+}
+
+fn cell_line_origin(cell_x: f32, insets: CellInsets, line: &LineLayout) -> f32 {
+    cell_x + insets.left + line.x_indent
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct CellContentPlacement {
+    x: f32,
+    top: f32,
+    row_height: f32,
+    link_clip: LinkClip,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct RowPaintPlacement {
+    x_offset: f32,
+    top: f32,
+    page_number: PageDisplayNumber,
+    link_clip: LinkClip,
+}
+
+#[derive(Clone, Copy)]
+struct RunningSurfacePaintPlacement {
+    vertical_bounds: (f32, f32),
+    geom: Geom,
+    page_number: PageDisplayNumber,
+}
+
+fn cell_lines_extent(lines: &[LineLayout]) -> f32 {
+    lines.iter().map(LineLayout::cell_extent).sum()
+}
+
+fn cell_vertical_offset(cell: &CellBox, row_height: f32) -> f32 {
+    let available = row_height - cell.insets.top - cell.insets.bottom;
+    let slack = (available - cell_lines_extent(&cell.lines)).max(0.0);
+    match cell.valign {
+        VCell::Top => 0.0,
+        VCell::Center => slack * 0.5,
+        VCell::Bottom => slack,
+    }
+}
+
+fn draw_table_cell_content(
+    scene: &mut PageScene,
+    cell: CellBox,
+    placement: CellContentPlacement,
+    page_number: PageDisplayNumber,
+    cx: &mut TextCx<'_>,
+) -> Result<()> {
+    let offset = cell_vertical_offset(&cell, placement.row_height);
+    let clip_left = placement.x;
+    let clip_width = cell.width;
+    let mut line_top = placement.top + cell.insets.top + offset;
+    let mut previous_nested_borders: Option<RenderedRowBorders> = None;
+    for line in cell.lines {
+        line_top += line.cell_spacing.before;
+        let baseline = line_top + line.baseline;
+        let line_height = line.height;
+        let after = line.cell_spacing.after;
+        let line_x = cell_line_origin(placement.x, cell.insets, &line);
+        let clip_content = if line.clip_to_height {
+            push_page_scene_clip(scene, clip_left, line_top, line_height, clip_width)?
+        } else {
+            false
+        };
+        project_page_scene_line_paint(scene, &line, line_x, line_top, baseline)?;
+        match line.cell_visual {
+            Some(CellVisual::Picture { image, layout }) => {
+                previous_nested_borders = None;
+                let inner_width =
+                    (cell.width - cell.insets.left - cell.insets.right).max(layout.bounds_w);
+                let x = placement.x
+                    + cell.insets.left
+                    + ((inner_width - layout.bounds_w) * 0.5).max(0.0);
+                project_page_scene_image(scene, image, layout, x, line_top)?;
+            }
+            Some(CellVisual::Chart {
+                chart,
+                width,
+                height,
+                layout,
+            }) => {
+                previous_nested_borders = None;
+                let inner_width =
+                    (cell.width - cell.insets.left - cell.insets.right).max(layout.bounds_w);
+                let x = placement.x
+                    + cell.insets.left
+                    + ((inner_width - layout.bounds_w) * 0.5).max(0.0);
+                if push_page_scene_clip(scene, x, line_top, layout.bounds_h, layout.bounds_w)? {
+                    let transform =
+                        SceneTransform::from_row(layout.scale, 0.0, 0.0, layout.scale, x, line_top);
+                    if push_page_scene_transform(scene, transform)? {
+                        draw_authored_chart(
+                            scene,
+                            &chart,
+                            ChartRect {
+                                x: 0.0,
+                                y: 0.0,
+                                w: width,
+                                h: height,
+                            },
+                            cx,
+                        )?;
+                        pop_page_scene_transform(scene)?;
+                    }
+                    pop_page_scene_clip(scene)?;
+                }
+            }
+            Some(CellVisual::NestedRow { row }) => {
+                let next = draw_row_layout(
+                    scene,
+                    *row,
+                    RowPaintPlacement {
+                        x_offset: line_x,
+                        top: line_top,
+                        page_number,
+                        link_clip: placement.link_clip,
+                    },
+                    cx,
+                    previous_nested_borders.as_ref(),
+                )?;
+                previous_nested_borders = next;
+            }
+            None => {
+                previous_nested_borders = None;
+                for run in line.runs {
+                    if let Some(url) = run.link.clone() {
+                        let left = line_x + run.x;
+                        scene.push_link_ltrb(
+                            [left, line_top, left + run.width(), line_top + line_height],
+                            url,
+                            placement.link_clip,
+                        )?;
+                    }
+                    project_page_scene_run_with_page_context(
+                        scene,
+                        run,
+                        line_x,
+                        baseline,
+                        page_number,
+                        cx,
+                    )?;
+                }
+            }
+        }
+        if clip_content {
+            pop_page_scene_clip(scene)?;
+        }
+        line_top += line_height + after;
+    }
+    Ok(())
+}
+
+fn draw_row_layout(
+    scene: &mut PageScene,
+    row: RowLayout,
+    placement: RowPaintPlacement,
+    cx: &mut TextCx<'_>,
+    previous: Option<&RenderedRowBorders>,
+) -> Result<Option<RenderedRowBorders>> {
+    let table_id = row.table_id;
+    let border = row.border;
+    let row_height = row.height;
+    let bottom = placement.top + row_height;
+    let current_vertical = row_vertical_border_lines(&row, placement.x_offset);
+    let junctions = match (table_id, previous) {
+        (Some(table_id), Some(previous))
+            if previous.table_id == table_id && (previous.bottom - placement.top).abs() < 0.01 =>
+        {
+            terminal_vertical_junctions(
+                &previous.vertical,
+                &row,
+                &current_vertical,
+                placement.x_offset,
+            )
+        }
+        _ => Vec::new(),
+    };
+    let cells = row.cells;
+    if junctions.is_empty() {
+        for cell in cells {
+            draw_table_cell_background_and_borders(
+                scene,
+                &cell,
+                TableCellPaintPlacement {
+                    x_offset: placement.x_offset,
+                    top: placement.top,
+                    bottom,
+                    row_height,
+                },
+                border,
+            )?;
+            let cell_x = placement.x_offset + cell.x;
+            draw_table_cell_content(
+                scene,
+                cell,
+                CellContentPlacement {
+                    x: cell_x,
+                    top: placement.top,
+                    row_height,
+                    link_clip: placement.link_clip,
+                },
+                placement.page_number,
+                cx,
+            )?;
+        }
+    } else {
+        for cell in &cells {
+            draw_table_cell_background_and_borders(
+                scene,
+                cell,
+                TableCellPaintPlacement {
+                    x_offset: placement.x_offset,
+                    top: placement.top,
+                    bottom,
+                    row_height,
+                },
+                border,
+            )?;
+        }
+        for (line, horizontal_width) in junctions {
+            draw_terminal_vertical_junction(scene, placement.top, line, horizontal_width)?;
+        }
+        for cell in cells {
+            let cell_x = placement.x_offset + cell.x;
+            draw_table_cell_content(
+                scene,
+                cell,
+                CellContentPlacement {
+                    x: cell_x,
+                    top: placement.top,
+                    row_height,
+                    link_clip: placement.link_clip,
+                },
+                placement.page_number,
+                cx,
+            )?;
+        }
+    }
+    Ok(table_id.map(|table_id| RenderedRowBorders {
+        table_id,
+        bottom,
+        vertical: current_vertical,
+    }))
+}
+
+fn project_page_scene_line_paint(
+    scene: &mut PageScene,
+    line: &LineLayout,
+    x_abs: f32,
+    top: f32,
+    baseline: f32,
+) -> Result<()> {
+    if let Some(background) = line.background {
+        scene.push_fill_rect(x_abs, top, background.width, line.height, background.color)?;
+    }
+    for leader in &line.leaders {
+        let start = x_abs + leader.start.min(leader.end);
+        let end = x_abs + leader.start.max(leader.end);
+        if !start.is_finite() || !end.is_finite() || !top.is_finite() || !baseline.is_finite() {
+            continue;
+        }
+        if leader.style == TabLeader::Bar {
+            scene.push_fill_rect(
+                start - 0.4,
+                top + 1.0,
+                0.8,
+                (line.height - 2.0).max(0.8),
+                leader.color,
+            )?;
+            continue;
+        }
+        let (dash, gap, y, height): (f32, f32, f32, f32) = match leader.style {
+            TabLeader::Dot => (1.0, 3.0, baseline - 1.0, 1.0),
+            TabLeader::Hyphen => (3.0, 3.0, baseline - 1.2, 0.8),
+            TabLeader::Underscore => (end - start, 0.0, baseline + 1.0, 0.8),
+            TabLeader::Heavy => (4.0, 2.0, baseline - 1.8, 1.6),
+            TabLeader::MiddleDot => (2.0, 3.0, baseline - 1.8, 1.8),
+            TabLeader::None | TabLeader::Bar => continue,
+        };
+        if dash <= 0.0 || !dash.is_finite() || !gap.is_finite() {
+            continue;
+        }
+        let mut x = start;
+        let mut segments = 0usize;
+        while x < end && segments < 2048 {
+            let width = dash.min(end - x);
+            scene.push_fill_rect(x, y, width, height, leader.color)?;
+            x += dash + gap;
+            segments += 1;
+        }
+    }
+    Ok(())
+}
+
+fn project_floating_overlay_frame(
+    scene: &mut PageScene,
+    overlay: &FloatingShapeOverlay,
+) -> Result<std::ops::Range<usize>> {
+    let start = scene.operations.len();
+    scene.push_fill_rect(
+        overlay.x,
+        overlay.y,
+        overlay.w,
+        overlay.h,
+        rgb::Color::new(0xF6, 0xF8, 0xFA),
+    )?;
+    let border = rgb::Color::new(0x5D, 0x6B, 0x78);
+    scene.push_fill_rect(overlay.x, overlay.y, overlay.w, BORDER, border)?;
+    scene.push_fill_rect(
+        overlay.x,
+        overlay.y + overlay.h - BORDER,
+        overlay.w,
+        BORDER,
+        border,
+    )?;
+    scene.push_fill_rect(overlay.x, overlay.y, BORDER, overlay.h, border)?;
+    scene.push_fill_rect(
+        overlay.x + overlay.w - BORDER,
+        overlay.y,
+        BORDER,
+        overlay.h,
+        border,
+    )?;
+    Ok(start..scene.operations.len())
+}
+
+fn draw_floating_shape_overlay(
+    scene: &mut PageScene,
+    overlay: &FloatingShapeOverlay,
+    cx: &mut TextCx<'_>,
+) -> Result<()> {
+    project_floating_overlay_frame(scene, overlay)?;
+    draw_chart_text(
+        scene,
+        &overlay.label,
+        ChartTextBox {
+            x: overlay.x + 4.0,
+            y: overlay.y + 4.0,
+            width: (overlay.w - 8.0).max(1.0),
+        },
+        ChartTextStyle {
+            size_pt: 7.5,
+            bold: false,
+            align: Alignment::Start,
+            color: Color::rgb(0x32, 0x3A, 0x43),
+        },
+        cx,
+    )?;
+    Ok(())
+}
+
+/// The text style for a single chart label: point size, weight, alignment, and
+/// fill color. These four are always set together at a `draw_chart_text` call.
+#[derive(Clone, Copy)]
+struct ChartTextStyle {
+    size_pt: f32,
+    bold: bool,
+    align: Alignment,
+    color: Color,
+}
+
+#[derive(Clone, Copy)]
+struct ChartTextBox {
+    x: f32,
+    y: f32,
+    width: f32,
+}
+
+fn draw_chart_text(
+    scene: &mut PageScene,
+    text: &str,
+    text_box: ChartTextBox,
+    style: ChartTextStyle,
+    cx: &mut TextCx<'_>,
+) -> Result<f32> {
+    let ChartTextBox { x, y, width } = text_box;
+    if text.trim().is_empty() || width <= 0.0 {
+        return Ok(0.0);
+    }
+    let size_half_pt = (style.size_pt * 2.0).round().max(1.0) as u16;
+    let props = CharProps {
+        bold: style.bold,
+        size_half_pt: Some(size_half_pt),
+        color: Some(style.color),
+        ..CharProps::default()
+    };
+    let mut consumed = 0.0;
+    for line in shape(
+        text,
+        StyledText::plain(&[(0, text.len(), props)]),
+        None,
+        style.align,
+        width,
+        cx,
+    )
+    .into_iter()
+    .take(2)
+    {
+        let baseline = y + consumed + line.baseline;
+        project_page_scene_line_paint(scene, &line, x + line.x_indent, y + consumed, baseline)?;
+        for run in line.runs {
+            project_page_scene_glyph_run(scene, run, x + line.x_indent, baseline)?;
+        }
+        consumed += line.height;
+    }
+    Ok(consumed)
+}
+
+fn chart_series_color(index: usize) -> rgb::Color {
+    const COLORS: [(u8, u8, u8); 6] = [
+        (0x2F, 0x6F, 0xD6),
+        (0xD9, 0x4E, 0x4E),
+        (0x27, 0x9A, 0x68),
+        (0x9B, 0x5D, 0xC8),
+        (0xD8, 0x8A, 0x25),
+        (0x36, 0x8C, 0xA8),
+    ];
+    let (r, g, b) = COLORS[index % COLORS.len()];
+    rgb::Color::new(r, g, b)
+}
+
+fn chart_value_range(chart: &Chart) -> (f64, f64) {
+    let mut min = 0.0;
+    let mut max = 0.0;
+    for value in chart
+        .series
+        .iter()
+        .flat_map(|series| series.values.iter().copied())
+        .filter(|value| value.is_finite())
+    {
+        if value < min {
+            min = value;
+        }
+        if value > max {
+            max = value;
+        }
+    }
+    if min == max {
+        if max == 0.0 {
+            max = 1.0;
+        } else if max > 0.0 {
+            min = 0.0;
+        } else {
+            max = 0.0;
+        }
+    }
+    (min, max)
+}
+
+fn stacked_chart_max(chart: &Chart, category_count: usize) -> f64 {
+    let mut max = 0.0;
+    for category_index in 0..category_count {
+        let total = stacked_category_total(chart, category_index);
+        if total > max {
+            max = total;
+        }
+    }
+    max.max(1.0)
+}
+
+fn stacked_category_total(chart: &Chart, category_index: usize) -> f64 {
+    chart
+        .series
+        .iter()
+        .filter_map(|series| series.values.get(category_index).copied())
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .sum()
+}
+
+fn chart_bubble_size_range(chart: &Chart) -> (f64, f64) {
+    let mut max = 1.0;
+    for size in chart
+        .series
+        .iter()
+        .flat_map(|series| series.bubble_sizes.iter().copied())
+        .filter(|size| size.is_finite() && *size > 0.0)
+    {
+        if size > max {
+            max = size;
+        }
+    }
+    (1.0, max)
+}
+
+fn format_chart_tick(value: f64) -> String {
+    if !value.is_finite() {
+        return "0".to_string();
+    }
+    if (value.fract()).abs() < 0.001 {
+        format!("{}", value.round() as i64)
+    } else {
+        format!("{value:.1}")
+    }
+}
+
+fn fill_line_segment(
+    scene: &mut PageScene,
+    start: (f32, f32),
+    end: (f32, f32),
+    width: f32,
+    color: rgb::Color,
+) -> Result<()> {
+    let (x1, y1) = start;
+    let (x2, y2) = end;
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len <= 0.01 {
+        return project_page_scene_fill_rect(
+            scene,
+            x1 - width * 0.5,
+            y1 - width * 0.5,
+            width,
+            width,
+            color,
+        );
+    }
+    let px = -dy / len * width * 0.5;
+    let py = dx / len * width * 0.5;
+    project_page_scene_fill_polygon(
+        scene,
+        &[
+            (x1 + px, y1 + py),
+            (x2 + px, y2 + py),
+            (x2 - px, y2 - py),
+            (x1 - px, y1 - py),
+        ],
+        color,
+    )
+}
+
+fn fill_area_shape(
+    scene: &mut PageScene,
+    points: &[(f32, f32)],
+    baseline_y: f32,
+    color: rgb::Color,
+) -> Result<()> {
+    let Some((first_x, _)) = points.first().copied() else {
+        return Ok(());
+    };
+    let Some((last_x, _)) = points.last().copied() else {
+        return Ok(());
+    };
+    project_page_scene_fill_polygon_iter(
+        scene,
+        std::iter::once((first_x, baseline_y))
+            .chain(points.iter().copied())
+            .chain(std::iter::once((last_x, baseline_y))),
+        color,
+    )
+}
+
+#[derive(Clone, Copy)]
+struct ChartRect {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
+#[derive(Clone, Copy)]
+struct PieSlice {
+    cx: f32,
+    cy: f32,
+    radius: f32,
+    start_angle: f32,
+    sweep: f32,
+}
+
+fn fill_pie_slice(scene: &mut PageScene, slice: PieSlice, color: rgb::Color) -> Result<()> {
+    let PieSlice {
+        cx,
+        cy,
+        radius,
+        start_angle,
+        sweep,
+    } = slice;
+    if radius <= 0.0 || sweep.abs() <= 0.0001 {
+        return Ok(());
+    }
+    let steps = ((sweep.abs() / (std::f32::consts::PI / 24.0)).ceil() as usize).clamp(2, 96);
+    project_page_scene_fill_polygon_iter(
+        scene,
+        std::iter::once((cx, cy)).chain((0..=steps).map(move |step| {
+            let angle = start_angle + sweep * step as f32 / steps as f32;
+            (cx + angle.cos() * radius, cy + angle.sin() * radius)
+        })),
+        color,
+    )
+}
+
+/// An annular sector (ring slice): center, inner/outer radii, and the start angle
+/// and sweep. These six geometry values always describe one slice together.
+#[derive(Clone, Copy)]
+struct RingSlice {
+    cx: f32,
+    cy: f32,
+    inner_radius: f32,
+    outer_radius: f32,
+    start_angle: f32,
+    sweep: f32,
+}
+
+fn fill_ring_slice(scene: &mut PageScene, ring: RingSlice, color: rgb::Color) -> Result<()> {
+    let RingSlice {
+        cx,
+        cy,
+        inner_radius,
+        outer_radius,
+        start_angle,
+        sweep,
+    } = ring;
+    if outer_radius <= inner_radius || sweep.abs() <= 0.0001 {
+        return Ok(());
+    }
+    let steps = ((sweep.abs() / (std::f32::consts::PI / 24.0)).ceil() as usize).clamp(2, 96);
+    let outer = (0..=steps).map(move |step| {
+        let angle = start_angle + sweep * step as f32 / steps as f32;
+        (
+            cx + angle.cos() * outer_radius,
+            cy + angle.sin() * outer_radius,
+        )
+    });
+    let inner = (0..=steps).rev().map(move |step| {
+        let angle = start_angle + sweep * step as f32 / steps as f32;
+        (
+            cx + angle.cos() * inner_radius,
+            cy + angle.sin() * inner_radius,
+        )
+    });
+    project_page_scene_fill_polygon_iter(scene, outer.chain(inner), color)
+}
+
+fn draw_pie_chart(
+    scene: &mut PageScene,
+    chart: &Chart,
+    rect: ChartRect,
+    doughnut: bool,
+    exploded: bool,
+) -> Result<()> {
+    let Some(series) = chart.series.first() else {
+        return Ok(());
+    };
+    let values = chart
+        .categories
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            series
+                .values
+                .get(index)
+                .copied()
+                .filter(|value| value.is_finite() && *value > 0.0)
+                .unwrap_or(0.0)
+        })
+        .collect::<Vec<_>>();
+    let total: f64 = values.iter().sum();
+    if total <= 0.0 {
+        return Ok(());
+    }
+    let radius = (rect.w.min(rect.h) * 0.42).max(1.0);
+    let cx = rect.x + rect.w * 0.5;
+    let cy = rect.y + rect.h * 0.5;
+    let explosion = if exploded { radius * 0.08 } else { 0.0 };
+    let mut angle = -std::f32::consts::FRAC_PI_2;
+    for (index, value) in values.iter().enumerate() {
+        if *value <= 0.0 {
+            continue;
+        }
+        let sweep = (*value / total) as f32 * std::f32::consts::TAU;
+        let mid_angle = angle + sweep * 0.5;
+        let slice_cx = cx + mid_angle.cos() * explosion;
+        let slice_cy = cy + mid_angle.sin() * explosion;
+        fill_pie_slice(
+            scene,
+            PieSlice {
+                cx: slice_cx,
+                cy: slice_cy,
+                radius,
+                start_angle: angle,
+                sweep,
+            },
+            chart_series_color(index),
+        )?;
+        angle += sweep;
+    }
+    if doughnut {
+        fill_pie_slice(
+            scene,
+            PieSlice {
+                cx,
+                cy,
+                radius: radius * 0.52,
+                start_angle: -std::f32::consts::FRAC_PI_2,
+                sweep: std::f32::consts::TAU,
+            },
+            rgb::Color::new(0xFF, 0xFF, 0xFF),
+        )?;
+    }
+    Ok(())
+}
+
+fn draw_radar_chart(
+    scene: &mut PageScene,
+    chart: &Chart,
+    rect: ChartRect,
+    tcx: &mut TextCx<'_>,
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
+    if chart.categories.is_empty() || chart.series.is_empty() {
+        return Ok(());
+    }
+    let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
+    let axis = rgb::Color::new(0x5D, 0x66, 0x70);
+    let max_value = chart
+        .series
+        .iter()
+        .flat_map(|series| series.values.iter().copied())
+        .filter(|value| value.is_finite() && *value > 0.0)
+        .fold(0.0_f64, f64::max)
+        .max(1.0);
+    let cx = x + w * 0.5;
+    let cy = y + h * 0.5;
+    let radius = (w.min(h) * 0.36).max(1.0);
+    let label_radius = radius + 9.0;
+    let count = chart.categories.len();
+    let point_at = |index: usize, value: f64| {
+        let angle =
+            -std::f32::consts::FRAC_PI_2 + index as f32 / count as f32 * std::f32::consts::TAU;
+        let frac = (value.max(0.0) / max_value).clamp(0.0, 1.0) as f32;
+        (
+            cx + angle.cos() * radius * frac,
+            cy + angle.sin() * radius * frac,
+        )
+    };
+    for ring in 1..=4 {
+        let frac = ring as f64 / 4.0;
+        let ring_points = (0..count)
+            .map(|index| point_at(index, max_value * frac))
+            .collect::<Vec<_>>();
+        for index in 0..ring_points.len() {
+            let (x1, y1) = ring_points[index];
+            let (x2, y2) = ring_points[(index + 1) % ring_points.len()];
+            fill_line_segment(scene, (x1, y1), (x2, y2), 0.45, grid)?;
+        }
+    }
+    for (index, category) in chart.categories.iter().enumerate() {
+        let (spoke_x, spoke_y) = point_at(index, max_value);
+        fill_line_segment(scene, (cx, cy), (spoke_x, spoke_y), 0.45, axis)?;
+        let angle =
+            -std::f32::consts::FRAC_PI_2 + index as f32 / count as f32 * std::f32::consts::TAU;
+        let label_x = cx + angle.cos() * label_radius;
+        let label_y = cy + angle.sin() * label_radius;
+        draw_chart_text(
+            scene,
+            category,
+            ChartTextBox {
+                x: label_x - 28.0,
+                y: label_y - 5.0,
+                width: 56.0,
+            },
+            ChartTextStyle {
+                size_pt: 7.5,
+                bold: false,
+                align: Alignment::Center,
+                color: Color::rgb(0x25, 0x2D, 0x36),
+            },
+            tcx,
+        )?;
+    }
+    for (series_index, series) in chart.series.iter().enumerate() {
+        let color = chart_series_color(series_index);
+        let points = (0..count)
+            .map(|index| {
+                let value = series
+                    .values
+                    .get(index)
+                    .copied()
+                    .filter(|value| value.is_finite())
+                    .unwrap_or(0.0);
+                point_at(index, value)
+            })
+            .collect::<Vec<_>>();
+        for index in 0..points.len() {
+            let (x1, y1) = points[index];
+            let (x2, y2) = points[(index + 1) % points.len()];
+            fill_line_segment(scene, (x1, y1), (x2, y2), 1.5, color)?;
+            project_page_scene_fill_rect(scene, x1 - 2.0, y1 - 2.0, 4.0, 4.0, color)?;
+        }
+    }
+    Ok(())
+}
+
+fn draw_waterfall_chart(
+    scene: &mut PageScene,
+    chart: &Chart,
+    rect: ChartRect,
+    tcx: &mut TextCx<'_>,
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
+    let Some(series) = chart.series.first() else {
+        return Ok(());
+    };
+    let count = chart.categories.len().max(series.values.len()).max(1);
+    let mut segments = Vec::with_capacity(count);
+    let mut running = 0.0;
+    let mut min_value = 0.0f64;
+    let mut max_value = 0.0f64;
+    for index in 0..count {
+        let value = series
+            .values
+            .get(index)
+            .copied()
+            .filter(|value| value.is_finite())
+            .unwrap_or(0.0);
+        let is_total = index == 0 || index + 1 == count;
+        let start = if is_total { 0.0 } else { running };
+        let end = if is_total { value } else { running + value };
+        running = end;
+        min_value = min_value.min(start.min(end));
+        max_value = max_value.max(start.max(end));
+        segments.push((start, end, is_total));
+    }
+    let range = (max_value - min_value).max(1.0);
+    let value_y = |value: f64| y + h - (((value - min_value) / range) as f32 * h);
+    let zero_y = value_y(0.0).clamp(y, y + h);
+    for tick in 0..=4 {
+        let frac = tick as f32 / 4.0;
+        let y_tick = y + h - frac * h;
+        project_page_scene_fill_rect(scene, x, y_tick, w, 0.35, rgb::Color::new(0xE1, 0xE5, 0xEA))?;
+        let value = min_value + (max_value - min_value) * tick as f64 / 4.0;
+        let label = format_chart_tick(value);
+        draw_chart_text(
+            scene,
+            &label,
+            ChartTextBox {
+                x: x - 48.0,
+                y: y_tick - 5.0,
+                width: 42.0,
+            },
+            ChartTextStyle {
+                size_pt: 7.5,
+                bold: false,
+                align: Alignment::End,
+                color: Color::rgb(0x4C, 0x55, 0x5F),
+            },
+            tcx,
+        )?;
+    }
+    project_page_scene_fill_rect(scene, x, zero_y, w, 0.8, rgb::Color::new(0x5D, 0x66, 0x70))?;
+    project_page_scene_fill_rect(scene, x, y, 0.8, h, rgb::Color::new(0x5D, 0x66, 0x70))?;
+
+    let band_w = w / count as f32;
+    let bar_w = (band_w * 0.58).max(2.0);
+    for (index, (start, end, is_total)) in segments.iter().copied().enumerate() {
+        let left = x + index as f32 * band_w + (band_w - bar_w) * 0.5;
+        let y_start = value_y(start).clamp(y, y + h);
+        let y_end = value_y(end).clamp(y, y + h);
+        let top = y_start.min(y_end);
+        let height = (y_start - y_end).abs().max(1.0);
+        let color = if is_total {
+            rgb::Color::new(0x3B, 0x6E, 0xA8)
+        } else if end >= start {
+            rgb::Color::new(0x32, 0x8A, 0x62)
+        } else {
+            rgb::Color::new(0xC7, 0x52, 0x4A)
+        };
+        project_page_scene_fill_rect(scene, left, top, bar_w, height, color)?;
+        if index > 0 {
+            let prev_x = x + index as f32 * band_w - (band_w - bar_w) * 0.5;
+            project_page_scene_fill_rect(
+                scene,
+                prev_x,
+                y_start,
+                (left - prev_x).max(1.0),
+                0.5,
+                rgb::Color::new(0x9A, 0xA4, 0xAE),
+            )?;
+        }
+        if let Some(category) = chart.categories.get(index) {
+            draw_chart_text(
+                scene,
+                category,
+                ChartTextBox {
+                    x: x + index as f32 * band_w,
+                    y: y + h + 3.0,
+                    width: band_w,
+                },
+                ChartTextStyle {
+                    size_pt: 8.0,
+                    bold: false,
+                    align: Alignment::Center,
+                    color: Color::rgb(0x25, 0x2D, 0x36),
+                },
+                tcx,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn draw_treemap_chart(
+    scene: &mut PageScene,
+    chart: &Chart,
+    rect: ChartRect,
+    tcx: &mut TextCx<'_>,
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
+    let Some(series) = chart.series.first() else {
+        return Ok(());
+    };
+    let values: Vec<f64> = series
+        .values
+        .iter()
+        .copied()
+        .map(|value| if value.is_finite() { value.abs() } else { 0.0 })
+        .collect();
+    let mut remaining: f64 = values.iter().sum::<f64>().max(1.0);
+    let mut rect_x = x;
+    let mut rect_y = y;
+    let mut rect_w = w;
+    let mut rect_h = h;
+    for (index, value) in values.iter().copied().enumerate() {
+        if rect_w <= 1.0 || rect_h <= 1.0 {
+            break;
+        }
+        let is_last = index + 1 == values.len();
+        let share = if is_last {
+            1.0
+        } else {
+            (value / remaining).clamp(0.0, 1.0) as f32
+        };
+        let (cell_x, cell_y, cell_w, cell_h) = if rect_w >= rect_h {
+            let cell_w = if is_last { rect_w } else { rect_w * share };
+            let cell = (rect_x, rect_y, cell_w, rect_h);
+            rect_x += cell_w;
+            rect_w = (rect_w - cell_w).max(0.0);
+            cell
+        } else {
+            let cell_h = if is_last { rect_h } else { rect_h * share };
+            let cell = (rect_x, rect_y, rect_w, cell_h);
+            rect_y += cell_h;
+            rect_h = (rect_h - cell_h).max(0.0);
+            cell
+        };
+        remaining = (remaining - value).max(0.0);
+        let color = chart_series_color(index);
+        project_page_scene_fill_rect(scene, cell_x, cell_y, cell_w, cell_h, color)?;
+        project_page_scene_fill_rect(
+            scene,
+            cell_x,
+            cell_y,
+            cell_w,
+            0.75,
+            rgb::Color::new(0xFF, 0xFF, 0xFF),
+        )?;
+        project_page_scene_fill_rect(
+            scene,
+            cell_x,
+            cell_y + cell_h - 0.75,
+            cell_w,
+            0.75,
+            rgb::Color::new(0xFF, 0xFF, 0xFF),
+        )?;
+        project_page_scene_fill_rect(
+            scene,
+            cell_x,
+            cell_y,
+            0.75,
+            cell_h,
+            rgb::Color::new(0xFF, 0xFF, 0xFF),
+        )?;
+        project_page_scene_fill_rect(
+            scene,
+            cell_x + cell_w - 0.75,
+            cell_y,
+            0.75,
+            cell_h,
+            rgb::Color::new(0xFF, 0xFF, 0xFF),
+        )?;
+        if let Some(category) = chart.categories.get(index) {
+            draw_chart_text(
+                scene,
+                category,
+                ChartTextBox {
+                    x: cell_x + 3.0,
+                    y: cell_y + 3.0,
+                    width: (cell_w - 6.0).max(1.0),
+                },
+                ChartTextStyle {
+                    size_pt: 8.0,
+                    bold: false,
+                    align: Alignment::Start,
+                    color: Color::rgb(0xFF, 0xFF, 0xFF),
+                },
+                tcx,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn draw_sunburst_chart(
+    scene: &mut PageScene,
+    chart: &Chart,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+) -> Result<()> {
+    let Some(series) = chart.series.first() else {
+        return Ok(());
+    };
+    let values = chart
+        .categories
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            series
+                .values
+                .get(index)
+                .copied()
+                .filter(|value| value.is_finite() && *value > 0.0)
+                .unwrap_or(0.0)
+        })
+        .collect::<Vec<_>>();
+    let total: f64 = values.iter().sum();
+    if total <= 0.0 {
+        return Ok(());
+    }
+    let radius = (w.min(h) * 0.44).max(1.0);
+    let cx = x + w * 0.5;
+    let cy = y + h * 0.5;
+    fill_circle_color(
+        scene,
+        cx,
+        cy,
+        radius * 0.38,
+        rgb::Color::new(0xD8, 0xDF, 0xE7),
+    )?;
+    let mut angle = -std::f32::consts::FRAC_PI_2;
+    for (index, value) in values.iter().enumerate() {
+        if *value <= 0.0 {
+            continue;
+        }
+        let sweep = (*value / total) as f32 * std::f32::consts::TAU;
+        fill_ring_slice(
+            scene,
+            RingSlice {
+                cx,
+                cy,
+                inner_radius: radius * 0.44,
+                outer_radius: radius,
+                start_angle: angle,
+                sweep,
+            },
+            chart_series_color(index),
+        )?;
+        fill_ring_slice(
+            scene,
+            RingSlice {
+                cx,
+                cy,
+                inner_radius: radius * 0.38,
+                outer_radius: radius * 0.43,
+                start_angle: angle,
+                sweep,
+            },
+            rgb::Color::new(0xFF, 0xFF, 0xFF),
+        )?;
+        angle += sweep;
+    }
+    Ok(())
+}
+
+fn draw_box_whisker_chart(
+    scene: &mut PageScene,
+    chart: &Chart,
+    rect: ChartRect,
+    tcx: &mut TextCx<'_>,
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
+    let Some(series) = chart.series.first() else {
+        return Ok(());
+    };
+    let mut values = series
+        .values
+        .iter()
+        .copied()
+        .filter(|value| value.is_finite())
+        .collect::<Vec<_>>();
+    if values.is_empty() {
+        return Ok(());
+    }
+    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let min = *values.first().unwrap_or(&0.0);
+    let max = *values.last().unwrap_or(&0.0);
+    let q1 = percentile(&values, 0.25);
+    let median = percentile(&values, 0.5);
+    let q3 = percentile(&values, 0.75);
+    let range = (max - min).max(1.0);
+    let value_y = |value: f64| y + h - (((value - min) / range) as f32 * h);
+    for tick in 0..=4 {
+        let frac = tick as f32 / 4.0;
+        let y_tick = y + h - frac * h;
+        project_page_scene_fill_rect(scene, x, y_tick, w, 0.35, rgb::Color::new(0xE1, 0xE5, 0xEA))?;
+        let value = min + (max - min) * tick as f64 / 4.0;
+        let label = format_chart_tick(value);
+        draw_chart_text(
+            scene,
+            &label,
+            ChartTextBox {
+                x: x - 48.0,
+                y: y_tick - 5.0,
+                width: 42.0,
+            },
+            ChartTextStyle {
+                size_pt: 7.5,
+                bold: false,
+                align: Alignment::End,
+                color: Color::rgb(0x4C, 0x55, 0x5F),
+            },
+            tcx,
+        )?;
+    }
+    let center_x = x + w * 0.5;
+    let box_w = (w * 0.28).clamp(32.0, 90.0);
+    let q1_y = value_y(q1).clamp(y, y + h);
+    let q3_y = value_y(q3).clamp(y, y + h);
+    let min_y = value_y(min).clamp(y, y + h);
+    let max_y = value_y(max).clamp(y, y + h);
+    let median_y = value_y(median).clamp(y, y + h);
+    let box_top = q3_y.min(q1_y);
+    let box_h = (q1_y - q3_y).abs().max(1.0);
+    let line = rgb::Color::new(0x35, 0x43, 0x52);
+    project_page_scene_fill_rect(scene, center_x - 0.5, max_y, 1.0, min_y - max_y, line)?;
+    project_page_scene_fill_rect(
+        scene,
+        center_x - box_w * 0.35,
+        max_y,
+        box_w * 0.7,
+        1.0,
+        line,
+    )?;
+    project_page_scene_fill_rect(
+        scene,
+        center_x - box_w * 0.35,
+        min_y,
+        box_w * 0.7,
+        1.0,
+        line,
+    )?;
+    project_page_scene_fill_rect(
+        scene,
+        center_x - box_w * 0.5,
+        box_top,
+        box_w,
+        box_h,
+        rgb::Color::new(0x7A, 0xA0, 0xC8),
+    )?;
+    project_page_scene_fill_rect(scene, center_x - box_w * 0.5, box_top, box_w, 1.0, line)?;
+    project_page_scene_fill_rect(
+        scene,
+        center_x - box_w * 0.5,
+        box_top + box_h,
+        box_w,
+        1.0,
+        line,
+    )?;
+    project_page_scene_fill_rect(scene, center_x - box_w * 0.5, box_top, 1.0, box_h, line)?;
+    project_page_scene_fill_rect(scene, center_x + box_w * 0.5, box_top, 1.0, box_h, line)?;
+    project_page_scene_fill_rect(scene, center_x - box_w * 0.5, median_y, box_w, 1.3, line)?;
+    Ok(())
+}
+
+fn percentile(sorted: &[f64], frac: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let pos = (sorted.len().saturating_sub(1) as f64 * frac).clamp(0.0, sorted.len() as f64 - 1.0);
+    let lower = pos.floor() as usize;
+    let upper = pos.ceil() as usize;
+    if lower == upper {
+        sorted[lower]
+    } else {
+        let weight = pos - lower as f64;
+        sorted[lower] * (1.0 - weight) + sorted[upper] * weight
+    }
+}
+
+fn draw_funnel_chart(
+    scene: &mut PageScene,
+    chart: &Chart,
+    rect: ChartRect,
+    tcx: &mut TextCx<'_>,
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
+    let Some(series) = chart.series.first() else {
+        return Ok(());
+    };
+    let values = chart
+        .categories
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            series
+                .values
+                .get(index)
+                .copied()
+                .filter(|value| value.is_finite() && *value > 0.0)
+                .unwrap_or(0.0)
+        })
+        .collect::<Vec<_>>();
+    let Some(max_value) = values.iter().copied().reduce(f64::max) else {
+        return Ok(());
+    };
+    if max_value <= 0.0 {
+        return Ok(());
+    }
+    let count = values.len().max(1);
+    let stage_h = h / count as f32;
+    let center_x = x + w * 0.5;
+    for (index, value) in values.iter().copied().enumerate() {
+        let next = values.get(index + 1).copied().unwrap_or(value * 0.72);
+        let top_w = (value / max_value) as f32 * w * 0.88;
+        let bottom_w = (next / max_value) as f32 * w * 0.88;
+        let top_y = y + index as f32 * stage_h + 1.0;
+        let bottom_y = y + (index + 1) as f32 * stage_h - 1.0;
+        project_page_scene_fill_polygon(
+            scene,
+            &[
+                (center_x - top_w * 0.5, top_y),
+                (center_x + top_w * 0.5, top_y),
+                (center_x + bottom_w * 0.5, bottom_y),
+                (center_x - bottom_w * 0.5, bottom_y),
+            ],
+            chart_series_color(index),
+        )?;
+        if let Some(category) = chart.categories.get(index) {
+            draw_chart_text(
+                scene,
+                category,
+                ChartTextBox {
+                    x: center_x - top_w.max(bottom_w) * 0.45,
+                    y: top_y + stage_h * 0.28,
+                    width: top_w.max(bottom_w) * 0.9,
+                },
+                ChartTextStyle {
+                    size_pt: 8.0,
+                    bold: false,
+                    align: Alignment::Center,
+                    color: Color::rgb(0xFF, 0xFF, 0xFF),
+                },
+                tcx,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn project_chart_frame(
+    scene: &mut PageScene,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+) -> Result<std::ops::Range<usize>> {
+    let start = scene.operations.len();
+    let border = rgb::Color::new(0xA7, 0xB0, 0xBA);
+    scene.push_fill_rect(x, y, w, h, rgb::Color::new(0xFF, 0xFF, 0xFF))?;
+    scene.push_fill_rect(x, y, w, BORDER, border)?;
+    scene.push_fill_rect(x, y + h - BORDER, w, BORDER, border)?;
+    scene.push_fill_rect(x, y, BORDER, h, border)?;
+    scene.push_fill_rect(x + w - BORDER, y, BORDER, h, border)?;
+    Ok(start..scene.operations.len())
+}
+
+fn draw_authored_chart(
+    scene: &mut PageScene,
+    chart: &Chart,
+    rect: ChartRect,
+    tcx: &mut TextCx<'_>,
+) -> Result<()> {
+    let ChartRect { x, y, w, h } = rect;
+    let axis = rgb::Color::new(0x5D, 0x66, 0x70);
+    let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
+    project_chart_frame(scene, x, y, w, h)?;
+
+    let mut content_top = y + 8.0;
+    if let Some(title) = chart.title.as_deref() {
+        let used = draw_chart_text(
+            scene,
+            title,
+            ChartTextBox {
+                x: x + 8.0,
+                y: content_top,
+                width: (w - 16.0).max(1.0),
+            },
+            ChartTextStyle {
+                size_pt: 11.0,
+                bold: true,
+                align: Alignment::Center,
+                color: Color::rgb(0x1E, 0x2A, 0x36),
+            },
+            tcx,
+        )?;
+        content_top += used + 4.0;
+    }
+
+    let label_w = (w * 0.24).clamp(54.0, 110.0);
+    let legend_h = 18.0;
+    let plot_left = x + label_w + 10.0;
+    let plot_right = x + w - 12.0;
+    let plot_top = content_top;
+    let plot_bottom = y + h - legend_h - 18.0;
+    let plot_w = (plot_right - plot_left).max(1.0);
+    let plot_h = (plot_bottom - plot_top).max(1.0);
+    if plot_w <= 8.0 || plot_h <= 8.0 {
+        return Ok(());
+    }
+
+    if matches!(
+        chart.kind,
+        ChartKind::Pie
+            | ChartKind::ExplodedPie
+            | ChartKind::Pie3D
+            | ChartKind::ExplodedPie3D
+            | ChartKind::PieOfPie
+            | ChartKind::BarOfPie
+            | ChartKind::Doughnut
+            | ChartKind::ExplodedDoughnut
+    ) {
+        draw_pie_chart(
+            scene,
+            chart,
+            ChartRect {
+                x: plot_left,
+                y: plot_top,
+                w: plot_w,
+                h: plot_h,
+            },
+            matches!(
+                chart.kind,
+                ChartKind::Doughnut | ChartKind::ExplodedDoughnut
+            ),
+            matches!(
+                chart.kind,
+                ChartKind::ExplodedPie | ChartKind::ExplodedPie3D | ChartKind::ExplodedDoughnut
+            ),
+        )?;
+        let mut legend_x = plot_left;
+        let legend_y = y + h - 14.0;
+        for (index, category) in chart.categories.iter().enumerate() {
+            if legend_x >= plot_right - 20.0 {
+                break;
+            }
+            project_page_scene_fill_rect(
+                scene,
+                legend_x,
+                legend_y + 3.0,
+                6.0,
+                6.0,
+                chart_series_color(index),
+            )?;
+            let used = draw_chart_text(
+                scene,
+                category,
+                ChartTextBox {
+                    x: legend_x + 9.0,
+                    y: legend_y,
+                    width: (plot_right - legend_x - 9.0).max(1.0),
+                },
+                ChartTextStyle {
+                    size_pt: 8.0,
+                    bold: false,
+                    align: Alignment::Start,
+                    color: Color::rgb(0x25, 0x2D, 0x36),
+                },
+                tcx,
+            )?;
+            legend_x += 9.0 + (category.chars().count() as f32 * 4.8).max(used * 3.0) + 12.0;
+        }
+        return Ok(());
+    }
+
+    if matches!(
+        chart.kind,
+        ChartKind::Radar | ChartKind::RadarWithMarkers | ChartKind::FilledRadar
+    ) {
+        draw_radar_chart(
+            scene,
+            chart,
+            ChartRect {
+                x: plot_left,
+                y: plot_top,
+                w: plot_w,
+                h: plot_h,
+            },
+            tcx,
+        )?;
+        let mut legend_x = plot_left;
+        let legend_y = y + h - 14.0;
+        for (index, series) in chart.series.iter().enumerate() {
+            if legend_x >= plot_right - 20.0 {
+                break;
+            }
+            project_page_scene_fill_rect(
+                scene,
+                legend_x,
+                legend_y + 3.0,
+                6.0,
+                6.0,
+                chart_series_color(index),
+            )?;
+            let used = draw_chart_text(
+                scene,
+                &series.name,
+                ChartTextBox {
+                    x: legend_x + 9.0,
+                    y: legend_y,
+                    width: (plot_right - legend_x - 9.0).max(1.0),
+                },
+                ChartTextStyle {
+                    size_pt: 8.0,
+                    bold: false,
+                    align: Alignment::Start,
+                    color: Color::rgb(0x25, 0x2D, 0x36),
+                },
+                tcx,
+            )?;
+            legend_x += 9.0 + (series.name.chars().count() as f32 * 4.8).max(used * 3.0) + 12.0;
+        }
+        return Ok(());
+    }
+
+    if chart.kind == ChartKind::Waterfall {
+        draw_waterfall_chart(
+            scene,
+            chart,
+            ChartRect {
+                x: plot_left,
+                y: plot_top,
+                w: plot_w,
+                h: plot_h,
+            },
+            tcx,
+        )?;
+        return Ok(());
+    }
+
+    if chart.kind == ChartKind::Treemap {
+        draw_treemap_chart(
+            scene,
+            chart,
+            ChartRect {
+                x: plot_left,
+                y: plot_top,
+                w: plot_w,
+                h: plot_h,
+            },
+            tcx,
+        )?;
+        return Ok(());
+    }
+
+    if chart.kind == ChartKind::Sunburst {
+        draw_sunburst_chart(scene, chart, plot_left, plot_top, plot_w, plot_h)?;
+        return Ok(());
+    }
+
+    if chart.kind == ChartKind::BoxWhisker {
+        draw_box_whisker_chart(
+            scene,
+            chart,
+            ChartRect {
+                x: plot_left,
+                y: plot_top,
+                w: plot_w,
+                h: plot_h,
+            },
+            tcx,
+        )?;
+        return Ok(());
+    }
+
+    if chart.kind == ChartKind::Funnel {
+        draw_funnel_chart(
+            scene,
+            chart,
+            ChartRect {
+                x: plot_left,
+                y: plot_top,
+                w: plot_w,
+                h: plot_h,
+            },
+            tcx,
+        )?;
+        return Ok(());
+    }
+
+    let max_series_points = chart
+        .series
+        .iter()
+        .map(|series| series.values.len())
+        .max()
+        .unwrap_or(0);
+    let category_count = chart.categories.len().max(max_series_points).max(1);
+    let series_count = chart.series.len().max(1);
+    let (min_value, max_value) = if matches!(
+        chart.kind,
+        ChartKind::PercentStackedBar
+            | ChartKind::PercentStackedBar3D
+            | ChartKind::PercentStackedColumn
+            | ChartKind::PercentStackedColumn3D
+            | ChartKind::PercentStackedLine
+            | ChartKind::PercentStackedArea
+            | ChartKind::PercentStackedArea3D
+    ) {
+        (0.0, 1.0)
+    } else if matches!(
+        chart.kind,
+        ChartKind::StackedBar
+            | ChartKind::StackedBar3D
+            | ChartKind::StackedColumn
+            | ChartKind::StackedColumn3D
+            | ChartKind::StackedLine
+            | ChartKind::StackedArea
+            | ChartKind::StackedArea3D
+    ) {
+        (0.0, stacked_chart_max(chart, category_count))
+    } else {
+        chart_value_range(chart)
+    };
+    let range = (max_value - min_value).max(1.0);
+    let value_x = |value: f64| plot_left + (((value - min_value) / range) as f32 * plot_w);
+    let value_y = |value: f64| plot_bottom - (((value - min_value) / range) as f32 * plot_h);
+
+    match chart.kind {
+        ChartKind::StackedBar
+        | ChartKind::StackedBar3D
+        | ChartKind::PercentStackedBar
+        | ChartKind::PercentStackedBar3D => {
+            let percent = matches!(
+                chart.kind,
+                ChartKind::PercentStackedBar | ChartKind::PercentStackedBar3D
+            );
+            for tick in 0..=4 {
+                let frac = tick as f32 / 4.0;
+                let x_tick = plot_left + frac * plot_w;
+                project_page_scene_fill_rect(scene, x_tick, plot_top, 0.35, plot_h, grid)?;
+                let label = if percent {
+                    format!("{}%", tick * 25)
+                } else {
+                    format_chart_tick(max_value * tick as f64 / 4.0)
+                };
+                draw_chart_text(
+                    scene,
+                    &label,
+                    ChartTextBox {
+                        x: x_tick - 18.0,
+                        y: plot_bottom + 3.0,
+                        width: 36.0,
+                    },
+                    ChartTextStyle {
+                        size_pt: 7.5,
+                        bold: false,
+                        align: Alignment::Center,
+                        color: Color::rgb(0x4C, 0x55, 0x5F),
+                    },
+                    tcx,
+                )?;
+            }
+            project_page_scene_fill_rect(scene, plot_left, plot_top, 0.8, plot_h, axis)?;
+            project_page_scene_fill_rect(scene, plot_left, plot_bottom, plot_w, 0.8, axis)?;
+
+            let band_h = plot_h / category_count as f32;
+            let bar_h = (band_h * 0.68).max(3.0);
+            for (category_index, category) in chart.categories.iter().enumerate() {
+                let band_top = plot_top + category_index as f32 * band_h;
+                let label_y = band_top + (band_h - 9.0).max(0.0) * 0.5;
+                draw_chart_text(
+                    scene,
+                    category,
+                    ChartTextBox {
+                        x: x + 5.0,
+                        y: label_y,
+                        width: label_w,
+                    },
+                    ChartTextStyle {
+                        size_pt: 8.0,
+                        bold: false,
+                        align: Alignment::End,
+                        color: Color::rgb(0x25, 0x2D, 0x36),
+                    },
+                    tcx,
+                )?;
+
+                let bar_top = band_top + (band_h - bar_h) * 0.5;
+                let mut offset = 0.0;
+                let total = stacked_category_total(chart, category_index).max(1.0);
+                for (series_index, series) in chart.series.iter().enumerate() {
+                    let value = series
+                        .values
+                        .get(category_index)
+                        .copied()
+                        .filter(|value| value.is_finite() && *value > 0.0)
+                        .unwrap_or(0.0);
+                    if value <= 0.0 {
+                        continue;
+                    }
+                    let start = if percent { offset / total } else { offset };
+                    offset += value;
+                    let end = if percent { offset / total } else { offset };
+                    let segment_left = value_x(start).clamp(plot_left, plot_right);
+                    let segment_right = value_x(end).clamp(plot_left, plot_right);
+                    let color = chart_series_color(series_index);
+                    if matches!(
+                        chart.kind,
+                        ChartKind::StackedBar3D | ChartKind::PercentStackedBar3D
+                    ) {
+                        fill_chart_bar_shape(
+                            scene,
+                            ChartRect {
+                                x: segment_left,
+                                y: bar_top,
+                                w: (segment_right - segment_left).max(1.0),
+                                h: bar_h,
+                            },
+                            chart.shape,
+                            color,
+                        )?;
+                    } else {
+                        project_page_scene_fill_rect(
+                            scene,
+                            segment_left,
+                            bar_top,
+                            (segment_right - segment_left).max(1.0),
+                            bar_h,
+                            color,
+                        )?;
+                    }
+                }
+            }
+        }
+        ChartKind::Bar | ChartKind::Bar3D => {
+            let zero_x = value_x(0.0).clamp(plot_left, plot_right);
+            for tick in 0..=4 {
+                let frac = tick as f32 / 4.0;
+                let x_tick = plot_left + frac * plot_w;
+                project_page_scene_fill_rect(scene, x_tick, plot_top, 0.35, plot_h, grid)?;
+                let value = min_value + (max_value - min_value) * tick as f64 / 4.0;
+                let label = format_chart_tick(value);
+                draw_chart_text(
+                    scene,
+                    &label,
+                    ChartTextBox {
+                        x: x_tick - 18.0,
+                        y: plot_bottom + 3.0,
+                        width: 36.0,
+                    },
+                    ChartTextStyle {
+                        size_pt: 7.5,
+                        bold: false,
+                        align: Alignment::Center,
+                        color: Color::rgb(0x4C, 0x55, 0x5F),
+                    },
+                    tcx,
+                )?;
+            }
+            project_page_scene_fill_rect(scene, zero_x, plot_top, 0.8, plot_h, axis)?;
+            project_page_scene_fill_rect(scene, plot_left, plot_bottom, plot_w, 0.8, axis)?;
+
+            let band_h = plot_h / category_count as f32;
+            let group_h = (band_h * 0.68).max(3.0);
+            let bar_h = ((group_h / series_count as f32) - 1.0).max(2.0);
+            for (category_index, category) in chart.categories.iter().enumerate() {
+                let band_top = plot_top + category_index as f32 * band_h;
+                let label_y = band_top + (band_h - 9.0).max(0.0) * 0.5;
+                draw_chart_text(
+                    scene,
+                    category,
+                    ChartTextBox {
+                        x: x + 5.0,
+                        y: label_y,
+                        width: label_w,
+                    },
+                    ChartTextStyle {
+                        size_pt: 8.0,
+                        bold: false,
+                        align: Alignment::End,
+                        color: Color::rgb(0x25, 0x2D, 0x36),
+                    },
+                    tcx,
+                )?;
+
+                let group_top = band_top + (band_h - group_h) * 0.5;
+                for (series_index, series) in chart.series.iter().enumerate() {
+                    let value = series
+                        .values
+                        .get(category_index)
+                        .copied()
+                        .filter(|value| value.is_finite())
+                        .unwrap_or(0.0);
+                    let x_value = value_x(value).clamp(plot_left, plot_right);
+                    let bar_left = zero_x.min(x_value);
+                    let bar_width = (zero_x - x_value).abs().max(1.0);
+                    let bar_top = group_top + series_index as f32 * (bar_h + 1.0);
+                    let color = chart_series_color(series_index);
+                    if chart.kind == ChartKind::Bar3D {
+                        fill_chart_bar_shape(
+                            scene,
+                            ChartRect {
+                                x: bar_left,
+                                y: bar_top,
+                                w: bar_width,
+                                h: bar_h,
+                            },
+                            chart.shape,
+                            color,
+                        )?;
+                    } else {
+                        project_page_scene_fill_rect(
+                            scene, bar_left, bar_top, bar_width, bar_h, color,
+                        )?;
+                    }
+                }
+            }
+        }
+        ChartKind::Column
+        | ChartKind::StackedColumn
+        | ChartKind::PercentStackedColumn
+        | ChartKind::Column3D
+        | ChartKind::StackedColumn3D
+        | ChartKind::PercentStackedColumn3D
+        | ChartKind::Histogram
+        | ChartKind::Line
+        | ChartKind::LineNoMarkers
+        | ChartKind::SmoothLine
+        | ChartKind::StackedLine
+        | ChartKind::PercentStackedLine
+        | ChartKind::Line3D
+        | ChartKind::Area
+        | ChartKind::StackedArea
+        | ChartKind::PercentStackedArea
+        | ChartKind::Area3D
+        | ChartKind::StackedArea3D
+        | ChartKind::PercentStackedArea3D
+        | ChartKind::Scatter
+        | ChartKind::ScatterMarkers
+        | ChartKind::ScatterLines
+        | ChartKind::ScatterSmooth
+        | ChartKind::ScatterSmoothNoMarkers
+        | ChartKind::Bubble
+        | ChartKind::Bubble3D
+        | ChartKind::Surface
+        | ChartKind::Surface3D
+        | ChartKind::StockHighLowClose
+        | ChartKind::Stock => {
+            let zero_y = value_y(0.0).clamp(plot_top, plot_bottom);
+            for tick in 0..=4 {
+                let frac = tick as f32 / 4.0;
+                let y_tick = plot_bottom - frac * plot_h;
+                project_page_scene_fill_rect(scene, plot_left, y_tick, plot_w, 0.35, grid)?;
+                let value = min_value + (max_value - min_value) * tick as f64 / 4.0;
+                let label = format_chart_tick(value);
+                draw_chart_text(
+                    scene,
+                    &label,
+                    ChartTextBox {
+                        x: x + 5.0,
+                        y: y_tick - 5.0,
+                        width: label_w,
+                    },
+                    ChartTextStyle {
+                        size_pt: 7.5,
+                        bold: false,
+                        align: Alignment::End,
+                        color: Color::rgb(0x4C, 0x55, 0x5F),
+                    },
+                    tcx,
+                )?;
+            }
+            project_page_scene_fill_rect(scene, plot_left, zero_y, plot_w, 0.8, axis)?;
+            project_page_scene_fill_rect(scene, plot_left, plot_top, 0.8, plot_h, axis)?;
+
+            let band_w = plot_w / category_count as f32;
+            for (category_index, category) in chart.categories.iter().enumerate() {
+                let center_x = plot_left + category_index as f32 * band_w + band_w * 0.5;
+                draw_chart_text(
+                    scene,
+                    category,
+                    ChartTextBox {
+                        x: center_x - band_w * 0.48,
+                        y: plot_bottom + 3.0,
+                        width: band_w * 0.96,
+                    },
+                    ChartTextStyle {
+                        size_pt: 8.0,
+                        bold: false,
+                        align: Alignment::Center,
+                        color: Color::rgb(0x25, 0x2D, 0x36),
+                    },
+                    tcx,
+                )?;
+            }
+
+            match chart.kind {
+                ChartKind::StackedColumn
+                | ChartKind::PercentStackedColumn
+                | ChartKind::StackedColumn3D
+                | ChartKind::PercentStackedColumn3D => {
+                    let percent = matches!(
+                        chart.kind,
+                        ChartKind::PercentStackedColumn | ChartKind::PercentStackedColumn3D
+                    );
+                    let column_w = (band_w * 0.62).max(2.0);
+                    for (category_index, _) in chart.categories.iter().enumerate() {
+                        let column_left =
+                            plot_left + category_index as f32 * band_w + (band_w - column_w) * 0.5;
+                        let mut offset = 0.0;
+                        let total = stacked_category_total(chart, category_index).max(1.0);
+                        for (series_index, series) in chart.series.iter().enumerate() {
+                            let value = series
+                                .values
+                                .get(category_index)
+                                .copied()
+                                .filter(|value| value.is_finite() && *value > 0.0)
+                                .unwrap_or(0.0);
+                            if value <= 0.0 {
+                                continue;
+                            }
+                            let start = if percent { offset / total } else { offset };
+                            offset += value;
+                            let end = if percent { offset / total } else { offset };
+                            let segment_bottom = value_y(start).clamp(plot_top, plot_bottom);
+                            let segment_top = value_y(end).clamp(plot_top, plot_bottom);
+                            let color = chart_series_color(series_index);
+                            if matches!(
+                                chart.kind,
+                                ChartKind::StackedColumn3D | ChartKind::PercentStackedColumn3D
+                            ) {
+                                fill_chart_column_shape(
+                                    scene,
+                                    ChartRect {
+                                        x: column_left,
+                                        y: segment_top,
+                                        w: column_w,
+                                        h: (segment_bottom - segment_top).max(1.0),
+                                    },
+                                    chart.shape,
+                                    color,
+                                )?;
+                            } else {
+                                project_page_scene_fill_rect(
+                                    scene,
+                                    column_left,
+                                    segment_top,
+                                    column_w,
+                                    (segment_bottom - segment_top).max(1.0),
+                                    color,
+                                )?;
+                            }
+                        }
+                    }
+                }
+                ChartKind::Column | ChartKind::Column3D | ChartKind::Histogram => {
+                    let group_w = (band_w * 0.68).max(3.0);
+                    let column_w = ((group_w / series_count as f32) - 2.0).max(2.0);
+                    for (category_index, _) in chart.categories.iter().enumerate() {
+                        let group_left =
+                            plot_left + category_index as f32 * band_w + (band_w - group_w) * 0.5;
+                        for (series_index, series) in chart.series.iter().enumerate() {
+                            let value = series
+                                .values
+                                .get(category_index)
+                                .copied()
+                                .filter(|value| value.is_finite())
+                                .unwrap_or(0.0);
+                            let y_value = value_y(value).clamp(plot_top, plot_bottom);
+                            let column_top = zero_y.min(y_value);
+                            let column_h = (zero_y - y_value).abs().max(1.0);
+                            let column_left = group_left + series_index as f32 * (column_w + 2.0);
+                            let color = chart_series_color(series_index);
+                            if chart.kind == ChartKind::Column3D {
+                                fill_chart_column_shape(
+                                    scene,
+                                    ChartRect {
+                                        x: column_left,
+                                        y: column_top,
+                                        w: column_w,
+                                        h: column_h,
+                                    },
+                                    chart.shape,
+                                    color,
+                                )?;
+                            } else {
+                                project_page_scene_fill_rect(
+                                    scene,
+                                    column_left,
+                                    column_top,
+                                    column_w,
+                                    column_h,
+                                    color,
+                                )?;
+                            }
+                        }
+                    }
+                }
+                ChartKind::Area
+                | ChartKind::StackedArea
+                | ChartKind::PercentStackedArea
+                | ChartKind::Area3D
+                | ChartKind::StackedArea3D
+                | ChartKind::PercentStackedArea3D => {
+                    if matches!(
+                        chart.kind,
+                        ChartKind::StackedArea
+                            | ChartKind::PercentStackedArea
+                            | ChartKind::StackedArea3D
+                            | ChartKind::PercentStackedArea3D
+                    ) {
+                        let percent = matches!(
+                            chart.kind,
+                            ChartKind::PercentStackedArea | ChartKind::PercentStackedArea3D
+                        );
+                        for series_index in (0..chart.series.len()).rev() {
+                            let color = chart_series_color(series_index);
+                            let mut points = Vec::new();
+                            for category_index in 0..chart.categories.len() {
+                                let mut value = 0.0;
+                                for series in chart.series.iter().take(series_index + 1) {
+                                    value += series
+                                        .values
+                                        .get(category_index)
+                                        .copied()
+                                        .filter(|value| value.is_finite() && *value > 0.0)
+                                        .unwrap_or(0.0);
+                                }
+                                if percent {
+                                    value /= stacked_category_total(chart, category_index).max(1.0);
+                                }
+                                points.push((
+                                    plot_left + category_index as f32 * band_w + band_w * 0.5,
+                                    value_y(value).clamp(plot_top, plot_bottom),
+                                ));
+                            }
+                            fill_area_shape(scene, &points, zero_y, color)?;
+                        }
+                    } else {
+                        for (series_index, series) in chart.series.iter().enumerate() {
+                            let color = chart_series_color(series_index);
+                            let mut points = Vec::new();
+                            for category_index in 0..chart.categories.len() {
+                                let value = series
+                                    .values
+                                    .get(category_index)
+                                    .copied()
+                                    .filter(|value| value.is_finite())
+                                    .unwrap_or(0.0);
+                                points.push((
+                                    plot_left + category_index as f32 * band_w + band_w * 0.5,
+                                    value_y(value).clamp(plot_top, plot_bottom),
+                                ));
+                            }
+                            fill_area_shape(scene, &points, zero_y, color)?;
+                            let mut previous: Option<(f32, f32)> = None;
+                            for (point_x, point_y) in points {
+                                if let Some((prev_x, prev_y)) = previous {
+                                    fill_line_segment(
+                                        scene,
+                                        (prev_x, prev_y),
+                                        (point_x, point_y),
+                                        1.4,
+                                        color,
+                                    )?;
+                                }
+                                project_page_scene_fill_rect(
+                                    scene,
+                                    point_x - 2.0,
+                                    point_y - 2.0,
+                                    4.0,
+                                    4.0,
+                                    color,
+                                )?;
+                                previous = Some((point_x, point_y));
+                            }
+                        }
+                    }
+                }
+                ChartKind::Line
+                | ChartKind::LineNoMarkers
+                | ChartKind::SmoothLine
+                | ChartKind::StackedLine
+                | ChartKind::PercentStackedLine
+                | ChartKind::Line3D => {
+                    for (series_index, series) in chart.series.iter().enumerate() {
+                        let color = chart_series_color(series_index);
+                        let mut previous: Option<(f32, f32)> = None;
+                        for category_index in 0..chart.categories.len() {
+                            let value = if matches!(
+                                chart.kind,
+                                ChartKind::StackedLine | ChartKind::PercentStackedLine
+                            ) {
+                                let mut value = 0.0;
+                                for series in chart.series.iter().take(series_index + 1) {
+                                    value += series
+                                        .values
+                                        .get(category_index)
+                                        .copied()
+                                        .filter(|value| value.is_finite() && *value > 0.0)
+                                        .unwrap_or(0.0);
+                                }
+                                if chart.kind == ChartKind::PercentStackedLine {
+                                    value / stacked_category_total(chart, category_index).max(1.0)
+                                } else {
+                                    value
+                                }
+                            } else {
+                                series
+                                    .values
+                                    .get(category_index)
+                                    .copied()
+                                    .filter(|value| value.is_finite())
+                                    .unwrap_or(0.0)
+                            };
+                            let point_x = plot_left + category_index as f32 * band_w + band_w * 0.5;
+                            let point_y = value_y(value).clamp(plot_top, plot_bottom);
+                            if let Some((prev_x, prev_y)) = previous {
+                                fill_line_segment(
+                                    scene,
+                                    (prev_x, prev_y),
+                                    (point_x, point_y),
+                                    1.6,
+                                    color,
+                                )?;
+                            }
+                            if chart.kind != ChartKind::LineNoMarkers {
+                                project_page_scene_fill_rect(
+                                    scene,
+                                    point_x - 2.0,
+                                    point_y - 2.0,
+                                    4.0,
+                                    4.0,
+                                    color,
+                                )?;
+                            }
+                            previous = Some((point_x, point_y));
+                        }
+                    }
+                }
+                ChartKind::StockHighLowClose | ChartKind::Stock => {
+                    for category_index in 0..category_count {
+                        let point_x = plot_left + category_index as f32 * band_w + band_w * 0.5;
+                        let values: Vec<_> = chart
+                            .series
+                            .iter()
+                            .filter_map(|series| {
+                                series
+                                    .values
+                                    .get(category_index)
+                                    .copied()
+                                    .filter(|value| value.is_finite())
+                            })
+                            .collect();
+                        if values.is_empty() {
+                            continue;
+                        }
+                        let low = values.iter().copied().fold(f64::INFINITY, f64::min);
+                        let high = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+                        let y_low = value_y(low).clamp(plot_top, plot_bottom);
+                        let y_high = value_y(high).clamp(plot_top, plot_bottom);
+                        project_page_scene_fill_rect(
+                            scene,
+                            point_x - 0.7,
+                            y_high,
+                            1.4,
+                            (y_low - y_high).abs().max(1.0),
+                            axis,
+                        )?;
+                        if chart.kind == ChartKind::Stock {
+                            if let Some(open) = values.first().copied() {
+                                let y_open = value_y(open).clamp(plot_top, plot_bottom);
+                                project_page_scene_fill_rect(
+                                    scene,
+                                    point_x - band_w * 0.18,
+                                    y_open - 0.8,
+                                    band_w * 0.18,
+                                    1.6,
+                                    chart_series_color(0),
+                                )?;
+                            }
+                        }
+                        if let Some(close) = values.last().copied() {
+                            let color_index = if chart.kind == ChartKind::Stock {
+                                3.min(chart.series.len().saturating_sub(1))
+                            } else {
+                                2.min(chart.series.len().saturating_sub(1))
+                            };
+                            let y_close = value_y(close).clamp(plot_top, plot_bottom);
+                            project_page_scene_fill_rect(
+                                scene,
+                                point_x,
+                                y_close - 0.8,
+                                band_w * 0.18,
+                                1.6,
+                                chart_series_color(color_index),
+                            )?;
+                        }
+                    }
+                }
+                ChartKind::Scatter
+                | ChartKind::ScatterMarkers
+                | ChartKind::ScatterLines
+                | ChartKind::ScatterSmooth
+                | ChartKind::ScatterSmoothNoMarkers => {
+                    for (series_index, series) in chart.series.iter().enumerate() {
+                        let color = chart_series_color(series_index);
+                        let mut previous: Option<(f32, f32)> = None;
+                        for value_index in 0..series.values.len() {
+                            let value = series
+                                .values
+                                .get(value_index)
+                                .copied()
+                                .filter(|value| value.is_finite())
+                                .unwrap_or(0.0);
+                            let point_x = plot_left + value_index as f32 * band_w + band_w * 0.5;
+                            let point_y = value_y(value).clamp(plot_top, plot_bottom);
+                            if chart.kind != ChartKind::ScatterMarkers {
+                                if let Some((prev_x, prev_y)) = previous {
+                                    fill_line_segment(
+                                        scene,
+                                        (prev_x, prev_y),
+                                        (point_x, point_y),
+                                        1.3,
+                                        color,
+                                    )?;
+                                }
+                            }
+                            if !matches!(
+                                chart.kind,
+                                ChartKind::ScatterLines | ChartKind::ScatterSmoothNoMarkers
+                            ) {
+                                project_page_scene_fill_rect(
+                                    scene,
+                                    point_x - 2.5,
+                                    point_y - 2.5,
+                                    5.0,
+                                    5.0,
+                                    color,
+                                )?;
+                            }
+                            previous = Some((point_x, point_y));
+                        }
+                    }
+                }
+                ChartKind::Bubble | ChartKind::Bubble3D => {
+                    let (_, max_bubble_size) = chart_bubble_size_range(chart);
+                    let max_radius = (band_w.min(plot_h) * 0.22).clamp(3.5, 14.0);
+                    for (series_index, series) in chart.series.iter().enumerate() {
+                        let color = chart_series_color(series_index);
+                        for value_index in 0..series.values.len() {
+                            let value = series
+                                .values
+                                .get(value_index)
+                                .copied()
+                                .filter(|value| value.is_finite())
+                                .unwrap_or(0.0);
+                            let size = series
+                                .bubble_sizes
+                                .get(value_index)
+                                .copied()
+                                .filter(|size| size.is_finite() && *size > 0.0)
+                                .unwrap_or(1.0);
+                            let point_x = plot_left + value_index as f32 * band_w + band_w * 0.5;
+                            let point_y = value_y(value).clamp(plot_top, plot_bottom);
+                            let radius = ((size / max_bubble_size).sqrt() as f32 * max_radius)
+                                .clamp(2.5, max_radius);
+                            fill_circle_color(scene, point_x, point_y, radius, color)?;
+                        }
+                    }
+                }
+                ChartKind::Surface | ChartKind::Surface3D => {
+                    let row_count = chart.series.len().max(1);
+                    let cell_h = (plot_h / row_count as f32).max(2.0);
+                    for (series_index, series) in chart.series.iter().enumerate() {
+                        let row_top = plot_top + series_index as f32 * cell_h;
+                        draw_chart_text(
+                            scene,
+                            &series.name,
+                            ChartTextBox {
+                                x: x + 5.0,
+                                y: row_top + (cell_h - 8.0).max(0.0) * 0.5,
+                                width: label_w,
+                            },
+                            ChartTextStyle {
+                                size_pt: 7.5,
+                                bold: false,
+                                align: Alignment::End,
+                                color: Color::rgb(0x25, 0x2D, 0x36),
+                            },
+                            tcx,
+                        )?;
+                        for category_index in 0..category_count {
+                            let value = series
+                                .values
+                                .get(category_index)
+                                .copied()
+                                .filter(|value| value.is_finite())
+                                .unwrap_or(0.0);
+                            let intensity = ((value - min_value) / range).clamp(0.0, 1.0);
+                            let shade = (0xEA as f64 - intensity * 0x70 as f64) as u8;
+                            let color = rgb::Color::new(shade, (shade as f32 * 0.95) as u8, 0xF4);
+                            let cell_left = plot_left + category_index as f32 * band_w + 1.0;
+                            let cell_top = row_top + 1.0;
+                            let cell_w = (band_w - 2.0).max(1.0);
+                            let cell_h_inner = (cell_h - 2.0).max(1.0);
+                            if chart.wireframe {
+                                project_page_scene_fill_rect(
+                                    scene, cell_left, cell_top, cell_w, 0.45, color,
+                                )?;
+                                project_page_scene_fill_rect(
+                                    scene,
+                                    cell_left,
+                                    cell_top + cell_h_inner,
+                                    cell_w,
+                                    0.45,
+                                    color,
+                                )?;
+                                project_page_scene_fill_rect(
+                                    scene,
+                                    cell_left,
+                                    cell_top,
+                                    0.45,
+                                    cell_h_inner,
+                                    color,
+                                )?;
+                                project_page_scene_fill_rect(
+                                    scene,
+                                    cell_left + cell_w,
+                                    cell_top,
+                                    0.45,
+                                    cell_h_inner,
+                                    color,
+                                )?;
+                            } else {
+                                project_page_scene_fill_rect(
+                                    scene,
+                                    cell_left,
+                                    cell_top,
+                                    cell_w,
+                                    cell_h_inner,
+                                    color,
+                                )?;
+                                project_page_scene_fill_rect(
+                                    scene, cell_left, cell_top, cell_w, 0.35, grid,
+                                )?;
+                            }
+                        }
+                    }
+                }
+                ChartKind::Bar
+                | ChartKind::StackedBar
+                | ChartKind::PercentStackedBar
+                | ChartKind::Bar3D
+                | ChartKind::StackedBar3D
+                | ChartKind::PercentStackedBar3D
+                | ChartKind::Radar
+                | ChartKind::RadarWithMarkers
+                | ChartKind::FilledRadar
+                | ChartKind::Pie
+                | ChartKind::ExplodedPie
+                | ChartKind::Pie3D
+                | ChartKind::ExplodedPie3D
+                | ChartKind::PieOfPie
+                | ChartKind::BarOfPie
+                | ChartKind::Doughnut
+                | ChartKind::ExplodedDoughnut
+                | ChartKind::Waterfall
+                | ChartKind::Treemap
+                | ChartKind::Sunburst
+                | ChartKind::BoxWhisker
+                | ChartKind::Funnel => {}
+            }
+        }
+        ChartKind::Radar
+        | ChartKind::RadarWithMarkers
+        | ChartKind::FilledRadar
+        | ChartKind::Pie
+        | ChartKind::ExplodedPie
+        | ChartKind::Pie3D
+        | ChartKind::ExplodedPie3D
+        | ChartKind::PieOfPie
+        | ChartKind::BarOfPie
+        | ChartKind::Doughnut
+        | ChartKind::ExplodedDoughnut
+        | ChartKind::Waterfall
+        | ChartKind::Treemap
+        | ChartKind::Sunburst
+        | ChartKind::BoxWhisker
+        | ChartKind::Funnel => {}
+    }
+
+    let mut legend_x = plot_left;
+    let legend_y = y + h - 14.0;
+    for (index, series) in chart.series.iter().enumerate() {
+        if legend_x >= plot_right - 20.0 {
+            break;
+        }
+        project_page_scene_fill_rect(
+            scene,
+            legend_x,
+            legend_y + 3.0,
+            6.0,
+            6.0,
+            chart_series_color(index),
+        )?;
+        let used = draw_chart_text(
+            scene,
+            &series.name,
+            ChartTextBox {
+                x: legend_x + 9.0,
+                y: legend_y,
+                width: (plot_right - legend_x - 9.0).max(1.0),
+            },
+            ChartTextStyle {
+                size_pt: 8.0,
+                bold: false,
+                align: Alignment::Start,
+                color: Color::rgb(0x25, 0x2D, 0x36),
+            },
+            tcx,
+        )?;
+        legend_x += 9.0 + (series.name.chars().count() as f32 * 4.8).max(used * 3.0) + 12.0;
+    }
+    Ok(())
+}
+
+fn project_page_scene_run_with_page_context(
+    scene: &mut PageScene,
+    run: RunDraw,
+    x_abs: f32,
+    baseline_y: f32,
+    page_number: PageDisplayNumber,
+    tcx: &mut TextCx<'_>,
+) -> Result<()> {
+    let Some(dynamic) = run.dynamic.clone() else {
+        return project_page_scene_glyph_run(scene, run, x_abs, baseline_y);
+    };
+
+    let text = match dynamic.kind {
+        DynamicTextKind::PageNumber => dynamic_page_number_text(&dynamic, page_number),
+    };
+    let Some(text) = text else {
+        return project_page_scene_glyph_run(scene, run, x_abs, baseline_y);
+    };
+    let Some(line) = shape(
+        &text,
+        StyledText::plain(&[(0, text.len(), dynamic.props)]),
+        None,
+        Alignment::Start,
+        1024.0,
+        tcx,
+    )
+    .into_iter()
+    .next() else {
+        return project_page_scene_glyph_run(scene, run, x_abs, baseline_y);
+    };
+
+    for replacement in line.runs {
+        project_page_scene_glyph_run(scene, replacement, x_abs + run.x, baseline_y)?;
+    }
+    Ok(())
+}
+
+struct PlacedItem {
+    x: f32,
+    width: f32,
+    top: f32,
+    item: FlowItem,
+}
+
+type Pages = Vec<Vec<PlacedItem>>;
+
+#[derive(Debug, Clone, Copy)]
+struct ColumnLayout {
+    count: usize,
+    widths: [f32; MAX_SECTION_COLUMNS],
+    origins: [f32; MAX_SECTION_COLUMNS],
+}
+
+impl ColumnLayout {
+    fn new_with_layout(
+        geom: Geom,
+        requested: Option<u16>,
+        gap_pt: Option<f32>,
+        custom: Option<&SectionColumnLayoutHints>,
+    ) -> Self {
+        if let Some(layout) = custom.and_then(|layout| Self::from_custom(geom, layout)) {
+            return layout;
+        }
+        Self::equal(geom, requested, gap_pt)
+    }
+
+    fn equal(geom: Geom, requested: Option<u16>, gap_pt: Option<f32>) -> Self {
+        let content_width = geom.content_w();
+        let gap = gap_pt
+            .filter(|gap| gap.is_finite() && *gap >= 0.0)
+            .unwrap_or(COLUMN_GAP_PT);
+        let max_by_width = ((content_width + gap) / (MIN_COLUMN_WIDTH_PT + gap))
+            .floor()
+            .max(1.0) as usize;
+        let count = usize::from(requested.unwrap_or(1).max(1))
+            .min(MAX_SECTION_COLUMNS)
+            .min(max_by_width);
+        let gaps = gap * count.saturating_sub(1) as f32;
+        let width = ((content_width - gaps) / count as f32).max(MIN_COLUMN_WIDTH_PT);
+        let mut widths = [0.0; MAX_SECTION_COLUMNS];
+        let mut origins = [0.0; MAX_SECTION_COLUMNS];
+        for index in 0..count {
+            widths[index] = width;
+            origins[index] = index as f32 * (width + gap);
+        }
+        Self {
+            count,
+            widths,
+            origins,
+        }
+    }
+
+    fn from_custom(geom: Geom, layout: &SectionColumnLayoutHints) -> Option<Self> {
+        let count = layout.columns.len();
+        if count == 0 || count > MAX_SECTION_COLUMNS {
+            return None;
+        }
+        if layout.columns.iter().any(|column| {
+            !column.width_pt.is_finite()
+                || column.width_pt <= 0.0
+                || !column.space_after_pt.is_finite()
+                || column.space_after_pt < 0.0
+        }) {
+            return None;
+        }
+        let source_total = layout
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(index, column)| {
+                column.width_pt
+                    + if index + 1 < count {
+                        column.space_after_pt
+                    } else {
+                        0.0
+                    }
+            })
+            .sum::<f32>();
+        if !source_total.is_finite() || source_total <= 0.0 {
+            return None;
+        }
+        let content_width = geom.content_w();
+        let scale = if source_total > content_width {
+            content_width / source_total
+        } else {
+            1.0
+        };
+        if scale < 1.0
+            && layout
+                .columns
+                .iter()
+                .any(|column| column.width_pt * scale < MIN_COLUMN_WIDTH_PT)
+        {
+            return None;
+        }
+
+        let mut widths = [0.0; MAX_SECTION_COLUMNS];
+        let mut origins = [0.0; MAX_SECTION_COLUMNS];
+        let mut x = 0.0;
+        for (index, column) in layout.columns.iter().enumerate() {
+            origins[index] = x;
+            widths[index] = column.width_pt * scale;
+            x += widths[index];
+            if index + 1 < count {
+                x += column.space_after_pt * scale;
+            }
+        }
+        Some(Self {
+            count,
+            widths,
+            origins,
+        })
+    }
+
+    fn x(self, index: usize) -> f32 {
+        self.origins[index.min(self.count.saturating_sub(1))]
+    }
+
+    fn width(self, index: usize) -> f32 {
+        self.widths[index.min(self.count.saturating_sub(1))]
+    }
+
+    fn shaping_width(self) -> f32 {
+        self.widths[..self.count]
+            .iter()
+            .copied()
+            .reduce(f32::min)
+            .unwrap_or_else(|| self.widths[0])
+    }
+
+    fn separator_x(self, index: usize) -> Option<f32> {
+        let next = index.checked_add(1)?;
+        if next >= self.count {
+            return None;
+        }
+        Some((self.origins[index] + self.widths[index] + self.origins[next]) * 0.5)
+    }
+}
+
+#[derive(Clone, Copy, Default)]
+struct SectionColumnPaintHints<'a> {
+    gap_pt: Option<f32>,
+    layout: Option<&'a SectionColumnLayoutHints>,
+    separator: bool,
+}
+
+fn draw_section_column_separators(
+    scene: &mut PageScene,
+    geom: Geom,
+    setup: &SectionSetup,
+    hints: SectionColumnPaintHints<'_>,
+) -> Result<()> {
+    if !hints.separator {
+        return Ok(());
+    }
+    let layout = ColumnLayout::new_with_layout(geom, setup.columns, hints.gap_pt, hints.layout);
+    let top = geom.top();
+    let height = (geom.bottom() - top).max(0.0);
+    for index in 0..layout.count.saturating_sub(1) {
+        let Some(separator_x) = layout.separator_x(index) else {
+            continue;
+        };
+        project_page_scene_fill_rect(
+            scene,
+            geom.left + separator_x - COLUMN_SEPARATOR_WIDTH_PT * 0.5,
+            top,
+            COLUMN_SEPARATOR_WIDTH_PT,
+            height,
+            rgb::Color::new(0, 0, 0),
+        )?;
+    }
+    Ok(())
+}
+
+struct FlowCursor {
+    columns: ColumnLayout,
+    column_index: usize,
+    rtl: bool,
+    y: f32,
+    column_nonempty: bool,
+}
+
+impl FlowCursor {
+    fn new(
+        geom: Geom,
+        columns: Option<u16>,
+        column_gap_pt: Option<f32>,
+        column_layout: Option<&SectionColumnLayoutHints>,
+        rtl: bool,
+    ) -> Self {
+        let columns = ColumnLayout::new_with_layout(geom, columns, column_gap_pt, column_layout);
+        Self {
+            column_index: Self::initial_column_index(columns, rtl),
+            columns,
+            rtl,
+            y: geom.top(),
+            column_nonempty: false,
+        }
+    }
+
+    fn set_columns(
+        &mut self,
+        geom: Geom,
+        columns: Option<u16>,
+        column_gap_pt: Option<f32>,
+        column_layout: Option<&SectionColumnLayoutHints>,
+        rtl: bool,
+    ) {
+        self.columns = ColumnLayout::new_with_layout(geom, columns, column_gap_pt, column_layout);
+        self.rtl = rtl;
+        self.column_index = Self::initial_column_index(self.columns, self.rtl);
+        self.y = geom.top();
+        self.column_nonempty = false;
+    }
+
+    fn advance(&mut self, pages: &mut Pages, geom: Geom) {
+        if self.rtl && self.column_index > 0 {
+            self.column_index -= 1;
+        } else if !self.rtl && self.column_index + 1 < self.columns.count {
+            self.column_index += 1;
+        } else {
+            pages.push(Vec::new());
+            self.column_index = Self::initial_column_index(self.columns, self.rtl);
+        }
+        self.y = geom.top();
+        self.column_nonempty = false;
+    }
+
+    fn force_page(&mut self, pages: &mut Pages, geom: Geom) {
+        pages.push(Vec::new());
+        self.column_index = Self::initial_column_index(self.columns, self.rtl);
+        self.y = geom.top();
+        self.column_nonempty = false;
+    }
+
+    fn initial_column_index(columns: ColumnLayout, rtl: bool) -> usize {
+        if rtl {
+            columns.count.saturating_sub(1)
+        } else {
+            0
+        }
+    }
+}
+
+/// Layout-derived page map from rwml's preview-grade pagination.
+///
+/// This matches rwml's own PDF output, not Microsoft Word's pagination. Page
+/// indices are physical, 1-based page numbers; section page-number restarts and
+/// formats are intentionally not applied.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayoutPages {
+    /// Total number of physical pages produced by rwml's preview paginator.
+    pub pages: usize,
+    /// First physical page each top-level body block touches, in model order.
+    pub block_pages: Vec<Option<usize>>,
+    /// Physical page for each body `PAGE` field occurrence, in model order.
+    pub page_fields: Vec<Option<usize>>,
+}
+
+struct PdfRender {
+    pdf: Vec<u8>,
+    pages: usize,
+}
+
+struct Pagination {
+    pages: Pages,
+    page_sections: Vec<Option<RenderPageSection>>,
+    block_pages: HashMap<usize, usize>,
+    block_line_pages: HashMap<usize, Vec<BlockLinePage>>,
+    block_line_widths: HashMap<usize, Vec<f32>>,
+    final_section_start_page_index: usize,
+}
+
+#[derive(Clone, Copy)]
+struct ActiveTopBottomBand {
+    owner_block: Option<usize>,
+    page_index: usize,
+    top: f32,
+    bottom: f32,
+}
+
+#[derive(Clone, Copy)]
+struct PendingTopBottomBand {
+    owner_block: Option<usize>,
+    anchor_offset: usize,
+    top: f32,
+    bottom: f32,
+}
+
+#[cfg(test)]
+fn collect_pdf_flow_items<'source>(
+    model: &'source DocModel,
+    geom: Geom,
+    tcx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    source_hints: SourceRenderHints<'source>,
+    floating_shapes: &[FloatingShape],
+    unsupported_features: Option<&FeatureInventory>,
+) -> Vec<FlowItem> {
+    collect_pdf_body_flow(
+        model,
+        geom,
+        tcx,
+        capture,
+        source_hints,
+        floating_shapes,
+        unsupported_features,
+    )
+    .lower(tcx, capture)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_pdf_body_flow<'source>(
+    model: &'source DocModel,
+    geom: Geom,
+    tcx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    source_hints: SourceRenderHints<'source>,
+    floating_shapes: &[FloatingShape],
+    unsupported_features: Option<&FeatureInventory>,
+) -> BodyFlowQueue<'source> {
+    collect_pdf_body_flow_with_paragraph_widths(
+        model,
+        geom,
+        tcx,
+        capture,
+        source_hints,
+        floating_shapes,
+        unsupported_features,
+        None,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_pdf_body_flow_with_paragraph_widths<'source>(
+    model: &'source DocModel,
+    geom: Geom,
+    tcx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    source_hints: SourceRenderHints<'source>,
+    floating_shapes: &[FloatingShape],
+    unsupported_features: Option<&FeatureInventory>,
+    paragraph_widths: Option<&[Option<f32>]>,
+) -> BodyFlowQueue<'source> {
+    let mut body_flow = BodyFlowQueue::default();
+    let final_section_setup = SectionSetup::from(&model.setup);
+    let body_columns = section_columns_by_block(&model.blocks, final_section_setup.columns);
+    let body_column_gaps = section_column_gaps_by_block(
+        &model.blocks,
+        source_hints.section_column_gap_pt,
+        source_hints.final_section_column_gap_pt,
+    );
+    let body_column_layouts = section_column_layouts_by_block(
+        &model.blocks,
+        source_hints.section_column_layouts,
+        source_hints.final_section_column_layout,
+    );
+    let body_geometries = section_geometries_by_block(&model.blocks, geom);
+    let top_bottom_bands = top_bottom_bands_by_block(model, floating_shapes, geom);
+    collect_blocks_with_block_anchors(
+        &model.blocks,
+        &mut body_flow,
+        geom,
+        tcx,
+        capture,
+        BodyCollectionSidecars {
+            paragraph_widths,
+            section_columns: &body_columns,
+            section_column_gap_pt: &body_column_gaps,
+            section_column_layouts: &body_column_layouts,
+            section_column_rtl: source_hints.section_column_rtl,
+            section_geometries: &body_geometries,
+            pagination_hints: source_hints.pagination,
+            pagination_boundaries: source_hints.pagination_boundaries,
+            line_spacing_hints: source_hints.line_spacing,
+            tab_stops: source_hints.tab_stops,
+            column_break_offsets: source_hints.column_break_offsets,
+            default_tab_stop_pt: source_hints.default_tab_stop_pt,
+            table_row_pagination: source_hints.table_row_pagination,
+            table_cell_pagination: source_hints.table_cell_pagination,
+            table_cell_line_spacing: source_hints.table_cell_line_spacing,
+            table_nested_pagination: source_hints.table_nested_pagination,
+            table_cell_tab_stops: source_hints.table_cell_tab_stops,
+            top_bottom_bands: &top_bottom_bands,
+        },
+    );
+    body_flow.push_ready(FlowItem::PaginationBoundary);
+    let final_column_geom = geom.with_content_width(
+        ColumnLayout::new_with_layout(
+            geom,
+            final_section_setup.columns,
+            source_hints.final_section_column_gap_pt,
+            source_hints.final_section_column_layout,
+        )
+        .shaping_width(),
+    );
+    if let Some(features) = unsupported_features {
+        let placeholders = unsupported_placeholder_blocks(
+            features,
+            floating_shapes.len().min(MAX_FLOATING_SHAPE_OVERLAYS),
+        );
+        if !placeholders.is_empty() {
+            body_flow.push_ready(FlowItem::Gap(PARA_GAP));
+            let mut placeholder_items = Vec::new();
+            collect_blocks(
+                &placeholders,
+                &mut placeholder_items,
+                final_column_geom,
+                tcx,
+                capture,
+            );
+            body_flow.extend_ready(placeholder_items);
+        }
+    }
+    let missing_image_placeholders =
+        missing_image_placeholder_blocks(count_missing_image_bytes(&model.blocks));
+    if !missing_image_placeholders.is_empty() {
+        body_flow.push_ready(FlowItem::Gap(PARA_GAP));
+        let mut placeholder_items = Vec::new();
+        collect_blocks(
+            &missing_image_placeholders,
+            &mut placeholder_items,
+            final_column_geom,
+            tcx,
+            capture,
+        );
+        body_flow.extend_ready(placeholder_items);
+    }
+    let undecodable_placeholders =
+        undecodable_image_placeholder_blocks(count_undecodable_images(&model.blocks));
+    if !undecodable_placeholders.is_empty() {
+        body_flow.push_ready(FlowItem::Gap(PARA_GAP));
+        let mut placeholder_items = Vec::new();
+        collect_blocks(
+            &undecodable_placeholders,
+            &mut placeholder_items,
+            final_column_geom,
+            tcx,
+            capture,
+        );
+        body_flow.extend_ready(placeholder_items);
+    }
+    body_flow
+}
+
+fn section_columns_by_block(blocks: &[Block], final_columns: Option<u16>) -> Vec<Option<u16>> {
+    let mut columns = vec![final_columns; blocks.len()];
+    let mut section_start = 0usize;
+    for (index, block) in blocks.iter().enumerate() {
+        if let Block::SectionBreak(setup) = block {
+            columns[section_start..=index].fill(setup.columns);
+            section_start = index + 1;
+        }
+    }
+    columns
+}
+
+fn section_column_gaps_by_block(
+    blocks: &[Block],
+    ending_section_gap_pt: &[Option<f32>],
+    final_section_gap_pt: Option<f32>,
+) -> Vec<Option<f32>> {
+    let mut gaps = vec![final_section_gap_pt; blocks.len()];
+    let mut section_start = 0usize;
+    for (index, block) in blocks.iter().enumerate() {
+        if matches!(block, Block::SectionBreak(_)) {
+            let gap = ending_section_gap_pt.get(index).copied().flatten();
+            gaps[section_start..=index].fill(gap);
+            section_start = index + 1;
+        }
+    }
+    gaps
+}
+
+fn section_column_layouts_by_block<'a>(
+    blocks: &[Block],
+    ending_section_layouts: &'a [Option<SectionColumnLayoutHints>],
+    final_section_layout: Option<&'a SectionColumnLayoutHints>,
+) -> Vec<Option<&'a SectionColumnLayoutHints>> {
+    let mut layouts = vec![final_section_layout; blocks.len()];
+    let mut section_start = 0usize;
+    for (index, block) in blocks.iter().enumerate() {
+        if matches!(block, Block::SectionBreak(_)) {
+            let layout = ending_section_layouts.get(index).and_then(Option::as_ref);
+            layouts[section_start..=index].fill(layout);
+            section_start = index + 1;
+        }
+    }
+    layouts
+}
+
+fn section_column_paint_hints_by_section<'a>(
+    blocks: &[Block],
+    ending_section_gap_pt: &[Option<f32>],
+    ending_section_layouts: &'a [Option<SectionColumnLayoutHints>],
+    ending_section_separators: &[bool],
+    final_section_gap_pt: Option<f32>,
+    final_section_layout: Option<&'a SectionColumnLayoutHints>,
+    final_section_separator: bool,
+) -> Vec<SectionColumnPaintHints<'a>> {
+    let mut hints = Vec::new();
+    for (index, block) in blocks.iter().enumerate() {
+        if matches!(block, Block::SectionBreak(_)) {
+            hints.push(SectionColumnPaintHints {
+                gap_pt: ending_section_gap_pt.get(index).copied().flatten(),
+                layout: ending_section_layouts.get(index).and_then(Option::as_ref),
+                separator: ending_section_separators
+                    .get(index)
+                    .copied()
+                    .unwrap_or(false),
+            });
+        }
+    }
+    hints.push(SectionColumnPaintHints {
+        gap_pt: final_section_gap_pt,
+        layout: final_section_layout,
+        separator: final_section_separator,
+    });
+    hints
+}
+
+fn section_geometries_by_item(items: &[FlowItem], base: Geom) -> Vec<Geom> {
+    let mut current = items
+        .iter()
+        .find_map(|item| match item {
+            FlowItem::SectionBreak(setup) => Some(Geom::from_section(setup)),
+            _ => None,
+        })
+        .unwrap_or(base);
+    let mut geometries = Vec::with_capacity(items.len());
+    for (index, item) in items.iter().enumerate() {
+        geometries.push(current);
+        if matches!(item, FlowItem::SectionBreak(_)) {
+            current = items[index + 1..]
+                .iter()
+                .find_map(|next| match next {
+                    FlowItem::SectionBreak(setup) => Some(Geom::from_section(setup)),
+                    _ => None,
+                })
+                .unwrap_or(base);
+        }
+    }
+    geometries
+}
+
+fn section_geometries_by_block(blocks: &[Block], base: Geom) -> Vec<Geom> {
+    let mut current = blocks
+        .iter()
+        .find_map(|block| match block {
+            Block::SectionBreak(setup) => Some(Geom::from_section(setup)),
+            _ => None,
+        })
+        .unwrap_or(base);
+    let mut geometries = Vec::with_capacity(blocks.len());
+    for (index, block) in blocks.iter().enumerate() {
+        geometries.push(current);
+        if matches!(block, Block::SectionBreak(_)) {
+            current = blocks[index + 1..]
+                .iter()
+                .find_map(|next| match next {
+                    Block::SectionBreak(setup) => Some(Geom::from_section(setup)),
+                    _ => None,
+                })
+                .unwrap_or(base);
+        }
+    }
+    geometries
+}
+
+fn has_source_column_width_variants(source_hints: SourceRenderHints<'_>) -> bool {
+    source_hints.final_section_column_layout.is_some()
+        || source_hints
+            .section_column_layouts
+            .iter()
+            .any(Option::is_some)
+}
+
+fn paragraph_shaping_widths_by_block(
+    model: &DocModel,
+    geom: Geom,
+    source_hints: SourceRenderHints<'_>,
+) -> Vec<f32> {
+    let final_section_setup = SectionSetup::from(&model.setup);
+    let columns = section_columns_by_block(&model.blocks, final_section_setup.columns);
+    let gaps = section_column_gaps_by_block(
+        &model.blocks,
+        source_hints.section_column_gap_pt,
+        source_hints.final_section_column_gap_pt,
+    );
+    let layouts = section_column_layouts_by_block(
+        &model.blocks,
+        source_hints.section_column_layouts,
+        source_hints.final_section_column_layout,
+    );
+    let geometries = section_geometries_by_block(&model.blocks, geom);
+    (0..model.blocks.len())
+        .map(|index| {
+            ColumnLayout::new_with_layout(
+                geometries[index],
+                columns[index],
+                gaps[index],
+                layouts[index],
+            )
+            .shaping_width()
+        })
+        .collect()
+}
+
+fn target_column_paragraph_widths(
+    model: &DocModel,
+    pagination: &Pagination,
+    shaping_widths: &[f32],
+    current_widths: &[Option<f32>],
+    suppressed: &[bool],
+) -> Vec<Option<f32>> {
+    model
+        .blocks
+        .iter()
+        .enumerate()
+        .map(|(index, block)| {
+            if !matches!(block, Block::Paragraph(_))
+                || suppressed.get(index).copied().unwrap_or(true)
+            {
+                return None;
+            }
+            let widths = pagination.block_line_widths.get(&index)?;
+            let (&first, rest) = widths.split_first()?;
+            if current_widths.get(index).copied().flatten().is_some()
+                && rest.iter().any(|width| (width - first).abs() > 0.01)
+            {
+                return None;
+            }
+            let shaping_width = shaping_widths.get(index).copied().unwrap_or(first);
+            (first > shaping_width + 0.01).then_some(first)
+        })
+        .collect()
+}
+
+fn suppress_unstable_target_paragraphs(
+    pagination: &Pagination,
+    current_widths: &[Option<f32>],
+    suppressed: &mut [bool],
+) {
+    for (index, current_width) in current_widths.iter().enumerate() {
+        let Some(current_width) = current_width else {
+            continue;
+        };
+        if suppressed.get(index).copied().unwrap_or(true) {
+            continue;
+        }
+        let Some(widths) = pagination.block_line_widths.get(&index) else {
+            continue;
+        };
+        let Some((&first, rest)) = widths.split_first() else {
+            continue;
+        };
+        if (first - current_width).abs() > 0.01
+            || rest.iter().any(|width| (width - first).abs() > 0.01)
+        {
+            suppressed[index] = true;
+        }
+    }
+}
+
+fn paragraph_width_maps_equal(left: &[Option<f32>], right: &[Option<f32>]) -> bool {
+    left.len() == right.len()
+        && left
+            .iter()
+            .zip(right)
+            .all(|(left, right)| match (left, right) {
+                (Some(left), Some(right)) => (left - right).abs() <= 0.01,
+                (None, None) => true,
+                _ => false,
+            })
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_and_paginate_pdf_flow<'source>(
+    model: &'source DocModel,
+    geom: Geom,
+    tcx: &mut TextCx<'_>,
+    capture: &mut LayoutCapture,
+    source_hints: SourceRenderHints<'source>,
+    floating_shapes: &[FloatingShape],
+    unsupported_features: Option<&FeatureInventory>,
+) -> Pagination {
+    let final_section_setup = SectionSetup::from(&model.setup);
+    if !has_source_column_width_variants(source_hints) {
+        let flow = collect_pdf_body_flow(
+            model,
+            geom,
+            tcx,
+            capture,
+            source_hints,
+            floating_shapes,
+            unsupported_features,
+        );
+        return paginate_body_flow_with_column_gap(
+            flow,
+            tcx,
+            capture,
+            geom,
+            &final_section_setup,
+            source_hints.final_section_column_gap_pt,
+            source_hints.final_section_column_layout,
+            source_hints.final_section_column_rtl,
+        );
+    }
+
+    let shaping_widths = paragraph_shaping_widths_by_block(model, geom, source_hints);
+    let mut paragraph_widths = vec![None; model.blocks.len()];
+    let mut suppressed = vec![false; model.blocks.len()];
+    let mut converged = false;
+    // Wider-track shaping is retained only when it stabilizes on that physical
+    // track. Cross-track paragraphs need resumable fragment layout, so they keep
+    // the conservative narrowest-column width.
+    for _ in 0..MAX_TARGET_COLUMN_REWRAP_PASSES {
+        let mut scratch_capture = LayoutCapture::default();
+        let flow = collect_pdf_body_flow_with_paragraph_widths(
+            model,
+            geom,
+            tcx,
+            &mut scratch_capture,
+            source_hints,
+            floating_shapes,
+            None,
+            paragraph_widths
+                .iter()
+                .any(Option::is_some)
+                .then_some(paragraph_widths.as_slice()),
+        );
+        let pagination = paginate_body_flow_with_column_gap(
+            flow,
+            tcx,
+            &mut scratch_capture,
+            geom,
+            &final_section_setup,
+            source_hints.final_section_column_gap_pt,
+            source_hints.final_section_column_layout,
+            source_hints.final_section_column_rtl,
+        );
+        suppress_unstable_target_paragraphs(&pagination, &paragraph_widths, &mut suppressed);
+        let next = target_column_paragraph_widths(
+            model,
+            &pagination,
+            &shaping_widths,
+            &paragraph_widths,
+            &suppressed,
+        );
+        if paragraph_width_maps_equal(&paragraph_widths, &next) {
+            converged = true;
+            break;
+        }
+        paragraph_widths = next;
+    }
+    if !converged {
+        paragraph_widths.fill(None);
+    }
+    let paragraph_widths = paragraph_widths
+        .iter()
+        .any(Option::is_some)
+        .then_some(paragraph_widths.as_slice());
+    let flow = collect_pdf_body_flow_with_paragraph_widths(
+        model,
+        geom,
+        tcx,
+        capture,
+        source_hints,
+        floating_shapes,
+        unsupported_features,
+        paragraph_widths,
+    );
+    paginate_body_flow_with_column_gap(
+        flow,
+        tcx,
+        capture,
+        geom,
+        &final_section_setup,
+        source_hints.final_section_column_gap_pt,
+        source_hints.final_section_column_layout,
+        source_hints.final_section_column_rtl,
+    )
+}
+
+fn strict_font_context(fonts: &[Vec<u8>], require_pdf_fonts: bool) -> Result<FontContext> {
+    use parley::fontique::{
+        Blob, Collection, CollectionOptions, GenericFamily, Script, ScriptExt, SourceCache,
+    };
+    use skrifa::{raw::TableProvider, MetadataProvider};
+
+    if fonts.is_empty() {
+        return Err(Error::Render(
+            "fixed-font rendering requires at least one font".to_string(),
+        ));
+    }
+
+    let mut collection = Collection::new(CollectionOptions {
+        shared: false,
+        system_fonts: false,
+    });
+    let mut registered = 0usize;
+    let mut families = Vec::new();
+    for font in fonts {
+        if font.is_empty() {
+            continue;
+        }
+        let data = Blob::from(font.clone());
+        let mut faces = collection.register_fonts(data.clone(), None);
+        // Collection registration returns hash-map order for multi-family files.
+        faces.sort_by_key(|(_, fonts)| fonts.iter().map(|font| font.index()).min());
+        let (bytes, _) = data.into_raw_parts();
+        for (family, fonts) in faces {
+            if !fonts.is_empty() && !families.contains(&family) {
+                families.push(family);
+            }
+            for font in fonts {
+                if require_pdf_fonts {
+                    let usable = Font::new(bytes.clone().into(), font.index()).is_some()
+                        && skrifa::FontRef::from_index(bytes.as_ref().as_ref(), font.index())
+                            .is_ok_and(|face| {
+                                face.outline_glyphs().format().is_some()
+                                    || !face.bitmap_strikes().is_empty()
+                                    || face.colr().is_ok()
+                            });
+                    if !usable {
+                        return Err(Error::Render(
+                            "fixed-font PDF cannot embed a supplied font face".into(),
+                        ));
+                    }
+                }
+                registered += 1;
+            }
+        }
+    }
+    if registered == 0 {
+        return Err(Error::Render(
+            "fixed-font rendering could not register any supplied fonts".to_string(),
+        ));
+    }
+
+    // Isolated collections have no platform fallback map. Make caller fonts
+    // available after authored families, including Parley's emoji fallback.
+    for &(script, _) in Script::all_samples() {
+        collection.set_fallbacks(script, families.iter().copied());
+    }
+    for script in [b"Zyyy", b"Zinh", b"Zzzz"] {
+        collection.set_fallbacks(Script::from_bytes(*script), families.iter().copied());
+    }
+    collection.set_generic_families(GenericFamily::Emoji, families.iter().copied());
+
+    Ok(FontContext {
+        collection,
+        source_cache: SourceCache::default(),
+    })
+}
+
+fn record_line_page_fields(
+    line: &LineLayout,
+    page_number: usize,
+    page_fields: &mut [Option<usize>],
+) {
+    for run in &line.runs {
+        let Some(index) = run
+            .dynamic
+            .as_ref()
+            .and_then(|dynamic| dynamic.page_field_index)
+        else {
+            continue;
+        };
+        if let Some(slot) = page_fields.get_mut(index) {
+            if slot.is_none() {
+                *slot = Some(page_number);
+            }
+        }
+    }
+}
+
+fn record_page_fields(pages: &Pages, page_fields: &mut [Option<usize>]) {
+    for (page_index, page_items) in pages.iter().enumerate() {
+        let page_number = page_index + 1;
+        for placed in page_items {
+            match &placed.item {
+                FlowItem::Line(line) => record_line_page_fields(line, page_number, page_fields),
+                FlowItem::Row(row) => {
+                    for cell in &row.cells {
+                        for line in &cell.lines {
+                            record_line_page_fields(line, page_number, page_fields);
+                        }
+                    }
+                }
+                FlowItem::BlockStart { .. }
+                | FlowItem::TopBottomBand { .. }
+                | FlowItem::PaginationBoundary
+                | FlowItem::Gap(_)
+                | FlowItem::PageBreak
+                | FlowItem::ColumnBreak
+                | FlowItem::SectionColumnGap(_)
+                | FlowItem::SectionColumnLayout(_)
+                | FlowItem::SectionColumnRtl
+                | FlowItem::SectionBreak(_)
+                | FlowItem::Table { .. }
+                | FlowItem::Picture { .. }
+                | FlowItem::Chart { .. } => {}
+            }
+        }
+    }
+}
+
+/// Return layout-derived page numbers from rwml's preview-grade pagination.
+///
+/// This matches rwml's own PDF output, not Microsoft Word's pagination. Page
+/// indices are physical, 1-based page numbers; section page-number restarts and
+/// formats are intentionally not applied. The supplied fonts are used strictly:
+/// system fonts are disabled and only successfully registered caller bytes are
+/// considered.
+pub fn layout_pages_with_fonts(model: &DocModel, fonts: &[Vec<u8>]) -> Result<LayoutPages> {
+    layout_pages_with_fonts_and_pagination(model, fonts, SourceRenderHints::default(), &[])
+}
+
+pub(crate) fn layout_pages_with_fonts_and_pagination(
+    model: &DocModel,
+    fonts: &[Vec<u8>],
+    source_hints: SourceRenderHints<'_>,
+    floating_shapes: &[FloatingShape],
+) -> Result<LayoutPages> {
+    let mut font_cx = strict_font_context(fonts, false)?;
+    let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+    let mut font_cache: HashMap<u64, Font> = HashMap::new();
+    let mut tcx = TextCx {
+        font_cx: &mut font_cx,
+        layout_cx: &mut layout_cx,
+        font_cache: &mut font_cache,
+    };
+    let geom = Geom::from_setup(&model.setup.page);
+    let mut capture = LayoutCapture::page_fields();
+    let pagination = collect_and_paginate_pdf_flow(
+        model,
+        geom,
+        &mut tcx,
+        &mut capture,
+        source_hints,
+        floating_shapes,
+        None,
+    );
+    let mut page_fields = capture.page_fields;
+    record_page_fields(&pagination.pages, &mut page_fields);
+    let block_pages = (0..model.blocks.len())
+        .map(|index| pagination.block_pages.get(&index).map(|page| page + 1))
+        .collect();
+
+    Ok(LayoutPages {
+        pages: pagination.pages.len(),
+        block_pages,
+        page_fields,
+    })
+}
+
+/// Render a [`DocModel`] to PDF using system fonts.
+pub(crate) fn to_pdf(model: &DocModel) -> Vec<u8> {
+    to_pdf_with_fonts(model, &[])
+}
+
+/// Fallible variant of [`to_pdf`].
+pub(crate) fn try_to_pdf(model: &DocModel) -> Result<Vec<u8>> {
+    try_to_pdf_with_fonts(model, &[])
+}
+
+/// Render a [`DocModel`] to PDF, first registering each blob in `extra_fonts` into
+/// the layout font collection. Lets a caller supply a Korean (or any) font so
+/// rendering works in environments without matching system fonts — the font is
+/// then available by its own family name and participates in script fallback.
+/// Undecodable font blobs are ignored.
+pub(crate) fn to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Vec<u8> {
+    try_to_pdf_with_fonts(model, extra_fonts).unwrap_or_default()
+}
+
+/// Fallible variant of [`to_pdf_with_fonts`].
+pub(crate) fn try_to_pdf_with_fonts(model: &DocModel, extra_fonts: &[Vec<u8>]) -> Result<Vec<u8>> {
+    Ok(render_pdf(model, extra_fonts, None, &[], SourceRenderHints::default())?.pdf)
+}
+
+pub(crate) fn to_pdf_with_fonts_and_features_and_shapes(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    features: FeatureInventory,
+    floating_shapes: &[FloatingShape],
+    source_hints: SourceRenderHints<'_>,
+) -> Vec<u8> {
+    try_to_pdf_with_fonts_and_features_and_shapes(
+        model,
+        extra_fonts,
+        features,
+        floating_shapes,
+        source_hints,
+    )
+    .unwrap_or_default()
+}
+
+pub(crate) fn try_to_pdf_with_fonts_and_features_and_shapes(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    features: FeatureInventory,
+    floating_shapes: &[FloatingShape],
+    source_hints: SourceRenderHints<'_>,
+) -> Result<Vec<u8>> {
+    let unsupported = report::render_unsupported_features(&features);
+    Ok(render_pdf(
+        model,
+        extra_fonts,
+        Some(&unsupported),
+        floating_shapes,
+        source_hints,
+    )?
+    .pdf)
+}
+
+pub(crate) fn to_pdf_with_fonts_and_report(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    features: FeatureInventory,
+) -> RenderedPdf {
+    to_pdf_with_fonts_and_report_and_shapes(
+        model,
+        extra_fonts,
+        features,
+        &[],
+        SourceRenderHints::default(),
+    )
+}
+
+pub(crate) fn to_pdf_with_fonts_and_report_and_shapes(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    features: FeatureInventory,
+    floating_shapes: &[FloatingShape],
+    source_hints: SourceRenderHints<'_>,
+) -> RenderedPdf {
+    let unsupported = report::render_unsupported_features(&features);
+    let fallback_unsupported = unsupported.clone();
+    try_to_pdf_with_fonts_and_report_and_shapes(
+        model,
+        extra_fonts,
+        features,
+        floating_shapes,
+        source_hints,
+    )
+    .unwrap_or_else(|_| RenderedPdf {
+        pdf: Vec::new(),
+        report: RenderReport {
+            pages: 0,
+            warnings: render_warnings_for_model(&fallback_unsupported, model),
+            unsupported: fallback_unsupported,
+        },
+    })
+}
+
+pub(crate) fn try_to_pdf_with_fonts_and_report(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    features: FeatureInventory,
+) -> Result<RenderedPdf> {
+    try_to_pdf_with_fonts_and_report_and_shapes(
+        model,
+        extra_fonts,
+        features,
+        &[],
+        SourceRenderHints::default(),
+    )
+}
+
+pub(crate) fn try_to_pdf_with_fonts_and_report_and_shapes(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    features: FeatureInventory,
+    floating_shapes: &[FloatingShape],
+    source_hints: SourceRenderHints<'_>,
+) -> Result<RenderedPdf> {
+    let unsupported = report::render_unsupported_features(&features);
+    let rendered = render_pdf(
+        model,
+        extra_fonts,
+        Some(&unsupported),
+        floating_shapes,
+        source_hints,
+    )?;
+    let warnings = render_warnings_for_model(&unsupported, model);
+    Ok(RenderedPdf {
+        pdf: rendered.pdf,
+        report: RenderReport {
+            pages: rendered.pages,
+            warnings,
+            unsupported,
+        },
+    })
+}
+
+pub(crate) fn try_to_pdf_with_fixed_fonts_and_report_and_shapes(
+    model: &DocModel,
+    fonts: &[Vec<u8>],
+    features: FeatureInventory,
+    floating_shapes: &[FloatingShape],
+    source_hints: SourceRenderHints<'_>,
+) -> Result<RenderedPdf> {
+    let unsupported = report::render_unsupported_features(&features);
+    let rendered = render_pdf_with_font_context(
+        model,
+        strict_font_context(fonts, true)?,
+        Some(&unsupported),
+        floating_shapes,
+        source_hints,
+        true,
+    )?;
+    Ok(RenderedPdf {
+        pdf: rendered.pdf,
+        report: RenderReport {
+            pages: rendered.pages,
+            warnings: render_warnings_for_model(&unsupported, model),
+            unsupported,
+        },
+    })
+}
+
+fn render_pdf(
+    model: &DocModel,
+    extra_fonts: &[Vec<u8>],
+    unsupported_features: Option<&FeatureInventory>,
+    floating_shapes: &[FloatingShape],
+    source_hints: SourceRenderHints<'_>,
+) -> Result<PdfRender> {
+    use parley::fontique::Blob;
+    let mut font_cx = FontContext::default();
+    for f in extra_fonts {
+        if !f.is_empty() {
+            font_cx
+                .collection
+                .register_fonts(Blob::from(f.clone()), None);
+        }
+    }
+    render_pdf_with_font_context(
+        model,
+        font_cx,
+        unsupported_features,
+        floating_shapes,
+        source_hints,
+        false,
+    )
+}
+
+fn render_pdf_with_font_context(
+    model: &DocModel,
+    mut font_cx: FontContext,
+    unsupported_features: Option<&FeatureInventory>,
+    floating_shapes: &[FloatingShape],
+    source_hints: SourceRenderHints<'_>,
+    fixed_fonts: bool,
+) -> Result<PdfRender> {
+    let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+    let mut font_cache: HashMap<u64, Font> = HashMap::new();
+    let mut tcx = TextCx {
+        font_cx: &mut font_cx,
+        layout_cx: &mut layout_cx,
+        font_cache: &mut font_cache,
+    };
+    // Page geometry from the document (Letter/A4/A3/landscape/custom margins).
+    let geom = Geom::from_setup(&model.setup.page);
+    let mut capture = LayoutCapture::default();
+    let pagination = collect_and_paginate_pdf_flow(
+        model,
+        geom,
+        &mut tcx,
+        &mut capture,
+        source_hints,
+        floating_shapes,
+        unsupported_features,
+    );
+    let final_section_setup = SectionSetup::from(&model.setup);
+    let section_column_paint_hints = section_column_paint_hints_by_section(
+        &model.blocks,
+        source_hints.section_column_gap_pt,
+        source_hints.section_column_layouts,
+        source_hints.section_column_separators,
+        source_hints.final_section_column_gap_pt,
+        source_hints.final_section_column_layout,
+        source_hints.final_section_column_separator,
+    );
+    let page_geometries = pagination
+        .page_sections
+        .iter()
+        .map(|section| {
+            section
+                .as_ref()
+                .map(|section| Geom::from_section(&section.setup))
+                .unwrap_or(geom)
+        })
+        .collect::<Vec<_>>();
+    let page_display_numbers =
+        display_page_numbers(&pagination.page_sections, &final_section_setup);
+    let pages = pagination.pages;
+    let page_sections = pagination.page_sections;
+    let section_start_page_index = pagination.final_section_start_page_index;
+    let floating_shape_overlays = floating_shape_overlays_for_pages(
+        floating_shapes,
+        geom,
+        &page_geometries,
+        &pagination.block_pages,
+        &pagination.block_line_pages,
+    );
+
+    // Emit.
+    let mut document = PdfDoc::new();
+    let page_count = pages.len();
+    for (page_index, page_items) in pages.into_iter().enumerate() {
+        let page_number = page_index + 1;
+        let display_page_number = page_display_numbers
+            .get(page_index)
+            .copied()
+            .unwrap_or_else(|| PageDisplayNumber::decimal(page_number));
+        let fallback_page_section;
+        let page_section = match page_sections.get(page_index).and_then(Option::as_ref) {
+            Some(section) => section,
+            None => {
+                fallback_page_section = RenderPageSection {
+                    setup: final_section_setup.clone(),
+                    first_page_index: section_start_page_index,
+                    section_index: source_hints.running_line_spacing.len().saturating_sub(1),
+                };
+                &fallback_page_section
+            }
+        };
+        let page_geom = page_geometries.get(page_index).copied().unwrap_or(geom);
+        let Some(settings) = PageSettings::from_wh(page_geom.page_w, page_geom.page_h) else {
+            continue;
+        };
+        let mut page_scene = PageScene::default();
+        let (header_blocks, footer_blocks) = running_header_footer_blocks_for_page(
+            &page_section.setup,
+            page_number,
+            page_index == page_section.first_page_index,
+        );
+        let (header_variant, footer_variant) = running_surface_variants_for_page(
+            &page_section.setup,
+            page_number,
+            page_index == page_section.first_page_index,
+        );
+        let running_spacing = source_hints
+            .running_line_spacing
+            .get(page_section.section_index);
+        let running_tabs = source_hints
+            .running_tab_stops
+            .get(page_section.section_index);
+        let running_table_tabs = source_hints
+            .running_table_cell_tab_stops
+            .get(page_section.section_index);
+        let running_distances = source_hints
+            .running_surface_distances
+            .get(page_section.section_index)
+            .copied()
+            .unwrap_or_default();
+        let header_spacing = running_spacing
+            .map(|hints| running_surface_line_spacing(hints, header_variant, true))
+            .unwrap_or_default();
+        let footer_spacing = running_spacing
+            .map(|hints| running_surface_line_spacing(hints, footer_variant, false))
+            .unwrap_or_default();
+        let header_tabs = running_tabs
+            .map(|hints| running_surface_tab_stops(hints, header_variant, true))
+            .unwrap_or_default();
+        let footer_tabs = running_tabs
+            .map(|hints| running_surface_tab_stops(hints, footer_variant, false))
+            .unwrap_or_default();
+        let header_table_cell_spacing = running_spacing
+            .map(|hints| running_surface_table_cell_line_spacing(hints, header_variant, true))
+            .unwrap_or_default();
+        let footer_table_cell_spacing = running_spacing
+            .map(|hints| running_surface_table_cell_line_spacing(hints, footer_variant, false))
+            .unwrap_or_default();
+        let header_table_cell_tabs = running_table_tabs
+            .map(|hints| running_surface_table_cell_tab_stops(hints, header_variant, true))
+            .unwrap_or_default();
+        let footer_table_cell_tabs = running_table_tabs
+            .map(|hints| running_surface_table_cell_tab_stops(hints, footer_variant, false))
+            .unwrap_or_default();
+        let header_items = layout_running_surface_items(
+            header_blocks,
+            RunningSurfaceLayoutHints {
+                line_spacing: header_spacing,
+                tab_stops: header_tabs,
+                table_cell_line_spacing: header_table_cell_spacing,
+                table_cell_tab_stops: header_table_cell_tabs,
+                default_tab_stop_pt: source_hints.default_tab_stop_pt,
+            },
+            page_geom,
+            &mut tcx,
+        );
+        let mut footer_items = layout_running_surface_items(
+            footer_blocks,
+            RunningSurfaceLayoutHints {
+                line_spacing: footer_spacing,
+                tab_stops: footer_tabs,
+                table_cell_line_spacing: footer_table_cell_spacing,
+                table_cell_tab_stops: footer_table_cell_tabs,
+                default_tab_stop_pt: source_hints.default_tab_stop_pt,
+            },
+            page_geom,
+            &mut tcx,
+        );
+        let explicit_footer_distance =
+            normalized_running_surface_distance(running_distances.footer_pt);
+        if page_section.setup.page_numbers && explicit_footer_distance.is_some() {
+            if let Some(line) = layout_page_number_line(display_page_number, page_geom, &mut tcx) {
+                footer_items.push(RunningSurfaceItem::Line(line));
+            }
+        }
+        let header_bounds = running_header_vertical_bounds(page_geom, running_distances.header_pt);
+        let footer_bounds = running_footer_vertical_bounds(
+            page_geom,
+            explicit_footer_distance,
+            running_surface_items_extent(&footer_items, page_geom),
+        );
+        for overlay in floating_shape_overlays
+            .iter()
+            .filter(|overlay| overlay.page_index == page_index && overlay.behind_doc)
+        {
+            draw_floating_shape_overlay(&mut page_scene, overlay, &mut tcx)?;
+        }
+        // Running surfaces are bounded to their margin bands so text and images
+        // cannot bleed into body content or beyond the physical page.
+        draw_running_surface_items(
+            &mut page_scene,
+            header_items,
+            RunningSurfacePaintPlacement {
+                vertical_bounds: header_bounds,
+                geom: page_geom,
+                page_number: display_page_number,
+            },
+            &mut tcx,
+        )?;
+        let fy = draw_running_surface_items(
+            &mut page_scene,
+            footer_items,
+            RunningSurfacePaintPlacement {
+                vertical_bounds: footer_bounds,
+                geom: page_geom,
+                page_number: display_page_number,
+            },
+            &mut tcx,
+        )?;
+        if page_section.setup.page_numbers && explicit_footer_distance.is_none() {
+            if let Some(line) = layout_page_number_line(display_page_number, page_geom, &mut tcx) {
+                if fy + line.height <= page_geom.page_h {
+                    let baseline = fy + line.baseline;
+                    let x0 = page_geom.left + line.x_indent;
+                    project_page_scene_line_paint(&mut page_scene, &line, x0, fy, baseline)?;
+                    for run in line.runs {
+                        project_page_scene_glyph_run(&mut page_scene, run, x0, baseline)?;
+                    }
+                }
+            }
+        }
+        let column_paint_hints = section_column_paint_hints
+            .get(page_section.section_index)
+            .copied()
+            .or_else(|| section_column_paint_hints.last().copied())
+            .unwrap_or_default();
+        draw_section_column_separators(
+            &mut page_scene,
+            page_geom,
+            &page_section.setup,
+            column_paint_hints,
+        )?;
+        let mut previous_row_borders: Option<RenderedRowBorders> = None;
+        for placed in page_items {
+            let top = placed.top;
+            let column_x = placed.x;
+            match placed.item {
+                FlowItem::BlockStart { .. }
+                | FlowItem::TopBottomBand { .. }
+                | FlowItem::PaginationBoundary
+                | FlowItem::Gap(_)
+                | FlowItem::PageBreak
+                | FlowItem::ColumnBreak
+                | FlowItem::SectionColumnGap(_)
+                | FlowItem::SectionColumnLayout(_)
+                | FlowItem::SectionColumnRtl
+                | FlowItem::SectionBreak(_)
+                | FlowItem::Table { .. } => {}
+                FlowItem::Picture { image, layout } => {
+                    // Center the rotated visual bounds within the active body column.
+                    let bounds_x = page_geom.left
+                        + column_x
+                        + ((placed.width - layout.bounds_w) * 0.5).max(0.0);
+                    project_page_scene_image(&mut page_scene, image, layout, bounds_x, top)?;
+                }
+                FlowItem::Chart { chart, w, h } => {
+                    let x = page_geom.left + column_x + ((placed.width - w) * 0.5).max(0.0);
+                    draw_authored_chart(
+                        &mut page_scene,
+                        &chart,
+                        ChartRect { x, y: top, w, h },
+                        &mut tcx,
+                    )?;
+                }
+                FlowItem::Line(line) => {
+                    let baseline = top + line.baseline;
+                    let x0 = page_geom.left + column_x + line.x_indent;
+                    let lh = line.height;
+                    let clip_content = if line.clip_to_height {
+                        push_page_scene_clip(&mut page_scene, 0.0, top, lh, page_geom.page_w)?
+                    } else {
+                        false
+                    };
+                    project_page_scene_line_paint(&mut page_scene, &line, x0, top, baseline)?;
+                    for run in line.runs {
+                        if let Some(url) = run.link.clone() {
+                            let l = x0 + run.x;
+                            page_scene.push_link_ltrb(
+                                [l, top, l + run.width(), top + lh],
+                                url,
+                                LinkClip::Unbounded,
+                            )?;
+                        }
+                        project_page_scene_run_with_page_context(
+                            &mut page_scene,
+                            run,
+                            x0,
+                            baseline,
+                            display_page_number,
+                            &mut tcx,
+                        )?;
+                    }
+                    if clip_content {
+                        pop_page_scene_clip(&mut page_scene)?;
+                    }
+                }
+                FlowItem::Row(row) => {
+                    previous_row_borders = draw_row_layout(
+                        &mut page_scene,
+                        row,
+                        RowPaintPlacement {
+                            x_offset: page_geom.left + column_x,
+                            top,
+                            page_number: display_page_number,
+                            link_clip: LinkClip::Unbounded,
+                        },
+                        &mut tcx,
+                        previous_row_borders.as_ref(),
+                    )?;
+                }
+            }
+        }
+        for overlay in floating_shape_overlays
+            .iter()
+            .filter(|overlay| overlay.page_index == page_index && !overlay.behind_doc)
+        {
+            draw_floating_shape_overlay(&mut page_scene, overlay, &mut tcx)?;
+        }
+        page_scene.ensure_balanced()?;
+        if fixed_fonts {
+            pdf::validate_fixed_glyphs(&page_scene)?;
+        }
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        pdf::replay_complete_page_scene(&mut surface, &page_scene)?;
+        surface.finish();
+        pdf::replay_annotations(&mut page, &page_scene);
+        page.finish();
+    }
+    let pdf = document
+        .finish()
+        .map_err(|e| Error::Render(e.to_string()))?;
+    Ok(PdfRender {
+        pdf,
+        pages: page_count,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use parley::fontique::{Blob, Collection, CollectionOptions, SourceCache};
+    use parley::{FontContext, LayoutContext};
+    use std::borrow::Cow;
+    use std::collections::HashMap;
+    use std::rc::Rc;
+
+    use super::{
+        assign_section_to_render_pages, cell_insets, cell_line_origin, count_missing_image_bytes,
+        display_page_numbers, display_text, dynamic_page_number_text, dynamic_text_for_field,
+        first_row_fragment_height, fit_chart_layout_to_box, fit_image_layout_to_box, image_layout,
+        image_paint_transform, layout_page_number_line, layout_paragraph, layout_table,
+        layout_table_with_row_pagination, page_field_text, paginate, paginate_with_column_gap,
+        render_pdf, rgb, running_footer_vertical_bounds, running_header_footer_blocks_for_page,
+        running_header_vertical_bounds, running_surface_tab_stops, shape, shape_cell, split_row,
+        unsupported_placeholder_texts, ColumnLayout, FlowItem, Geom, LayoutCapture, LineLayout,
+        PageDisplayNumber, ParagraphFlowRequest, RunningSurfaceDistanceHints,
+        RunningSurfaceTabStopHints, RunningSurfaceVariant, SourceRenderHints, StyledText,
+        TablePaginationView, TextCx, DEFAULT_TAB_STOP_PT,
+    };
+    use crate::model::{
+        Align, Block, Cell, CellMargins, CharProps, Chart, ChartSeries, ChartShape, Color,
+        DocModel, FieldRole, Image, Indent, LineSpacingHint, ListInfo, PageSetup, PaginationHint,
+        ParaProps, Paragraph, Row, Run, SectionBreakKind, SectionColumnHint,
+        SectionColumnLayoutHints, SectionSetup, Spacing, TabAlignment, TabLeader, TabStop, Table,
+        TableBorderSide, TablePaginationHints, TableRowPaginationHint, VCell, VertAlign,
+    };
+    use crate::report::FeatureInventory;
+    use crate::{FloatingShape, ShapeEffectExtent, ShapeExtent, ShapePoint, ShapePosition};
+
+    fn strict_font_context(fonts: &[Vec<u8>]) -> FontContext {
+        let mut collection = Collection::new(CollectionOptions {
+            shared: false,
+            system_fonts: false,
+        });
+        for font in fonts {
+            collection.register_fonts(Blob::from(font.clone()), None);
+        }
+        FontContext {
+            collection,
+            source_cache: SourceCache::default(),
+        }
+    }
+
+    #[test]
+    fn fixed_font_fallbacks_preserve_supplied_family_order() {
+        use parley::fontique::{GenericFamily, Script};
+
+        let fonts = [
+            rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+            rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
+            rwml_fonts::noto_sans_arabic_subset().to_vec(),
+            rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+        ];
+        for require_pdf_fonts in [false, true] {
+            let mut context = super::strict_font_context(&fonts, require_pdf_fonts).unwrap();
+            let families = ["Noto Sans Hebrew", "Noto Sans KR", "Noto Sans Arabic"]
+                .map(|name| context.collection.family_id(name).unwrap());
+            assert_eq!(
+                context
+                    .collection
+                    .generic_families(GenericFamily::Emoji)
+                    .collect::<Vec<_>>(),
+                families,
+                "registered fonts must participate in emoji fallback"
+            );
+            for script in [b"Latn", b"Grek", b"Arab", b"Hebr", b"Hani", b"Zyyy"] {
+                assert_eq!(
+                    context
+                        .collection
+                        .fallback_families(Script::from_bytes(*script))
+                        .collect::<Vec<_>>(),
+                    families,
+                    "script fallback must contain only supplied families in order"
+                );
+            }
+            assert_eq!(context.collection.family_names().count(), families.len());
+        }
+    }
+
+    fn assert_close(actual: f32, expected: f32) {
+        assert!(
+            (actual - expected).abs() < 0.001,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    fn scene_without_glyph_runs(scene: &super::PageScene) -> Vec<super::PageSceneOp> {
+        scene
+            .operations
+            .iter()
+            .filter(|operation| !matches!(operation, super::PageSceneOp::GlyphRun(_)))
+            .cloned()
+            .collect()
+    }
+
+    fn scene_glyph_texts(scene: &super::PageScene) -> Vec<&str> {
+        scene
+            .operations
+            .iter()
+            .filter_map(|operation| match operation {
+                super::PageSceneOp::GlyphRun(run) => Some(run.text.as_ref()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn running_surface_tab_selector_keeps_six_stories_independent() {
+        let stops = |position_pt| {
+            vec![vec![TabStop {
+                position_pt,
+                alignment: TabAlignment::Left,
+                leader: TabLeader::None,
+            }]]
+        };
+        let hints = RunningSurfaceTabStopHints {
+            header: stops(1.0),
+            first_header: stops(2.0),
+            even_header: stops(3.0),
+            footer: stops(4.0),
+            first_footer: stops(5.0),
+            even_footer: stops(6.0),
+        };
+
+        for (header, variant, expected) in [
+            (true, RunningSurfaceVariant::Default, &hints.header),
+            (true, RunningSurfaceVariant::First, &hints.first_header),
+            (true, RunningSurfaceVariant::Even, &hints.even_header),
+            (false, RunningSurfaceVariant::Default, &hints.footer),
+            (false, RunningSurfaceVariant::First, &hints.first_footer),
+            (false, RunningSurfaceVariant::Even, &hints.even_footer),
+        ] {
+            assert_eq!(running_surface_tab_stops(&hints, variant, header), expected);
+        }
+    }
+
+    #[test]
+    fn explicit_running_surface_distances_clamp_to_non_overlapping_bands() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 300.0,
+            margin_pt: 40.0,
+            ..PageSetup::default()
+        });
+
+        assert_eq!(running_header_vertical_bounds(geom, None), (24.0, 40.0));
+        assert_eq!(running_header_vertical_bounds(geom, Some(0.0)), (0.0, 40.0));
+        assert_eq!(
+            running_header_vertical_bounds(geom, Some(30.0)),
+            (30.0, 40.0)
+        );
+        assert_eq!(
+            running_header_vertical_bounds(geom, Some(80.0)),
+            (40.0, 40.0)
+        );
+        assert_eq!(
+            running_header_vertical_bounds(geom, Some(f32::NAN)),
+            (24.0, 40.0)
+        );
+
+        assert_eq!(
+            running_footer_vertical_bounds(geom, None, Some(14.0)),
+            (268.0, 300.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(0.0), Some(14.0)),
+            (286.0, 300.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(10.0), Some(14.0)),
+            (276.0, 290.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(40.0), Some(14.0)),
+            (260.0, 260.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(400.0), Some(14.0)),
+            (260.0, 260.0)
+        );
+        assert_eq!(
+            running_footer_vertical_bounds(geom, Some(-1.0), Some(14.0)),
+            (268.0, 300.0)
+        );
+    }
+
+    #[test]
+    fn explicit_footer_distance_bottom_anchors_generated_page_numbers() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let model = DocModel {
+            setup: crate::model::DocSetup {
+                page: PageSetup {
+                    width_pt: 220.0,
+                    height_pt: 300.0,
+                    margin_pt: 40.0,
+                    ..PageSetup::default()
+                },
+                page_numbers: true,
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let explicit = [RunningSurfaceDistanceHints {
+            footer_pt: Some(0.0),
+            ..RunningSurfaceDistanceHints::default()
+        }];
+        let invalid = [RunningSurfaceDistanceHints {
+            footer_pt: Some(f32::NAN),
+            ..RunningSurfaceDistanceHints::default()
+        }];
+        let render = |distances: &[RunningSurfaceDistanceHints]| {
+            render_pdf(
+                &model,
+                &fonts,
+                None,
+                &[],
+                SourceRenderHints {
+                    running_surface_distances: distances,
+                    ..SourceRenderHints::default()
+                },
+            )
+            .expect("page-number render succeeds")
+            .pdf
+        };
+
+        let baseline = render(&[]);
+        let anchored = render(&explicit);
+        assert!(baseline.starts_with(b"%PDF-"));
+        assert!(anchored.starts_with(b"%PDF-"));
+        assert_ne!(anchored, baseline);
+        assert_eq!(baseline, render(&invalid));
+        assert_eq!(anchored, render(&explicit));
+    }
+
+    /// Pins the parley contract the tab-aware breaking path relies on: driving
+    /// `break_lines` incrementally lets the caller narrow an individual line's
+    /// max advance, which moves trailing content onto the next line without
+    /// touching the shaped layout.
+    #[test]
+    fn per_line_max_advance_moves_trailing_content() {
+        use parley::style::StyleProperty;
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+
+        let text = "가나 다라";
+        let width = 120.0_f32;
+
+        let mut build = || {
+            let mut builder = layout_cx.ranged_builder(&mut font_cx, text, 1.0, false);
+            builder.push_default(StyleProperty::FontFamily(super::font_stack()));
+            builder.push_default(StyleProperty::FontSize(16.0));
+            builder.build(text)
+        };
+
+        // Baseline: the whole paragraph fits on one line at full width.
+        let mut layout = build();
+        layout.break_all_lines(Some(width));
+        assert_eq!(layout.len(), 1, "baseline must fit on one line");
+        let full_advance = layout.width();
+        assert!(full_advance > 1.0, "the test font must shape glyphs");
+
+        // Narrowing only the first line moves the trailing word down.
+        let mut layout = build();
+        let narrow = full_advance * 0.6;
+        {
+            let mut breaker = layout.break_lines();
+            breaker.state_mut().set_layout_max_advance(width);
+            let mut first = true;
+            loop {
+                breaker
+                    .state_mut()
+                    .set_line_max_advance(if first { narrow } else { width });
+                if breaker.break_next().is_none() {
+                    break;
+                }
+                first = false;
+            }
+            breaker.finish();
+        }
+        assert_eq!(
+            layout.len(),
+            2,
+            "a narrowed first line must push trailing content down"
+        );
+        let first_line_advance = layout.lines().next().unwrap().metrics().advance;
+        assert!(
+            first_line_advance <= narrow + 0.001,
+            "first line must respect the narrowed advance (got {first_line_advance}, max {narrow})"
+        );
+    }
+
+    /// Pins the parley contract the tab-aware breaking path depends on: a
+    /// caller-owned in-flow inline box contributes its width to line breaking,
+    /// and that width can be changed on an already-shaped layout and re-broken
+    /// deterministically without re-shaping.
+    #[test]
+    fn inline_box_width_participates_in_line_breaking() {
+        use parley::style::StyleProperty;
+        use parley::{InlineBox, InlineBoxKind};
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+
+        // The bundled test font is a Korean subset, so use covered glyphs.
+        let text = "가나 다라";
+        let width = 120.0_f32;
+
+        // One shaping pass; the box sits between the two words.
+        let mut builder = layout_cx.ranged_builder(&mut font_cx, text, 1.0, false);
+        builder.push_default(StyleProperty::FontFamily(super::font_stack()));
+        builder.push_default(StyleProperty::FontSize(16.0));
+        builder.push_inline_box(InlineBox {
+            id: 7,
+            kind: InlineBoxKind::InFlow,
+            index: 6,
+            width: 1.0,
+            height: 0.0,
+        });
+        let mut layout = builder.build(text);
+
+        layout.break_all_lines(Some(width));
+        let narrow_lines = layout.len();
+        assert!(
+            layout.width() > 1.0,
+            "the test font must actually shape glyphs (width={})",
+            layout.width()
+        );
+
+        // Mutate the box width on the already-shaped layout and re-break.
+        assert_eq!(layout.inline_boxes().len(), 1);
+        layout.inline_boxes_mut()[0].width = width * 0.95;
+        layout.break_all_lines(Some(width));
+        let wide_lines = layout.len();
+
+        assert_eq!(
+            narrow_lines, 1,
+            "a negligible box should leave the text on one line"
+        );
+        assert!(
+            wide_lines > narrow_lines,
+            "box width must push later content onto a new line \
+             (narrow={narrow_lines}, wide={wide_lines})"
+        );
+
+        // Re-breaking is repeatable: the same width yields the same result, and
+        // returning to the original width restores the original line count.
+        layout.break_all_lines(Some(width));
+        assert_eq!(
+            layout.len(),
+            wide_lines,
+            "re-breaking must be deterministic"
+        );
+        layout.inline_boxes_mut()[0].width = 1.0;
+        layout.break_all_lines(Some(width));
+        assert_eq!(
+            layout.len(),
+            narrow_lines,
+            "restoring the box width must restore the original breaking"
+        );
+    }
+
+    #[test]
+    fn image_layout_normalizes_rotation_and_uses_exact_quarter_turn_bounds() {
+        let unrotated = image_layout(200, 100, None, 1_000.0, 1_000.0).unwrap();
+        assert_eq!(unrotated.rotation_degrees, 0);
+        assert_eq!(unrotated.image_w, 150.0);
+        assert_eq!(unrotated.image_h, 75.0);
+        assert_eq!(unrotated.bounds_w, 150.0);
+        assert_eq!(unrotated.bounds_h, 75.0);
+
+        for degrees in [90, 450, -270] {
+            let rotated = image_layout(200, 100, Some(degrees), 1_000.0, 1_000.0).unwrap();
+            assert_eq!(rotated.rotation_degrees, 90);
+            assert_eq!(rotated.image_w, 150.0);
+            assert_eq!(rotated.image_h, 75.0);
+            assert_eq!(rotated.bounds_w, 75.0);
+            assert_eq!(rotated.bounds_h, 150.0);
+        }
+
+        for degrees in [180, -180] {
+            let rotated = image_layout(200, 100, Some(degrees), 1_000.0, 1_000.0).unwrap();
+            assert_eq!(rotated.rotation_degrees, 180);
+            assert_eq!(rotated.bounds_w, 150.0);
+            assert_eq!(rotated.bounds_h, 75.0);
+        }
+
+        let rotated = image_layout(200, 100, Some(270), 1_000.0, 1_000.0).unwrap();
+        assert_eq!(rotated.bounds_w, 75.0);
+        assert_eq!(rotated.bounds_h, 150.0);
+    }
+
+    #[test]
+    fn image_layout_fits_arbitrary_rotated_bounds_proportionally() {
+        let rotated = image_layout(200, 100, Some(45), 1_000.0, 1_000.0).unwrap();
+        let expected_bounds = 225.0 * std::f32::consts::FRAC_1_SQRT_2;
+        assert_close(rotated.bounds_w, expected_bounds);
+        assert_close(rotated.bounds_h, expected_bounds);
+
+        let fitted = image_layout(200, 100, Some(90), 50.0, 1_000.0).unwrap();
+        assert_close(fitted.image_w, 100.0);
+        assert_close(fitted.image_h, 50.0);
+        assert_close(fitted.bounds_w, 50.0);
+        assert_close(fitted.bounds_h, 100.0);
+
+        assert!(image_layout(0, 100, Some(90), 50.0, 100.0).is_none());
+        assert!(image_layout(100, 100, Some(90), 0.0, 100.0).is_none());
+        assert!(image_layout(100, 100, Some(90), f32::NAN, 100.0).is_none());
+        assert!(
+            image_layout(
+                u32::MAX,
+                u32::MAX,
+                Some(45),
+                f32::MIN_POSITIVE,
+                f32::MIN_POSITIVE,
+            )
+            .is_none(),
+            "underflowed fitted dimensions must be rejected"
+        );
+    }
+
+    #[test]
+    fn running_surface_image_fit_respects_remaining_rotated_margin_bounds() {
+        let rotated = image_layout(200, 100, Some(90), 1_000.0, 1_000.0).unwrap();
+        let fitted = fit_image_layout_to_box(rotated, 60.0, 30.0).unwrap();
+
+        assert_eq!(fitted.rotation_degrees, 90);
+        assert_close(fitted.image_w, 30.0);
+        assert_close(fitted.image_h, 15.0);
+        assert_close(fitted.bounds_w, 15.0);
+        assert_close(fitted.bounds_h, 30.0);
+        assert_eq!(
+            fit_image_layout_to_box(rotated, 1_000.0, 1_000.0),
+            Some(rotated)
+        );
+        assert!(fit_image_layout_to_box(rotated, 60.0, 0.0).is_none());
+        assert!(fit_image_layout_to_box(rotated, f32::NAN, 30.0).is_none());
+    }
+
+    #[test]
+    fn running_surface_chart_fit_preserves_aspect_ratio_without_upscaling() {
+        let height_limited = fit_chart_layout_to_box(120.0, 60.0, 80.0, 30.0).unwrap();
+        assert_close(height_limited.scale, 0.5);
+        assert_close(height_limited.bounds_w, 60.0);
+        assert_close(height_limited.bounds_h, 30.0);
+
+        let unchanged = fit_chart_layout_to_box(120.0, 60.0, 200.0, 200.0).unwrap();
+        assert_close(unchanged.scale, 1.0);
+        assert_close(unchanged.bounds_w, 120.0);
+        assert_close(unchanged.bounds_h, 60.0);
+    }
+
+    #[test]
+    fn running_surface_chart_fit_rejects_invalid_bounds() {
+        for value in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+            assert!(fit_chart_layout_to_box(value, 60.0, 80.0, 30.0).is_none());
+            assert!(fit_chart_layout_to_box(120.0, value, 80.0, 30.0).is_none());
+            assert!(fit_chart_layout_to_box(120.0, 60.0, value, 30.0).is_none());
+            assert!(fit_chart_layout_to_box(120.0, 60.0, 80.0, value).is_none());
+        }
+    }
+
+    #[test]
+    fn running_surface_link_rectangles_are_clipped_to_visible_finite_bounds() {
+        let target: Rc<str> = Rc::from("https://example.com/clipped");
+        let later_target: Rc<str> = Rc::from("https://example.com/later");
+        let clip = super::LinkClip::from_ltrb([20.0, 15.0, 45.0, 30.0]);
+        let mut scene = super::PageScene::default();
+        scene
+            .push_link_ltrb([10.0, 10.0, 50.0, 40.0], target.clone(), clip)
+            .expect("visible link projects");
+
+        for bounds in [
+            [0.0, 0.0, 10.0, 10.0],
+            [50.0, 20.0, 60.0, 25.0],
+            [20.0, 30.0, 30.0, 40.0],
+            [f32::NAN, 20.0, 30.0, 25.0],
+        ] {
+            scene
+                .push_link_ltrb(bounds, target.clone(), clip)
+                .expect("hidden or invalid links are ignored");
+        }
+        scene
+            .push_link_ltrb(
+                [20.0, 20.0, 30.0, 25.0],
+                target.clone(),
+                super::LinkClip::from_ltrb([45.0, 15.0, 20.0, 30.0]),
+            )
+            .expect("invalid clip hides links");
+        scene
+            .push_link_ltrb(
+                [1.0, 2.0, 3.0, 4.0],
+                later_target.clone(),
+                super::LinkClip::Unbounded,
+            )
+            .expect("unbounded link projects");
+
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::Link {
+                    rect: super::SceneLinkRect {
+                        left: 20.0,
+                        top: 15.0,
+                        right: 45.0,
+                        bottom: 30.0,
+                    },
+                    target: target.clone(),
+                },
+                super::PageSceneOp::Link {
+                    rect: super::SceneLinkRect {
+                        left: 1.0,
+                        top: 2.0,
+                        right: 3.0,
+                        bottom: 4.0,
+                    },
+                    target: later_target,
+                },
+            ]
+        );
+
+        let mut limited = super::PageScene::with_limits(4, 1);
+        limited
+            .push_link_ltrb(
+                [0.0, 0.0, 1.0, 1.0],
+                target.clone(),
+                super::LinkClip::Unbounded,
+            )
+            .expect("first link fits");
+        let error = limited
+            .push_link_ltrb([1.0, 0.0, 2.0, 1.0], target, super::LinkClip::Unbounded)
+            .expect_err("link ceiling rejects overflow");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 1-link limit"
+        );
+        assert_eq!(limited.operations.len(), 1);
+    }
+
+    #[test]
+    fn image_paint_transform_rotates_clockwise_within_visual_bounds() {
+        let layout = image_layout(200, 100, Some(90), 1_000.0, 1_000.0).unwrap();
+        let transform = image_paint_transform(layout, 10.0, 20.0);
+        let map = |x: f32, y: f32| {
+            (
+                transform.sx() * x + transform.kx() * y + transform.tx(),
+                transform.ky() * x + transform.sy() * y + transform.ty(),
+            )
+        };
+
+        let top_left = map(0.0, 0.0);
+        let top_right = map(layout.image_w, 0.0);
+        let bottom_left = map(0.0, layout.image_h);
+        assert_close(top_left.0, 85.0);
+        assert_close(top_left.1, 20.0);
+        assert_close(top_right.0, 85.0);
+        assert_close(top_right.1, 170.0);
+        assert_close(bottom_left.0, 10.0);
+        assert_close(bottom_left.1, 20.0);
+    }
+
+    #[test]
+    fn image_scene_projection_keeps_neutral_resources_order_and_limits() {
+        let bytes = vec![0x10, 0x20, 0x30, 0xFF, 0x40, 0x50, 0x60, 0xFF];
+        let image = Image {
+            bytes: Some(bytes.clone()),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(2),
+            height_px: Some(1),
+            ..Image::default()
+        };
+        let (image, width_px, height_px) =
+            super::decode_model_image(&image).expect("valid raw image decodes");
+        assert_eq!((width_px, height_px), (2, 1));
+        assert_eq!(image.scene.encoding, super::SceneImageEncoding::Rgba8);
+        assert_eq!(image.scene.bytes.as_slice(), bytes.as_slice());
+        assert_eq!((image.scene.width_px, image.scene.height_px), (2, 1));
+
+        let transform = super::SceneTransform::from_row(0.0, 1.0, -1.0, 0.0, 8.0, 9.0);
+        let mut scene = super::PageScene::default();
+        let first = scene
+            .push_image(image.scene.clone(), 1.5, 0.75, transform)
+            .expect("bounded image projects")
+            .expect("valid image produces an operation");
+        let second = scene
+            .push_image(
+                image.scene.clone(),
+                3.0,
+                1.5,
+                super::SceneTransform::from_translate(10.0, 20.0),
+            )
+            .expect("reused image projects")
+            .expect("valid image produces an operation");
+
+        assert_eq!((first, second), (0, 1));
+        assert_eq!(scene.image_resources, vec![image.scene.clone()]);
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::Image {
+                    resource: super::SceneImageId(0),
+                    width: 1.5,
+                    height: 0.75,
+                    transform,
+                },
+                super::PageSceneOp::Image {
+                    resource: super::SceneImageId(0),
+                    width: 3.0,
+                    height: 1.5,
+                    transform: super::SceneTransform::from_translate(10.0, 20.0),
+                },
+            ]
+        );
+
+        let unchanged = (scene.operations.len(), scene.image_resources.len());
+        scene
+            .push_image(
+                image.scene.clone(),
+                f32::NAN,
+                1.0,
+                super::SceneTransform::from_translate(0.0, 0.0),
+            )
+            .expect("invalid geometry is ignored");
+        scene
+            .push_image(
+                image.scene.clone(),
+                1.0,
+                1.0,
+                super::SceneTransform::from_translate(f32::INFINITY, 0.0),
+            )
+            .expect("invalid transforms are ignored");
+        assert_eq!(
+            (scene.operations.len(), scene.image_resources.len()),
+            unchanged
+        );
+
+        let mut operation_limited = super::PageScene::with_operation_limit(0);
+        let error = operation_limited
+            .push_image(
+                image.scene.clone(),
+                1.0,
+                1.0,
+                super::SceneTransform::from_translate(0.0, 0.0),
+            )
+            .expect_err("operation ceiling rejects image");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-operation limit"
+        );
+        assert!(operation_limited.operations.is_empty());
+        assert!(operation_limited.image_resources.is_empty());
+
+        let mut resource_limited = super::PageScene::with_image_limit(0);
+        let error = resource_limited
+            .push_image(
+                image.scene,
+                1.0,
+                1.0,
+                super::SceneTransform::from_translate(0.0, 0.0),
+            )
+            .expect_err("resource ceiling rejects image");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-image-resource limit"
+        );
+        assert!(resource_limited.operations.is_empty());
+        assert!(resource_limited.image_resources.is_empty());
+    }
+
+    #[test]
+    fn page_scene_clip_stack_is_ordered_balanced_and_bounded() {
+        let mut scene = super::PageScene::default();
+        assert!(scene
+            .push_clip_rect(1.0, 2.0, 30.0, 40.0)
+            .expect("outer clip projects"));
+        assert!(scene
+            .push_clip_rect(5.0, 6.0, 7.0, 8.0)
+            .expect("inner clip projects"));
+        scene.pop_clip().expect("inner clip closes");
+        scene.pop_clip().expect("outer clip closes");
+        scene.ensure_balanced().expect("clip stack is balanced");
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::PushClipRect {
+                    rect: super::SceneRect {
+                        x: 1.0,
+                        y: 2.0,
+                        width: 30.0,
+                        height: 40.0,
+                    },
+                },
+                super::PageSceneOp::PushClipRect {
+                    rect: super::SceneRect {
+                        x: 5.0,
+                        y: 6.0,
+                        width: 7.0,
+                        height: 8.0,
+                    },
+                },
+                super::PageSceneOp::PopClip,
+                super::PageSceneOp::PopClip,
+            ]
+        );
+
+        let unchanged = scene.operations.len();
+        assert!(!scene
+            .push_clip_rect(f32::NAN, 0.0, 1.0, 1.0)
+            .expect("invalid clip is ignored"));
+        assert_eq!(scene.operations.len(), unchanged);
+
+        let mut underflow = super::PageScene::default();
+        let error = underflow
+            .pop_clip()
+            .expect_err("empty clip stack rejects pop");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene clip stack underflow"
+        );
+        assert!(underflow.operations.is_empty());
+
+        let mut operation_limited = super::PageScene::with_operation_limit(0);
+        let error = operation_limited
+            .push_clip_rect(0.0, 0.0, 1.0, 1.0)
+            .expect_err("operation ceiling rejects clip");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-operation limit"
+        );
+        assert!(operation_limited.operations.is_empty());
+        operation_limited
+            .ensure_balanced()
+            .expect("failed push does not mutate the stack");
+
+        let mut depth_limited = super::PageScene::with_state_limit(1);
+        assert!(depth_limited
+            .push_clip_rect(0.0, 0.0, 2.0, 2.0)
+            .expect("first clip fits"));
+        let error = depth_limited
+            .push_clip_rect(0.5, 0.5, 1.0, 1.0)
+            .expect_err("state depth ceiling rejects nested clip");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene state depth exceeds the 1-level limit"
+        );
+        assert_eq!(depth_limited.operations.len(), 1);
+        let error = depth_limited
+            .ensure_balanced()
+            .expect_err("unclosed clip is reported");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene has 1 unclosed state operation"
+        );
+        depth_limited.pop_clip().expect("remaining clip closes");
+        depth_limited
+            .ensure_balanced()
+            .expect("closed depth-limited stack is balanced");
+    }
+
+    fn clip_replay_pdf(inner: Option<[f32; 4]>) -> (Vec<u8>, bool) {
+        let mut scene = super::PageScene::default();
+        scene
+            .push_transform(super::SceneTransform::from_translate(2.0, 3.0))
+            .expect("transform projects");
+        assert!(scene
+            .push_clip_rect(5.0, 5.0, 40.0, 40.0)
+            .expect("outer clip projects"));
+        scene
+            .push_fill_rect(0.0, 0.0, 20.0, 20.0, rgb::Color::new(10, 20, 30))
+            .expect("first rectangle projects");
+        let accepted = inner.is_some_and(|[x, y, width, height]| {
+            scene
+                .push_clip_rect(x, y, width, height)
+                .expect("inner clip is checked")
+        });
+        if accepted {
+            scene.pop_clip().expect("inner clip closes");
+        }
+        scene
+            .push_fill_rect(30.0, 30.0, 20.0, 20.0, rgb::Color::new(40, 50, 60))
+            .expect("later rectangle projects");
+        scene.pop_clip().expect("outer clip closes");
+        scene.pop_transform().expect("transform closes");
+        scene.ensure_balanced().expect("scene state is balanced");
+
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        super::pdf::replay_complete_page_scene(&mut surface, &scene)
+            .expect("paired clips replay without losing outer state");
+        surface.finish();
+        page.finish();
+        (document.finish().expect("clipped PDF finishes"), accepted)
+    }
+
+    #[test]
+    fn page_scene_clip_replay_rejects_reconstructed_span_overflow() {
+        // Both endpoints are finite, but subtracting them rounds the span to infinity.
+        let origin = -3.0 * 2.0_f32.powi(103);
+        let edge = origin + f32::MAX;
+        assert!(edge.is_finite());
+        assert!(!(edge - origin).is_finite());
+        let (expected, _) = clip_replay_pdf(None);
+        for rect in [[origin, 0.0, f32::MAX, 1.0], [0.0, origin, 1.0, f32::MAX]] {
+            let (actual, accepted) = clip_replay_pdf(Some(rect));
+            assert!(!accepted, "unrepresentable clip must not enter the scene");
+            assert_eq!(
+                actual, expected,
+                "outer clip and later paint stay unchanged"
+            );
+        }
+    }
+
+    #[test]
+    fn page_scene_clip_replay_rejects_collapsed_spans() {
+        let (expected, _) = clip_replay_pdf(None);
+        for rect in [[1.0e20, 0.0, 1.0, 1.0], [0.0, 1.0e20, 1.0, 1.0]] {
+            let (actual, accepted) = clip_replay_pdf(Some(rect));
+            assert!(!accepted, "rounded zero-area clip must not enter the scene");
+            assert_eq!(
+                actual, expected,
+                "outer clip and later paint stay unchanged"
+            );
+        }
+    }
+
+    #[test]
+    fn page_scene_clip_replay_returns_error_if_backend_rejects_path() {
+        let mut scene = super::PageScene::default();
+        // Bypass scene admission to exercise the backend's failure propagation.
+        scene.operations.extend([
+            super::PageSceneOp::PushClipRect {
+                rect: super::SceneRect {
+                    x: -3.0 * 2.0_f32.powi(103),
+                    y: 0.0,
+                    width: f32::MAX,
+                    height: 1.0,
+                },
+            },
+            super::PageSceneOp::PopClip,
+        ]);
+        let mut document = super::PdfDoc::new();
+        let settings = super::PageSettings::from_wh(100.0, 100.0).expect("finite page");
+        let mut page = document.start_page_with(settings);
+        let mut surface = page.surface();
+        let error = super::pdf::replay_complete_page_scene(&mut surface, &scene)
+            .expect_err("failed backend push must stop before its paired pop");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene contains an invalid clip path"
+        );
+        surface.finish();
+        page.finish();
+        document
+            .finish()
+            .expect("failed push leaves backend state balanced");
+    }
+
+    #[test]
+    fn page_scene_transform_stack_is_typed_finite_and_nested_with_clips() {
+        let transform = super::SceneTransform::from_row(0.5, 0.0, 0.0, 0.5, 10.0, 20.0);
+        let mut scene = super::PageScene::default();
+        assert!(scene
+            .push_clip_rect(1.0, 2.0, 30.0, 40.0)
+            .expect("clip projects"));
+        assert!(scene.push_transform(transform).expect("transform projects"));
+
+        let unchanged = scene.operations.len();
+        let error = scene
+            .pop_clip()
+            .expect_err("clip cannot close above transform");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene state mismatch: cannot pop clip above transform"
+        );
+        assert_eq!(scene.operations.len(), unchanged);
+
+        scene.pop_transform().expect("transform closes");
+        scene.pop_clip().expect("clip closes");
+        scene.ensure_balanced().expect("state stack is balanced");
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::PushClipRect {
+                    rect: super::SceneRect {
+                        x: 1.0,
+                        y: 2.0,
+                        width: 30.0,
+                        height: 40.0,
+                    },
+                },
+                super::PageSceneOp::PushTransform { transform },
+                super::PageSceneOp::PopTransform,
+                super::PageSceneOp::PopClip,
+            ]
+        );
+
+        let unchanged = scene.operations.len();
+        assert!(!scene
+            .push_transform(super::SceneTransform::from_translate(f32::NAN, 0.0))
+            .expect("invalid transform is ignored"));
+        assert_eq!(scene.operations.len(), unchanged);
+
+        let mut underflow = super::PageScene::default();
+        let error = underflow
+            .pop_transform()
+            .expect_err("empty transform stack rejects pop");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene transform stack underflow"
+        );
+        assert!(underflow.operations.is_empty());
+
+        let mut depth_limited = super::PageScene::with_state_limit(1);
+        assert!(depth_limited
+            .push_clip_rect(0.0, 0.0, 2.0, 2.0)
+            .expect("clip consumes the available depth"));
+        let error = depth_limited
+            .push_transform(transform)
+            .expect_err("combined state depth rejects transform");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene state depth exceeds the 1-level limit"
+        );
+        assert_eq!(depth_limited.operations.len(), 1);
+        depth_limited.pop_clip().expect("clip closes");
+    }
+
+    #[test]
+    fn rotated_image_bounds_drive_block_pagination() {
+        let bytes = vec![0; 100 * 800 * 4];
+        let image = Image {
+            bytes: Some(bytes),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(100),
+            height_px: Some(800),
+            ..Image::default()
+        };
+        let model = |rotation_degrees| DocModel {
+            blocks: vec![
+                Block::Image(Image {
+                    rotation_degrees,
+                    ..image.clone()
+                }),
+                Block::Image(Image {
+                    rotation_degrees,
+                    ..image.clone()
+                }),
+            ],
+            ..DocModel::default()
+        };
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let unrotated = super::layout_pages_with_fonts(&model(None), &fonts).unwrap();
+        let rotated = super::layout_pages_with_fonts(&model(Some(90)), &fonts).unwrap();
+        assert_eq!(unrotated.pages, 2);
+        assert_eq!(unrotated.block_pages, vec![Some(1), Some(2)]);
+        assert_eq!(rotated.pages, 1);
+        assert_eq!(rotated.block_pages, vec![Some(1), Some(1)]);
+    }
+
+    #[test]
+    fn rotated_images_fit_and_advance_within_active_columns() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 200.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let image = Image {
+            bytes: Some(vec![0; 200 * 200 * 4]),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(200),
+            height_px: Some(200),
+            rotation_degrees: Some(90),
+            ..Image::default()
+        };
+        let model = DocModel {
+            blocks: vec![Block::Image(image.clone()), Block::Image(image)],
+            setup: crate::model::DocSetup {
+                page,
+                columns: Some(2),
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let geom = Geom::from_setup(&page);
+        let mut capture = LayoutCapture::default();
+        let flow = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut capture,
+            super::SourceRenderHints::default(),
+            &[],
+            None,
+        );
+        let layouts = flow
+            .iter()
+            .filter_map(|item| match item {
+                FlowItem::Picture { layout, .. } => Some(*layout),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(layouts.len(), 2);
+        for layout in layouts {
+            assert_close(layout.bounds_w, 81.0);
+            assert_close(layout.bounds_h, 81.0);
+        }
+
+        let setup = SectionSetup::from(&model.setup);
+        let pagination = paginate(flow, geom, &setup);
+        assert_eq!(pagination.pages.len(), 1);
+        let pictures = pagination.pages[0]
+            .iter()
+            .filter_map(|placed| {
+                matches!(&placed.item, FlowItem::Picture { .. }).then_some((placed.x, placed.width))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(pictures.len(), 2);
+        assert_close(pictures[0].0, 0.0);
+        assert_close(pictures[0].1, 81.0);
+        assert!(pictures[1].0 > 90.0);
+        assert_close(pictures[1].1, 81.0);
+    }
+
+    fn paragraph_lines_with_marker(
+        props: ParaProps,
+        runs: Vec<Run>,
+        marker: Option<&str>,
+    ) -> Vec<LineLayout> {
+        paragraph_lines_with_marker_and_tabs(props, runs, marker, &[])
+    }
+
+    fn paragraph_lines_with_marker_and_tabs(
+        props: ParaProps,
+        runs: Vec<Run>,
+        marker: Option<&str>,
+        tab_stops: &[TabStop],
+    ) -> Vec<LineLayout> {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_paragraph(
+            &ParagraphFlowRequest {
+                paragraph: &Paragraph { props, runs },
+                marker: marker.map(Cow::Borrowed),
+                tab_stops,
+                column_break_offsets: &[],
+                default_tab_stop_pt: None,
+                line_spacing_hint: None,
+                geom,
+                page_field_indices: None,
+            },
+            &mut flow,
+            &mut tcx,
+            &mut capture,
+        );
+        flow.into_iter()
+            .filter_map(|item| match item {
+                FlowItem::Line(line) => Some(line),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn paragraph_lines(props: ParaProps, runs: Vec<Run>) -> Vec<LineLayout> {
+        paragraph_lines_with_marker(props, runs, None)
+    }
+
+    fn text_bounds(line: &LineLayout, byte_range: std::ops::Range<usize>) -> Option<(f32, f32)> {
+        let mut left = f32::INFINITY;
+        let mut right = f32::NEG_INFINITY;
+        for run in &line.runs {
+            let mut cursor = run.x;
+            for glyph in &run.glyphs {
+                let advance = glyph.x_advance * run.size;
+                if glyph.text_range.start < byte_range.end
+                    && byte_range.start < glyph.text_range.end
+                {
+                    let glyph_x = cursor + glyph.x_offset * run.size;
+                    left = left.min(glyph_x);
+                    right = right.max(glyph_x + advance);
+                }
+                cursor += advance;
+            }
+        }
+        left.is_finite().then_some((left, right))
+    }
+
+    fn tab_aligned_position(
+        line: &LineLayout,
+        byte_range: std::ops::Range<usize>,
+        alignment: TabAlignment,
+    ) -> f32 {
+        let bounds = text_bounds(line, byte_range).expect("measured tab field glyphs");
+        line.x_indent
+            + match alignment {
+                TabAlignment::Left | TabAlignment::Decimal => bounds.0,
+                TabAlignment::Center => (bounds.0 + bounds.1) / 2.0,
+                TabAlignment::Right => bounds.1,
+                TabAlignment::Bar => unreachable!(),
+                TabAlignment::Clear => unreachable!(),
+            }
+    }
+
+    type ParagraphLineMetric = (f32, f32, Option<(usize, usize)>);
+
+    fn paragraph_line_metrics(props: ParaProps, runs: Vec<Run>) -> Vec<ParagraphLineMetric> {
+        paragraph_lines(props, runs)
+            .into_iter()
+            .map(|line| {
+                (
+                    line.height,
+                    line.x_indent + line.runs.first().map(|run| run.x).unwrap_or(0.0),
+                    line.char_range.map(|range| (range.start, range.end)),
+                )
+            })
+            .collect()
+    }
+
+    fn shaped_run_sizes(text: &str, props: CharProps) -> Vec<f32> {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        shape(
+            text,
+            StyledText::plain(&[(0, text.len(), props)]),
+            None,
+            parley::layout::Alignment::Start,
+            320.0,
+            &mut tcx,
+        )
+        .into_iter()
+        .flat_map(|line| line.runs.into_iter().map(|run| run.size))
+        .collect()
+    }
+
+    #[test]
+    fn small_caps_and_vertical_alignment_use_reduced_glyph_sizes() {
+        let baseline = shaped_run_sizes("ABC", CharProps::default());
+        let small_caps = shaped_run_sizes(
+            "ABC",
+            CharProps {
+                small_caps: true,
+                ..CharProps::default()
+            },
+        );
+        let superscript = shaped_run_sizes(
+            "ABC",
+            CharProps {
+                vert_align: VertAlign::Super,
+                ..CharProps::default()
+            },
+        );
+        let subscript = shaped_run_sizes(
+            "ABC",
+            CharProps {
+                vert_align: VertAlign::Sub,
+                ..CharProps::default()
+            },
+        );
+
+        assert_eq!(baseline.len(), 1);
+        assert_eq!(small_caps.len(), 1);
+        assert_eq!(superscript.len(), 1);
+        assert_eq!(subscript.len(), 1);
+        assert!(small_caps[0] < baseline[0] * 0.85);
+        assert!(superscript[0] < baseline[0] * 0.75);
+        assert!(subscript[0] < baseline[0] * 0.75);
+    }
+
+    #[test]
+    fn small_caps_keep_authored_uppercase_at_full_size() {
+        let lines = paragraph_lines(
+            ParaProps::default(),
+            vec![Run {
+                text: "aA".to_string(),
+                props: CharProps {
+                    small_caps: true,
+                    ..CharProps::default()
+                },
+                ..Run::default()
+            }],
+        );
+        let sizes = lines[0].runs.iter().map(|run| run.size).collect::<Vec<_>>();
+
+        assert_eq!(sizes.len(), 2);
+        assert!(sizes[0] < sizes[1] * 0.85);
+    }
+
+    #[test]
+    fn bidi_paragraph_forces_rtl_base_for_latin_and_numbers() {
+        let lines = paragraph_lines(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "123 ABC".to_string(),
+                ..Run::default()
+            }],
+        );
+        let first = &lines[0].runs[0];
+
+        assert!(first.text.starts_with('\u{200f}'));
+        assert!(
+            first.x > 100.0,
+            "resolved RTL paragraph start should use the right edge"
+        );
+    }
+
+    #[test]
+    fn rtl_run_is_isolated_inside_ltr_paragraph() {
+        let lines = paragraph_lines(
+            ParaProps::default(),
+            vec![
+                Run {
+                    text: "left ".to_string(),
+                    ..Run::default()
+                },
+                Run {
+                    text: "ABC 123".to_string(),
+                    props: CharProps {
+                        rtl: true,
+                        ..CharProps::default()
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: " tail".to_string(),
+                    ..Run::default()
+                },
+            ],
+        );
+        let shaped_text = &lines[0].runs[0].text;
+
+        assert!(shaped_text.contains("\u{2067}ABC 123\u{2069}"));
+        assert!(lines.iter().flat_map(|line| &line.runs).all(|run| {
+            run.glyphs.iter().all(|glyph| {
+                !run.text[glyph.text_range.clone()]
+                    .chars()
+                    .any(|ch| matches!(ch, '\u{200f}' | '\u{2067}' | '\u{2069}'))
+            })
+        }));
+    }
+
+    #[test]
+    fn rtl_controls_do_not_shift_source_character_ranges() {
+        let lines = paragraph_lines(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "ABC".to_string(),
+                props: CharProps {
+                    rtl: true,
+                    ..CharProps::default()
+                },
+                ..Run::default()
+            }],
+        );
+
+        assert_eq!(
+            lines[0].char_range.map(|range| (range.start, range.end)),
+            Some((0, 3))
+        );
+    }
+
+    #[test]
+    fn list_marker_does_not_shift_source_character_ranges() {
+        let lines = paragraph_lines_with_marker(
+            ParaProps::default(),
+            vec![Run {
+                text: "ABC".to_string(),
+                ..Run::default()
+            }],
+            Some("1."),
+        );
+
+        assert_eq!(
+            lines[0].char_range.map(|range| (range.start, range.end)),
+            Some((0, 3))
+        );
+    }
+
+    #[test]
+    fn bidi_list_marker_uses_rtl_paragraph_start_edge() {
+        let lines = paragraph_lines_with_marker(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "ABC".to_string(),
+                ..Run::default()
+            }],
+            Some("1."),
+        );
+        let first = &lines[0].runs[0];
+
+        assert!(first.text.starts_with("\u{200f}1. "));
+        assert!(first.x > 100.0);
+    }
+
+    #[test]
+    fn bidi_controls_do_not_make_hidden_text_visible() {
+        let lines = paragraph_lines(
+            ParaProps {
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "hidden".to_string(),
+                props: CharProps {
+                    hidden: true,
+                    rtl: true,
+                    ..CharProps::default()
+                },
+                ..Run::default()
+            }],
+        );
+
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn vertical_alignment_shifts_the_glyph_baseline() {
+        let shaped_shift = |vert_align| {
+            let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+            let mut font_cx = strict_font_context(&fonts);
+            let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+            let mut font_cache = HashMap::new();
+            let mut tcx = TextCx {
+                font_cx: &mut font_cx,
+                layout_cx: &mut layout_cx,
+                font_cache: &mut font_cache,
+            };
+            shape(
+                "x",
+                StyledText::plain(&[(
+                    0,
+                    1,
+                    CharProps {
+                        vert_align,
+                        ..CharProps::default()
+                    },
+                )]),
+                None,
+                parley::layout::Alignment::Start,
+                100.0,
+                &mut tcx,
+            )[0]
+            .runs[0]
+                .baseline_shift
+        };
+
+        assert!(shaped_shift(VertAlign::Super) < 0.0);
+        assert!(shaped_shift(VertAlign::Sub) > 0.0);
+        assert_eq!(shaped_shift(VertAlign::Baseline), 0.0);
+    }
+
+    #[test]
+    fn highlight_and_text_decorations_reach_draw_runs() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let line = shape(
+            "paint",
+            StyledText::plain(&[(
+                0,
+                5,
+                CharProps {
+                    underline: true,
+                    strike: true,
+                    highlight: Some("darkYellow".to_string()),
+                    ..CharProps::default()
+                },
+            )]),
+            None,
+            parley::layout::Alignment::Start,
+            100.0,
+            &mut tcx,
+        )
+        .remove(0);
+        let run = &line.runs[0];
+
+        assert_eq!(run.highlight, Some(rgb::Color::new(0x80, 0x80, 0x00)));
+        assert!(run.underline.is_some());
+        assert!(run.strikethrough.is_some());
+    }
+
+    #[test]
+    fn paragraph_shading_reaches_each_laid_out_line() {
+        let lines = paragraph_lines(
+            ParaProps {
+                shading: Some(Color::rgb(0xEE, 0xF1, 0xF4)),
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "A paragraph background".to_string(),
+                ..Run::default()
+            }],
+        );
+
+        assert!(!lines.is_empty());
+        assert!(lines.iter().all(|line| {
+            line.background.is_some_and(|background| {
+                background.color == rgb::Color::new(0xEE, 0xF1, 0xF4) && background.width > 0.0
+            })
+        }));
+    }
+
+    #[test]
+    fn horizontal_tab_advances_to_default_word_stop() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let text = "A\tB";
+        let line = shape(
+            text,
+            StyledText::plain(&[(0, text.len(), CharProps::default())]),
+            None,
+            parley::layout::Alignment::Left,
+            320.0,
+            &mut tcx,
+        )
+        .remove(0);
+        let mut glyph_debug = Vec::new();
+        let mut b_x = None;
+        for run in &line.runs {
+            let mut x = run.x;
+            for glyph in &run.glyphs {
+                glyph_debug.push((glyph.text_range.clone(), x, glyph.x_advance * run.size));
+                if glyph.text_range.contains(&2) {
+                    b_x = Some(x + glyph.x_offset * run.size);
+                }
+                x += glyph.x_advance * run.size;
+            }
+        }
+        let b_x = b_x.expect("B glyph");
+
+        assert!(
+            (b_x - 36.0).abs() <= 1.0,
+            "b_x={b_x}, glyphs={glyph_debug:?}"
+        );
+    }
+
+    #[test]
+    fn rtl_start_tab_advances_from_the_right_page_margin() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "א\tב".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[],
+        );
+        let line = &lines[0];
+        let rendered = &line.runs[0].text;
+        let field_start = rendered.find('ב').expect("tab field text");
+        let bounds =
+            text_bounds(line, field_start..field_start + 'ב'.len_utf8()).expect("field glyph");
+        let actual = line.x_indent + bounds.1;
+
+        assert!(
+            (actual - 144.0).abs() <= 1.5,
+            "RTL start field must end 36pt from the 180pt right margin: actual={actual}, bounds={bounds:?}"
+        );
+    }
+
+    #[test]
+    fn rtl_explicit_start_tabs_keep_page_margin_coordinates_under_indents() {
+        for indent in [
+            Indent {
+                right_pt: Some(20.0),
+                ..Indent::default()
+            },
+            Indent {
+                left_pt: Some(20.0),
+                ..Indent::default()
+            },
+        ] {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align: Align::Right,
+                    bidi: true,
+                    indent,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "א\tב".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt: 100.0,
+                    alignment: TabAlignment::Left,
+                    leader: TabLeader::None,
+                }],
+            );
+            let line = &lines[0];
+            let rendered = &line.runs[0].text;
+            let field_start = rendered.find('ב').expect("tab field text");
+            let actual = tab_aligned_position(
+                line,
+                field_start..field_start + 'ב'.len_utf8(),
+                TabAlignment::Right,
+            );
+
+            assert!(
+                (actual - 80.0).abs() <= 1.5,
+                "a stop 100pt from the 180pt right margin must land at x=80: indent={indent:?}, actual={actual}"
+            );
+        }
+    }
+
+    #[test]
+    fn rtl_default_tabs_advance_multiple_fields_from_right_to_left() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "א\tב\tג".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[],
+        );
+        let line = &lines[0];
+        let rendered = &line.runs[0].text;
+        let beta = rendered.find('ב').expect("first tab field");
+        let gamma = rendered.find('ג').expect("second tab field");
+        let beta_right =
+            tab_aligned_position(line, beta..beta + 'ב'.len_utf8(), TabAlignment::Right);
+        let gamma_right =
+            tab_aligned_position(line, gamma..gamma + 'ג'.len_utf8(), TabAlignment::Right);
+
+        assert!((beta_right - 144.0).abs() <= 1.5, "beta={beta_right}");
+        assert!((gamma_right - 108.0).abs() <= 1.5, "gamma={gamma_right}");
+    }
+
+    #[test]
+    fn rtl_start_tabs_preserve_segment_paint_and_source_ranges() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![
+                Run {
+                    text: "א\t".to_string(),
+                    ..Run::default()
+                },
+                Run {
+                    text: "ב".to_string(),
+                    props: CharProps {
+                        highlight: Some("yellow".to_string()),
+                        ..CharProps::default()
+                    },
+                    ..Run::default()
+                },
+            ],
+            None,
+            &[TabStop {
+                position_pt: 100.0,
+                alignment: TabAlignment::Left,
+                leader: TabLeader::None,
+            }],
+        );
+        let line = &lines[0];
+        let field_start = line.runs[0].text.find('ב').expect("tab field text");
+        let field_right = tab_aligned_position(
+            line,
+            field_start..field_start + 'ב'.len_utf8(),
+            TabAlignment::Right,
+        );
+
+        assert!((field_right - 80.0).abs() <= 1.5);
+        assert_eq!(
+            line.char_range.map(|range| (range.start, range.end)),
+            Some((0, 3))
+        );
+        assert!(line
+            .runs
+            .iter()
+            .any(|run| run.highlight == Some(rgb::Color::new(0xFF, 0xFF, 0x00))));
+    }
+
+    #[test]
+    fn rtl_explicit_center_end_and_decimal_tabs_use_their_stops() {
+        let cases = [
+            ("א\tב", TabAlignment::Center, TabAlignment::Center),
+            ("א\tאב", TabAlignment::Right, TabAlignment::Left),
+            ("א\t12.34", TabAlignment::Decimal, TabAlignment::Right),
+        ];
+        for (text, alignment, measured_alignment) in cases {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align: Align::Right,
+                    bidi: true,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: text.to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt: 100.0,
+                    alignment,
+                    leader: TabLeader::None,
+                }],
+            );
+            let rendered = &lines[0].runs[0].text;
+            let field_start = if alignment == TabAlignment::Decimal {
+                rendered.find('.').expect("decimal field")
+            } else {
+                rendered.find('\t').expect("tab marker") + '\t'.len_utf8()
+            };
+            let field_end = if alignment == TabAlignment::Decimal {
+                field_start + '.'.len_utf8()
+            } else {
+                rendered.len()
+            };
+            let bounds = text_bounds(&lines[0], field_start..field_end).expect("field glyph");
+            let actual = lines[0].x_indent
+                + match measured_alignment {
+                    TabAlignment::Left | TabAlignment::Decimal => bounds.0,
+                    TabAlignment::Center => (bounds.0 + bounds.1) / 2.0,
+                    TabAlignment::Right => bounds.1,
+                    TabAlignment::Bar => unreachable!(),
+                    TabAlignment::Clear => unreachable!(),
+                };
+            assert!(
+                (actual - 80.0).abs() <= 1.5,
+                "alignment={alignment:?} actual={actual}"
+            );
+        }
+    }
+
+    #[test]
+    fn rtl_unreachable_non_start_custom_tabs_keep_the_baseline() {
+        let field_bounds = |position_pt| {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align: Align::Right,
+                    bidi: true,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "א\tב".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt,
+                    alignment: TabAlignment::Center,
+                    leader: TabLeader::None,
+                }],
+            );
+            let rendered = &lines[0].runs[0].text;
+            let field_start = rendered.find('ב').expect("tab field text");
+            text_bounds(&lines[0], field_start..field_start + 'ב'.len_utf8()).expect("field glyph")
+        };
+
+        assert_eq!(field_bounds(1.0), field_bounds(2.0));
+    }
+
+    #[test]
+    fn natural_rtl_text_without_paragraph_bidi_keeps_existing_tab_behavior() {
+        let field_bounds = |position_pt| {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align: Align::Right,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "א\tב".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt,
+                    alignment: TabAlignment::Left,
+                    leader: TabLeader::None,
+                }],
+            );
+            let rendered = &lines[0].runs[0].text;
+            let field_start = rendered.find('ב').expect("tab field text");
+            text_bounds(&lines[0], field_start..field_start + 'ב'.len_utf8()).expect("field glyph")
+        };
+
+        assert_eq!(field_bounds(60.0), field_bounds(120.0));
+    }
+
+    #[test]
+    fn rtl_tab_advances_reflow_unfitting_content_deterministically() {
+        let paragraph = || {
+            paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align: Align::Right,
+                    bidi: true,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "\t\t\t\tאבגדה".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[],
+            )
+        };
+        let first = paragraph();
+        let second = paragraph();
+
+        assert_eq!(first.len(), 2);
+        assert_eq!(first.len(), second.len());
+        for (left, right) in first.iter().zip(&second) {
+            assert_eq!(
+                left.char_range.map(|range| (range.start, range.end)),
+                right.char_range.map(|range| (range.start, range.end))
+            );
+            assert!(left.runs.iter().all(|run| run.x >= -0.5));
+        }
+    }
+
+    /// The end of the last glyph on a line, in paragraph-box coordinates.
+    fn line_end_x(line: &LineLayout) -> f32 {
+        let mut end: f32 = 0.0;
+        for run in &line.runs {
+            let mut x = run.x;
+            for glyph in &run.glyphs {
+                x += glyph.x_advance * run.size;
+            }
+            end = end.max(x);
+        }
+        end
+    }
+
+    #[test]
+    fn tab_advances_move_unfitting_content_to_the_next_line() {
+        // The content box is 180pt wide at page margin 20pt, so the default
+        // 36pt grid stops land at 36/72/108/144pt absolute. Four tabs leave the
+        // cursor 124pt into the box, which no longer leaves room for the word.
+        let text = "\t\t\t\t가나다라";
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps::default(),
+            vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[],
+        );
+        let ends: Vec<f32> = lines.iter().map(line_end_x).collect();
+        assert_eq!(
+            lines.len(),
+            2,
+            "tab-driven overflow must wrap instead of running past the box (ends={ends:?})"
+        );
+        for (index, end) in ends.iter().enumerate() {
+            assert!(
+                *end <= 180.0 + 0.5,
+                "line {index} must stay inside the 180pt box (ends={ends:?})"
+            );
+        }
+    }
+
+    #[test]
+    fn fitting_tab_advances_do_not_reflow_the_line() {
+        // The same four-stop grid, but the trailing word still fits, so the
+        // reservation pass must leave the original single line alone.
+        let text = "\t가나";
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps::default(),
+            vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[],
+        );
+        let ends: Vec<f32> = lines.iter().map(line_end_x).collect();
+        assert_eq!(
+            lines.len(),
+            1,
+            "a tab whose field fits must not move content down (ends={ends:?})"
+        );
+    }
+
+    #[test]
+    fn tab_reflow_is_deterministic_and_bounded_in_a_narrow_box() {
+        // Indents shrink the paragraph box far below the tab grid, so the
+        // reservation cannot be satisfied. This must stay panic-free, keep
+        // every glyph, and repeat identically.
+        let props = || ParaProps {
+            indent: Indent {
+                left_pt: Some(70.0),
+                right_pt: Some(70.0),
+                ..Indent::default()
+            },
+            ..ParaProps::default()
+        };
+        let text = "\t\t가나다라";
+        let run = || {
+            vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }]
+        };
+        let first = paragraph_lines_with_marker_and_tabs(props(), run(), None, &[]);
+        let second = paragraph_lines_with_marker_and_tabs(props(), run(), None, &[]);
+
+        assert!(!first.is_empty(), "a narrow box must still produce lines");
+        assert_eq!(
+            first.len(),
+            second.len(),
+            "tab reflow must be deterministic across runs"
+        );
+        let geometry = |lines: &[LineLayout]| {
+            lines
+                .iter()
+                .map(|line| {
+                    line.runs
+                        .iter()
+                        .map(|run| {
+                            (
+                                run.x.to_bits(),
+                                run.glyphs
+                                    .iter()
+                                    .map(|g| g.x_advance.to_bits())
+                                    .collect::<Vec<_>>(),
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            geometry(&first),
+            geometry(&second),
+            "repeated shaping must be byte-identical"
+        );
+    }
+
+    #[test]
+    fn tab_driven_wrapping_reaches_emitted_page_counts() {
+        // A lone two-line paragraph is never split, so page effects only show
+        // with enough paragraphs to fill pages. Twelve one-line paragraphs fill
+        // four pages; the same count wrapped to two lines by a tab reservation
+        // must fill eight.
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let pages_of = |text: &str| {
+            let model = DocModel {
+                setup: crate::model::DocSetup {
+                    page: PageSetup {
+                        width_pt: 220.0,
+                        height_pt: 100.0,
+                        margin_pt: 20.0,
+                        ..PageSetup::default()
+                    },
+                    ..crate::model::DocSetup::default()
+                },
+                blocks: (0..12)
+                    .map(|_| {
+                        Block::Paragraph(Paragraph {
+                            props: ParaProps::default(),
+                            runs: vec![Run {
+                                text: text.to_string(),
+                                ..Run::default()
+                            }],
+                        })
+                    })
+                    .collect(),
+                ..DocModel::default()
+            };
+            super::layout_pages_with_fonts(&model, &fonts)
+                .unwrap()
+                .pages
+        };
+
+        assert_eq!(
+            pages_of("\t가나"),
+            4,
+            "a fitting tab field stays on one line"
+        );
+        assert_eq!(
+            pages_of("\t\t\t\t가나다라"),
+            8,
+            "content moved down by a tab reservation must reach the page count"
+        );
+    }
+
+    #[test]
+    fn default_tab_reflow_applies_to_non_left_aligned_ltr_text() {
+        // Default tabs use the same bounded reservation path for every
+        // supported LTR paragraph alignment.
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let text = "\t\t\t\t가나다라";
+        let centered = shape(
+            text,
+            StyledText::plain(&[(0, text.len(), CharProps::default())]),
+            None,
+            parley::layout::Alignment::Center,
+            180.0,
+            &mut tcx,
+        );
+        assert_eq!(centered.len(), 2, "centered text must reflow around tabs");
+    }
+
+    #[test]
+    fn explicit_tabs_apply_left_center_right_and_decimal_alignment() {
+        let cases = [
+            ("A\tLEFT", 2..6, TabAlignment::Left, 90.0),
+            ("A\tCENTER", 2..8, TabAlignment::Center, 100.0),
+            ("A\tRIGHT", 2..7, TabAlignment::Right, 150.0),
+            ("A\t12.34", 4..5, TabAlignment::Decimal, 110.0),
+            ("A\t1,234.56", 7..8, TabAlignment::Decimal, 110.0),
+        ];
+
+        for left_pt in [None, Some(20.0)] {
+            for (text, measured, alignment, position_pt) in cases.clone() {
+                let lines = paragraph_lines_with_marker_and_tabs(
+                    ParaProps {
+                        indent: Indent {
+                            left_pt,
+                            ..Indent::default()
+                        },
+                        ..ParaProps::default()
+                    },
+                    vec![Run {
+                        text: text.to_string(),
+                        ..Run::default()
+                    }],
+                    None,
+                    &[TabStop {
+                        position_pt,
+                        alignment,
+                        leader: TabLeader::None,
+                    }],
+                );
+                let actual = tab_aligned_position(&lines[0], measured, alignment);
+                assert!(
+                    (actual - position_pt).abs() <= 1.5,
+                    "left={left_pt:?} alignment={alignment:?} actual={actual} expected={position_pt}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tab_leaders_and_bar_tabs_create_bounded_line_decorations() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps::default(),
+            vec![Run {
+                text: "A\tB\tC".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[
+                TabStop {
+                    position_pt: 100.0,
+                    alignment: TabAlignment::Right,
+                    leader: TabLeader::Dot,
+                },
+                TabStop {
+                    position_pt: 140.0,
+                    alignment: TabAlignment::Bar,
+                    leader: TabLeader::None,
+                },
+            ],
+        );
+        let leaders = &lines[0].leaders;
+        assert_eq!(leaders.len(), 2);
+        assert_eq!(leaders[0].style, TabLeader::Dot);
+        assert!(leaders[0].start < leaders[0].end);
+        assert_eq!(leaders[1].style, TabLeader::Bar);
+        assert_eq!(leaders[1].start, leaders[1].end);
+        assert!((leaders[1].start - 140.0).abs() <= 0.01);
+        assert!(leaders.iter().all(|leader| {
+            [leader.start, leader.end]
+                .into_iter()
+                .all(|value| value.is_finite() && (0.0..=220.0).contains(&value))
+        }));
+    }
+
+    #[test]
+    fn rtl_tab_leaders_and_bar_tabs_create_bounded_line_decorations() {
+        let leader_lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "א\tב".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[TabStop {
+                position_pt: 100.0,
+                alignment: TabAlignment::Left,
+                leader: TabLeader::Dot,
+            }],
+        );
+        assert_eq!(leader_lines[0].leaders.len(), 1);
+        assert_eq!(leader_lines[0].leaders[0].style, TabLeader::Dot);
+        assert!(leader_lines[0].leaders[0].start < leader_lines[0].leaders[0].end);
+
+        let bar_lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                align: Align::Right,
+                bidi: true,
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "א\tב".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[TabStop {
+                position_pt: 140.0,
+                alignment: TabAlignment::Bar,
+                leader: TabLeader::None,
+            }],
+        );
+        assert_eq!(bar_lines[0].leaders.len(), 1);
+        assert_eq!(bar_lines[0].leaders[0].style, TabLeader::Bar);
+        assert_eq!(bar_lines[0].leaders[0].start, bar_lines[0].leaders[0].end);
+        assert!(bar_lines[0].leaders.iter().all(|leader| {
+            [leader.start, leader.end]
+                .into_iter()
+                .all(|value| value.is_finite() && (0.0..=220.0).contains(&value))
+        }));
+    }
+
+    #[test]
+    fn explicit_left_tabs_in_non_left_paragraph_alignments_use_their_stops() {
+        for (align, position_pt) in [
+            (Align::Center, 100.0),
+            (Align::Right, 170.0),
+            (Align::Justify, 100.0),
+        ] {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "A\tB".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt,
+                    alignment: TabAlignment::Left,
+                    leader: TabLeader::None,
+                }],
+            );
+            let field_start = "A\t".len();
+            let actual =
+                tab_aligned_position(&lines[0], field_start..field_start + 1, TabAlignment::Left);
+            assert!(
+                (actual - position_pt).abs() <= 1.5,
+                "align={align:?} actual={actual} expected={position_pt}"
+            );
+
+            let baseline = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "A\tB".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[],
+            );
+            let unreachable = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    align,
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: "A\tB".to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt: 1.0,
+                    alignment: TabAlignment::Left,
+                    leader: TabLeader::None,
+                }],
+            );
+            let baseline_position = tab_aligned_position(
+                &baseline[0],
+                field_start..field_start + 1,
+                TabAlignment::Left,
+            );
+            let unreachable_position = tab_aligned_position(
+                &unreachable[0],
+                field_start..field_start + 1,
+                TabAlignment::Left,
+            );
+            assert!(
+                (baseline_position - unreachable_position).abs() <= 1.5,
+                "unreachable custom stop changed default behavior for {align:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn explicit_tabs_use_the_indented_paragraph_box_and_preserve_paint_ranges() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                indent: Indent {
+                    left_pt: Some(20.0),
+                    right_pt: Some(20.0),
+                    first_line_pt: Some(10.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![
+                Run {
+                    text: "A\t".to_string(),
+                    ..Run::default()
+                },
+                Run {
+                    text: "B".to_string(),
+                    props: CharProps {
+                        highlight: Some("yellow".to_string()),
+                        ..CharProps::default()
+                    },
+                    ..Run::default()
+                },
+            ],
+            None,
+            &[TabStop {
+                position_pt: 100.0,
+                alignment: TabAlignment::Left,
+                leader: TabLeader::None,
+            }],
+        );
+        let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
+
+        assert!((lines[0].x_indent - 20.0).abs() < 0.1);
+        assert!(
+            (lines[0].x_indent + b_bounds.0 - 100.0).abs() <= 1.5,
+            "x_indent={} B bounds={b_bounds:?}",
+            lines[0].x_indent
+        );
+        assert_eq!(
+            lines[0].char_range.map(|range| (range.start, range.end)),
+            Some((0, 3))
+        );
+        assert!(lines[0]
+            .runs
+            .iter()
+            .any(|run| run.highlight == Some(rgb::Color::new(0xFF, 0xFF, 0x00))));
+    }
+
+    #[test]
+    fn explicit_tabs_keep_page_margin_coordinates_under_first_and_hanging_indents() {
+        let indents = [
+            Indent {
+                left_pt: Some(20.0),
+                first_line_pt: Some(10.0),
+                ..Indent::default()
+            },
+            Indent {
+                left_pt: Some(40.0),
+                hanging_pt: Some(20.0),
+                ..Indent::default()
+            },
+        ];
+        let fields = [
+            ("A\tLEFT", 2..6, TabAlignment::Left),
+            ("A\tCENTER", 2..8, TabAlignment::Center),
+            ("A\tRIGHT", 2..7, TabAlignment::Right),
+            ("A\t12.34", 4..5, TabAlignment::Decimal),
+        ];
+
+        for indent in indents {
+            for (text, measured, alignment) in fields.clone() {
+                let lines = paragraph_lines_with_marker_and_tabs(
+                    ParaProps {
+                        indent,
+                        ..ParaProps::default()
+                    },
+                    vec![Run {
+                        text: text.to_string(),
+                        ..Run::default()
+                    }],
+                    None,
+                    &[TabStop {
+                        position_pt: 100.0,
+                        alignment,
+                        leader: TabLeader::None,
+                    }],
+                );
+                let actual = tab_aligned_position(&lines[0], measured, alignment);
+
+                assert!(
+                    (actual - 100.0).abs() <= 1.5,
+                    "indent={indent:?} alignment={alignment:?} actual={actual}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hanging_indent_continuation_lines_keep_page_margin_tab_coordinates() {
+        let text = "first line\nA\tB";
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                indent: Indent {
+                    left_pt: Some(40.0),
+                    hanging_pt: Some(20.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[TabStop {
+                position_pt: 100.0,
+                alignment: TabAlignment::Left,
+                leader: TabLeader::None,
+            }],
+        );
+        let b_start = text.find('B').unwrap();
+        let continuation = lines.last().expect("continuation line");
+        let actual = tab_aligned_position(continuation, b_start..b_start + 1, TabAlignment::Left);
+
+        assert!(
+            (actual - 100.0).abs() <= 1.5,
+            "actual={actual} lines={}",
+            lines.len()
+        );
+    }
+
+    #[test]
+    fn explicit_tabs_fall_back_when_aligned_fields_cross_the_paragraph_box() {
+        let cases = [
+            ("A\tFIELD", TabAlignment::Left, 160.0),
+            ("A\tCENTERED", TabAlignment::Center, 150.0),
+            ("A\t12.3456789", TabAlignment::Decimal, 150.0),
+            ("A\tFIELD", TabAlignment::Right, 170.0),
+        ];
+
+        for (text, alignment, position_pt) in cases {
+            let lines = paragraph_lines_with_marker_and_tabs(
+                ParaProps {
+                    indent: Indent {
+                        left_pt: Some(20.0),
+                        right_pt: Some(20.0),
+                        ..Indent::default()
+                    },
+                    ..ParaProps::default()
+                },
+                vec![Run {
+                    text: text.to_string(),
+                    ..Run::default()
+                }],
+                None,
+                &[TabStop {
+                    position_pt,
+                    alignment,
+                    leader: TabLeader::None,
+                }],
+            );
+            let field_start = text.find('\t').unwrap() + 1;
+            let bounds = text_bounds(&lines[0], field_start..text.len()).expect("field glyphs");
+            let actual = lines[0].x_indent + bounds.0;
+
+            assert!(
+                (actual - DEFAULT_TAB_STOP_PT).abs() <= 1.5,
+                "alignment={alignment:?} stop={position_pt} actual={actual}"
+            );
+        }
+    }
+
+    #[test]
+    fn default_tabs_use_the_page_margin_grid_under_paragraph_indents() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                indent: Indent {
+                    left_pt: Some(20.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "A\tB".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[],
+        );
+        let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
+        let actual = lines[0].x_indent + b_bounds.0;
+
+        assert!(
+            (actual - DEFAULT_TAB_STOP_PT).abs() <= 1.5,
+            "actual={actual}"
+        );
+    }
+
+    #[test]
+    fn default_tab_targets_are_margin_anchored_and_clamped_to_the_paragraph_box() {
+        assert_eq!(super::default_tab_field_start(110.0, 140.0, 20.0), 124.0);
+        assert_eq!(super::default_tab_field_start(135.0, 140.0, 20.0), 140.0);
+    }
+
+    #[test]
+    fn explicit_tab_before_the_indented_cursor_falls_back_to_the_page_margin_grid() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                indent: Indent {
+                    left_pt: Some(50.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "A\tB".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[TabStop {
+                position_pt: DEFAULT_TAB_STOP_PT,
+                alignment: TabAlignment::Left,
+                leader: TabLeader::None,
+            }],
+        );
+        let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
+        let actual = lines[0].x_indent + b_bounds.0;
+
+        assert!(
+            (actual - DEFAULT_TAB_STOP_PT * 2.0).abs() <= 1.5,
+            "actual={actual}"
+        );
+    }
+
+    #[test]
+    fn explicit_tab_past_the_paragraph_box_falls_back_without_overflow() {
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                indent: Indent {
+                    left_pt: Some(20.0),
+                    right_pt: Some(20.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "A\tB".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[TabStop {
+                position_pt: 1_000.0,
+                alignment: TabAlignment::Left,
+                leader: TabLeader::None,
+            }],
+        );
+        let b_bounds = text_bounds(&lines[0], 2..3).expect("B glyph");
+        let absolute_right = lines[0].x_indent + b_bounds.1;
+        let absolute_left = lines[0].x_indent + b_bounds.0;
+
+        assert!(
+            (absolute_left - DEFAULT_TAB_STOP_PT).abs() <= 1.5,
+            "absolute_left={absolute_left}"
+        );
+        assert!(
+            absolute_right <= 160.0,
+            "x_indent={} B bounds={b_bounds:?}",
+            lines[0].x_indent
+        );
+    }
+
+    #[test]
+    fn right_tab_accepts_a_field_ending_at_the_paragraph_box_edge() {
+        let text = "A\tEDGE";
+        let lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                indent: Indent {
+                    left_pt: Some(20.0),
+                    right_pt: Some(20.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[TabStop {
+                position_pt: 160.0,
+                alignment: TabAlignment::Right,
+                leader: TabLeader::None,
+            }],
+        );
+        let field_start = text.find('\t').unwrap() + 1;
+        let actual = tab_aligned_position(&lines[0], field_start..text.len(), TabAlignment::Right);
+
+        assert!((actual - 160.0).abs() <= 1.5, "actual={actual}");
+    }
+
+    #[test]
+    fn paragraph_line_spacing_controls_layout_height() {
+        let run = Run {
+            text: "Line spacing".to_string(),
+            ..Run::default()
+        };
+        let single = paragraph_line_metrics(
+            ParaProps {
+                spacing: Spacing {
+                    line_pct: Some(1.0),
+                    ..Spacing::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![run.clone()],
+        );
+        let double = paragraph_line_metrics(
+            ParaProps {
+                spacing: Spacing {
+                    line_pct: Some(2.0),
+                    ..Spacing::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![run],
+        );
+
+        assert_eq!(single.len(), 1);
+        assert_eq!(double.len(), 1);
+        assert!(
+            double[0].0 > single[0].0 * 1.8,
+            "double spacing should materially increase line height: single={} double={}",
+            single[0].0,
+            double[0].0
+        );
+    }
+
+    #[test]
+    fn absolute_line_spacing_exactly_sizes_and_at_least_expands_line_boxes() {
+        let natural = paragraph_lines(
+            ParaProps::default(),
+            vec![Run {
+                text: "Absolute spacing".to_string(),
+                ..Run::default()
+            }],
+        );
+        assert_eq!(natural.len(), 1);
+
+        let mut expanded = natural.clone();
+        let minimum = natural[0].height + 20.0;
+        super::apply_line_spacing_hint(&mut expanded, Some(LineSpacingHint::AtLeast(minimum)));
+        assert_close(expanded[0].height, minimum);
+        assert_close(expanded[0].baseline, natural[0].baseline + 10.0);
+        assert!(!expanded[0].clip_to_height);
+
+        let mut unchanged = natural.clone();
+        super::apply_line_spacing_hint(
+            &mut unchanged,
+            Some(LineSpacingHint::AtLeast(natural[0].height / 2.0)),
+        );
+        assert_close(unchanged[0].height, natural[0].height);
+        assert_close(unchanged[0].baseline, natural[0].baseline);
+
+        let mut centered = natural.clone();
+        super::apply_line_spacing_hint(&mut centered, Some(LineSpacingHint::Exact(40.0)));
+        assert_close(centered[0].height, 40.0);
+        assert!(centered[0].clip_to_height);
+        let centered_top = centered[0]
+            .runs
+            .iter()
+            .map(|run| centered[0].baseline + run.baseline_shift - run.ascent)
+            .fold(f32::INFINITY, f32::min);
+        let centered_bottom = centered[0]
+            .runs
+            .iter()
+            .map(|run| centered[0].baseline + run.baseline_shift + run.descent)
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert_close(centered_top, centered[0].height - centered_bottom);
+
+        let mut clipped = natural;
+        super::apply_line_spacing_hint(&mut clipped, Some(LineSpacingHint::Exact(8.0)));
+        assert_close(clipped[0].height, 8.0);
+        let clipped_bottom = clipped[0]
+            .runs
+            .iter()
+            .map(|run| clipped[0].baseline + run.baseline_shift + run.descent)
+            .fold(f32::NEG_INFINITY, f32::max);
+        assert_close(clipped_bottom, clipped[0].height);
+    }
+
+    #[test]
+    fn explicit_zero_paragraph_after_spacing_suppresses_the_default_gap() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut paragraph = Paragraph {
+            runs: vec![Run {
+                text: "No trailing gap".to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        paragraph.props.spacing.after_pt = Some(0.0);
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+
+        super::collect_blocks(
+            &[Block::Paragraph(paragraph)],
+            &mut flow,
+            Geom::from_setup(&PageSetup::default()),
+            &mut tcx,
+            &mut capture,
+        );
+
+        assert!(!flow.iter().any(|item| matches!(item, FlowItem::Gap(_))));
+    }
+
+    #[test]
+    fn paragraph_first_line_and_hanging_indents_affect_distinct_lines() {
+        let text =
+            "wrapped paragraph text that is deliberately long enough to occupy several lines";
+        let run = Run {
+            text: text.to_string(),
+            ..Run::default()
+        };
+        let first_line = paragraph_line_metrics(
+            ParaProps {
+                indent: Indent {
+                    left_pt: Some(12.0),
+                    first_line_pt: Some(18.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![run.clone()],
+        );
+        let hanging = paragraph_line_metrics(
+            ParaProps {
+                indent: Indent {
+                    left_pt: Some(30.0),
+                    hanging_pt: Some(18.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            vec![run],
+        );
+
+        assert!(first_line.len() >= 2);
+        assert!(hanging.len() >= 2);
+        assert!(
+            first_line[0].1 > first_line[1].1 + 17.0,
+            "first line should be indented independently: {first_line:?}"
+        );
+        assert!(
+            hanging[0].1 + 17.0 < hanging[1].1,
+            "hanging indent should move continuation lines inward: {hanging:?}"
+        );
+    }
+
+    #[test]
+    fn hidden_runs_are_excluded_from_render_layout() {
+        let metrics = paragraph_line_metrics(
+            ParaProps::default(),
+            vec![
+                Run {
+                    text: "shown".to_string(),
+                    ..Run::default()
+                },
+                Run {
+                    text: "hidden".to_string(),
+                    props: CharProps {
+                        hidden: true,
+                        ..CharProps::default()
+                    },
+                    ..Run::default()
+                },
+            ],
+        );
+
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].2, Some((0, "shown".chars().count())));
+    }
+
+    #[test]
+    fn hidden_runs_preserve_source_offsets_for_visible_anchor_ranges() {
+        let metrics = paragraph_line_metrics(
+            ParaProps::default(),
+            vec![
+                Run {
+                    text: "hidden".to_string(),
+                    props: CharProps {
+                        hidden: true,
+                        ..CharProps::default()
+                    },
+                    ..Run::default()
+                },
+                Run {
+                    text: "shown".to_string(),
+                    ..Run::default()
+                },
+            ],
+        );
+
+        assert_eq!(metrics.len(), 1);
+        assert_eq!(metrics[0].2, Some((6, 11)));
+    }
+
+    #[test]
+    fn hidden_run_images_do_not_create_renderer_warnings() {
+        let image = Image::default();
+        let hidden = vec![Block::Paragraph(Paragraph {
+            runs: vec![Run {
+                image: Some(image.clone()),
+                props: CharProps {
+                    hidden: true,
+                    ..CharProps::default()
+                },
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        })];
+        let visible = vec![Block::Paragraph(Paragraph {
+            runs: vec![Run {
+                image: Some(image),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        })];
+
+        assert_eq!(count_missing_image_bytes(&hidden), 0);
+        assert_eq!(count_missing_image_bytes(&visible), 1);
+    }
+
+    fn laid_out_table_rows(table: &Table, geom: Geom) -> Vec<super::RowLayout> {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(table, &mut flow, geom, &mut tcx, &mut capture);
+        let FlowItem::Table { rows, .. } = flow.remove(0) else {
+            panic!("table flow")
+        };
+        rows
+    }
+
+    fn laid_out_table_boxes(table: &Table, geom: Geom) -> Vec<(f32, f32)> {
+        let mut rows = laid_out_table_rows(table, geom);
+        rows.remove(0)
+            .cells
+            .into_iter()
+            .map(|cell| (cell.x, cell.width))
+            .collect()
+    }
+
+    fn table_box_bounds(boxes: &[(f32, f32)]) -> (f32, f32) {
+        boxes.iter().fold(
+            (f32::INFINITY, f32::NEG_INFINITY),
+            |(left, right), (x, width)| (left.min(*x), right.max(*x + *width)),
+        )
+    }
+
+    fn assert_table_boxes(actual: &[(f32, f32)], expected: &[(f32, f32)]) {
+        assert_eq!(actual.len(), expected.len());
+        for ((actual_x, actual_width), (expected_x, expected_width)) in actual.iter().zip(expected)
+        {
+            assert!(
+                (actual_x - expected_x).abs() < 0.1,
+                "x mismatch: actual={actual:?}, expected={expected:?}"
+            );
+            assert!(
+                (actual_width - expected_width).abs() < 0.1,
+                "width mismatch: actual={actual:?}, expected={expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn uniform_table_border_paint_resolves_color_and_bounded_eighth_point_width() {
+        let default = super::table_border_paints(&Table::default());
+        assert_eq!(default, super::TableBorderPaints::default());
+
+        let color = Color::rgb(0x12, 0x67, 0xAB);
+        let colored = super::table_border_paints(&Table {
+            border_color: Some(color),
+            ..Table::default()
+        });
+        for side in [
+            TableBorderSide::Top,
+            TableBorderSide::Left,
+            TableBorderSide::Bottom,
+            TableBorderSide::Right,
+            TableBorderSide::InsideHorizontal,
+            TableBorderSide::InsideVertical,
+        ] {
+            assert_eq!(
+                colored.get(side).color,
+                rgb::Color::new(color.r, color.g, color.b)
+            );
+            assert_eq!(colored.get(side).width, super::BORDER);
+        }
+
+        for (size, expected_width) in [
+            (0, super::BORDER),
+            (1, 0.125),
+            (24, 3.0),
+            (96, 12.0),
+            (u16::MAX, 12.0),
+        ] {
+            let paint = super::table_border_paints(&Table {
+                border_size_eighths: Some(size),
+                ..Table::default()
+            });
+            for side in [
+                TableBorderSide::Top,
+                TableBorderSide::Left,
+                TableBorderSide::Bottom,
+                TableBorderSide::Right,
+                TableBorderSide::InsideHorizontal,
+                TableBorderSide::InsideVertical,
+            ] {
+                assert_eq!(paint.get(side).width, expected_width, "size={size}");
+            }
+        }
+    }
+
+    #[test]
+    fn six_way_table_border_paint_resolves_overrides_and_fallbacks() {
+        let sides = [
+            TableBorderSide::Top,
+            TableBorderSide::Left,
+            TableBorderSide::Bottom,
+            TableBorderSide::Right,
+            TableBorderSide::InsideHorizontal,
+            TableBorderSide::InsideVertical,
+        ];
+        let colors = [
+            Color::rgb(0x10, 0x20, 0x30),
+            Color::rgb(0x21, 0x31, 0x41),
+            Color::rgb(0x32, 0x42, 0x52),
+            Color::rgb(0x43, 0x53, 0x63),
+            Color::rgb(0x54, 0x64, 0x74),
+            Color::rgb(0x65, 0x75, 0x85),
+        ];
+        let sizes = [8, 16, 24, 32, 96, u16::MAX];
+        let mut table = Table {
+            border_color: Some(Color::rgb(0xAA, 0xBB, 0xCC)),
+            border_size_eighths: Some(40),
+            ..Table::default()
+        };
+        for ((side, color), size) in sides.into_iter().zip(colors).zip(sizes) {
+            table.border_colors.set(side, color);
+            table.border_sizes.set(side, size);
+        }
+
+        let paints = super::table_border_paints(&table);
+        for ((side, color), expected_width) in sides
+            .into_iter()
+            .zip(colors)
+            .zip([1.0, 2.0, 3.0, 4.0, 12.0, 12.0])
+        {
+            let paint = paints.get(side);
+            assert_eq!(paint.color, rgb::Color::new(color.r, color.g, color.b));
+            assert_eq!(paint.width, expected_width, "side={side:?}");
+        }
+
+        table.border_colors = Default::default();
+        table.border_sizes = Default::default();
+        table.border_sizes.left = Some(0);
+        let fallback = super::table_border_paints(&table);
+        for side in sides {
+            assert_eq!(fallback.get(side).color, rgb::Color::new(0xAA, 0xBB, 0xCC));
+            assert_eq!(fallback.get(side).width, 5.0);
+        }
+    }
+
+    #[test]
+    fn table_grid_assigns_six_physical_border_roles_in_ltr_and_rtl() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![cell("A"), cell("B")],
+                },
+                Row {
+                    cells: vec![cell("C"), cell("D")],
+                },
+            ],
+            col_widths_pct: vec![0.5, 0.5],
+            ..Table::default()
+        };
+
+        let rows = laid_out_table_rows(&table, geom);
+        assert_eq!(
+            rows[0].cells[0].border_edges,
+            super::CellBorderEdges {
+                top: Some(TableBorderSide::Top),
+                left: Some(TableBorderSide::Left),
+                bottom: Some(TableBorderSide::InsideHorizontal),
+                right: Some(TableBorderSide::InsideVertical),
+            }
+        );
+        assert_eq!(
+            rows[1].cells[1].border_edges,
+            super::CellBorderEdges {
+                top: Some(TableBorderSide::InsideHorizontal),
+                left: Some(TableBorderSide::InsideVertical),
+                bottom: Some(TableBorderSide::Bottom),
+                right: Some(TableBorderSide::Right),
+            }
+        );
+
+        let mut rtl = table;
+        rtl.bidi_visual = true;
+        let rows = laid_out_table_rows(&rtl, geom);
+        assert!(rows[0].cells[0].x > rows[0].cells[1].x);
+        assert_eq!(
+            rows[0].cells[0].border_edges,
+            super::CellBorderEdges {
+                top: Some(TableBorderSide::Top),
+                left: Some(TableBorderSide::InsideVertical),
+                bottom: Some(TableBorderSide::InsideHorizontal),
+                right: Some(TableBorderSide::Right),
+            }
+        );
+        assert_eq!(
+            rows[0].cells[1].border_edges,
+            super::CellBorderEdges {
+                top: Some(TableBorderSide::Top),
+                left: Some(TableBorderSide::Left),
+                bottom: Some(TableBorderSide::InsideHorizontal),
+                right: Some(TableBorderSide::InsideVertical),
+            }
+        );
+    }
+
+    #[test]
+    fn table_spans_suppress_only_covered_inside_edges() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let rows = laid_out_table_rows(
+            &Table {
+                rows: vec![
+                    Row {
+                        cells: vec![
+                            Cell {
+                                row_span: 3,
+                                col_span: 2,
+                                blocks: vec![para("merged", None)],
+                                ..Cell::default()
+                            },
+                            cell("A"),
+                        ],
+                    },
+                    Row {
+                        cells: vec![cell("B")],
+                    },
+                    Row {
+                        cells: vec![cell("C")],
+                    },
+                ],
+                col_widths_pct: vec![0.25, 0.25, 0.5],
+                ..Table::default()
+            },
+            geom,
+        );
+
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].cells[0].width, rows[1].cells[0].width);
+        assert_eq!(
+            rows[0].cells[0].border_edges,
+            super::CellBorderEdges {
+                top: Some(TableBorderSide::Top),
+                left: Some(TableBorderSide::Left),
+                bottom: None,
+                right: Some(TableBorderSide::InsideVertical),
+            }
+        );
+        assert_eq!(
+            rows[1].cells[0].border_edges,
+            super::CellBorderEdges {
+                top: None,
+                left: Some(TableBorderSide::Left),
+                bottom: None,
+                right: Some(TableBorderSide::InsideVertical),
+            }
+        );
+        assert_eq!(
+            rows[2].cells[0].border_edges,
+            super::CellBorderEdges {
+                top: None,
+                left: Some(TableBorderSide::Left),
+                bottom: Some(TableBorderSide::Bottom),
+                right: Some(TableBorderSide::InsideVertical),
+            }
+        );
+    }
+
+    #[test]
+    fn hostile_row_span_closes_on_the_last_real_row() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let rows = laid_out_table_rows(
+            &Table {
+                rows: vec![
+                    Row {
+                        cells: vec![Cell {
+                            row_span: u16::MAX,
+                            blocks: vec![para("bounded", None)],
+                            ..Cell::default()
+                        }],
+                    },
+                    Row::default(),
+                ],
+                ..Table::default()
+            },
+            geom,
+        );
+
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].cells[0].border_edges.bottom, None);
+        assert_eq!(rows[1].cells[0].border_edges.top, None);
+        assert_eq!(
+            rows[1].cells[0].border_edges.bottom,
+            Some(TableBorderSide::Bottom)
+        );
+    }
+
+    #[test]
+    fn table_border_rectangles_center_shared_edges_and_join_corners() {
+        let rect = |x, y, w, h| super::BorderRect { x, y, w, h };
+        let rects =
+            super::table_border_rects(10.0, 20.0, 16.0, 24.0, 2.0).expect("positive finite cell");
+        assert_eq!(
+            rects,
+            [
+                rect(9.0, 19.0, 8.0, 2.0),
+                rect(9.0, 23.0, 8.0, 2.0),
+                rect(9.0, 19.0, 2.0, 6.0),
+                rect(15.0, 19.0, 2.0, 6.0),
+            ]
+        );
+
+        let left =
+            super::table_border_rects(0.0, 0.0, 20.0, 12.0, 3.0).expect("left adjacent cell");
+        let right =
+            super::table_border_rects(20.0, 0.0, 40.0, 12.0, 3.0).expect("right adjacent cell");
+        assert_eq!(
+            left,
+            [
+                rect(-1.5, -1.5, 23.0, 3.0),
+                rect(-1.5, 10.5, 23.0, 3.0),
+                rect(-1.5, -1.5, 3.0, 15.0),
+                rect(18.5, -1.5, 3.0, 15.0),
+            ]
+        );
+        assert_eq!(left[3], right[2], "shared edge must overpaint once");
+        assert!(super::table_border_rects(0.0, 0.0, 0.0, 4.0, 1.0).is_none());
+        assert!(super::table_border_rects(0.0, 0.0, 4.0, 4.0, f32::NAN).is_none());
+    }
+
+    #[test]
+    fn chart_frame_projects_exact_ordered_scene_rectangles() {
+        let mut scene = super::PageScene::default();
+        let appended = super::project_chart_frame(&mut scene, 10.0, 20.0, 300.0, 180.0)
+            .expect("bounded chart frame projects");
+        let white = rgb::Color::new(0xFF, 0xFF, 0xFF);
+        let border = rgb::Color::new(0xA7, 0xB0, 0xBA);
+
+        assert_eq!(appended, 0..5);
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 10.0,
+                        y: 20.0,
+                        width: 300.0,
+                        height: 180.0,
+                    },
+                    color: white,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 10.0,
+                        y: 20.0,
+                        width: 300.0,
+                        height: super::BORDER,
+                    },
+                    color: border,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 10.0,
+                        y: 200.0 - super::BORDER,
+                        width: 300.0,
+                        height: super::BORDER,
+                    },
+                    color: border,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 10.0,
+                        y: 20.0,
+                        width: super::BORDER,
+                        height: 180.0,
+                    },
+                    color: border,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 310.0 - super::BORDER,
+                        y: 20.0,
+                        width: super::BORDER,
+                        height: 180.0,
+                    },
+                    color: border,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn page_scene_fill_polygons_are_finite_bounded_and_atomic() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+        let quad = [(1.0, 2.0), (7.0, 2.0), (6.0, 5.0), (2.0, 5.0)];
+        let mut scene = super::PageScene::with_path_point_limit(4);
+        scene
+            .push_fill_polygon(&quad, color)
+            .expect("bounded polygon projects");
+        assert_eq!(scene.path_point_count, 4);
+        assert_eq!(
+            scene.operations,
+            vec![super::PageSceneOp::FillPolygon {
+                points: vec![
+                    super::ScenePoint { x: 1.0, y: 2.0 },
+                    super::ScenePoint { x: 7.0, y: 2.0 },
+                    super::ScenePoint { x: 6.0, y: 5.0 },
+                    super::ScenePoint { x: 2.0, y: 5.0 },
+                ]
+                .into_boxed_slice(),
+                color,
+            }]
+        );
+
+        let unchanged = (scene.operations.len(), scene.path_point_count);
+        scene
+            .push_fill_polygon(&[(0.0, 0.0), (f32::NAN, 1.0), (2.0, 0.0)], color)
+            .expect("non-finite polygon is ignored");
+        scene
+            .push_fill_polygon(&[(0.0, 0.0), (1.0, 1.0)], color)
+            .expect("open line is ignored");
+        assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
+
+        let error = scene
+            .push_fill_polygon(&[(0.0, 0.0), (1.0, 0.0), (0.5, 1.0)], color)
+            .expect_err("point ceiling rejects another polygon");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 4-path-point limit"
+        );
+        assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
+
+        let mut operation_limited = super::PageScene::with_operation_limit(0);
+        let error = operation_limited
+            .push_fill_polygon(&[(0.0, 0.0), (1.0, 0.0), (0.5, 1.0)], color)
+            .expect_err("operation ceiling rejects polygon");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-operation limit"
+        );
+        assert!(operation_limited.operations.is_empty());
+        assert_eq!(operation_limited.path_point_count, 0);
+    }
+
+    #[test]
+    fn page_scene_glyph_runs_preserve_clusters_deduplicate_fonts_and_bound_resources() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut line = super::shape(
+            "abc",
+            StyledText::plain(&[(0, 3, CharProps::default())]),
+            None,
+            parley::layout::Alignment::Start,
+            100.0,
+            &mut tcx,
+        )
+        .into_iter()
+        .next()
+        .expect("ASCII text shapes");
+        let run = line.runs.remove(0);
+        assert_eq!(run.glyphs.len(), 3);
+
+        let mut scene = super::PageScene::with_text_limits(1, 6);
+        assert_eq!(
+            scene
+                .push_glyph_run(&run, 10.0, 20.0)
+                .expect("first glyph run fits"),
+            0
+        );
+        let mut rtl_run = run.clone();
+        rtl_run.is_rtl = true;
+        assert_eq!(
+            scene
+                .push_glyph_run(&rtl_run, 30.0, 40.0)
+                .expect("second glyph run reuses its font"),
+            1
+        );
+        assert_eq!(scene.font_resources.len(), 1);
+        assert_eq!(scene.glyph_count, 6);
+        let super::PageSceneOp::GlyphRun(first) = &scene.operations[0] else {
+            panic!(
+                "text must project as a glyph run: {:?}",
+                scene.operations[0]
+            );
+        };
+        assert_eq!(first.font, super::SceneFontId(0));
+        assert_eq!(first.origin, super::ScenePoint { x: 10.0, y: 20.0 });
+        assert_eq!(first.text.as_ref(), "abc");
+        assert_eq!(
+            first
+                .glyphs
+                .iter()
+                .map(|glyph| glyph.text_range.clone())
+                .collect::<Vec<_>>(),
+            vec![0..1, 1..2, 2..3]
+        );
+        assert!(!first.is_rtl);
+        let super::PageSceneOp::GlyphRun(second) = &scene.operations[1] else {
+            panic!(
+                "second text must project as a glyph run: {:?}",
+                scene.operations[1]
+            );
+        };
+        assert!(second.is_rtl);
+        assert!(scene.font_resources[0].is_valid());
+
+        let mut glyph_limited = super::PageScene::with_text_limits(1, 2);
+        let error = glyph_limited
+            .push_glyph_run(&run, 10.0, 20.0)
+            .expect_err("glyph ceiling rejects the run atomically");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 2-glyph limit"
+        );
+        assert!(glyph_limited.operations.is_empty());
+        assert!(glyph_limited.font_resources.is_empty());
+        assert_eq!(glyph_limited.glyph_count, 0);
+
+        let mut font_limited = super::PageScene::with_text_limits(0, 3);
+        let error = font_limited
+            .push_glyph_run(&run, 10.0, 20.0)
+            .expect_err("font ceiling rejects the run atomically");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-font-resource limit"
+        );
+        assert!(font_limited.operations.is_empty());
+        assert!(font_limited.font_resources.is_empty());
+        assert_eq!(font_limited.glyph_count, 0);
+
+        let mut invalid = super::PageScene::default();
+        let error = invalid
+            .push_glyph_run(&run, f32::NAN, 20.0)
+            .expect_err("non-finite origin is rejected atomically");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene contains an invalid glyph run"
+        );
+        assert!(invalid.operations.is_empty());
+        assert!(invalid.font_resources.is_empty());
+        assert_eq!(invalid.glyph_count, 0);
+    }
+
+    #[test]
+    fn complete_page_scene_replay_reconstructs_neutral_resources_exactly() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut line = super::shape(
+            "Scene",
+            StyledText::plain(&[(0, 5, CharProps::default())]),
+            None,
+            parley::layout::Alignment::Start,
+            100.0,
+            &mut tcx,
+        )
+        .into_iter()
+        .next()
+        .expect("text shapes");
+        let mut run = line.runs.remove(0);
+        run.highlight = Some(rgb::Color::new(0xFE, 0xF0, 0x9A));
+        run.underline = Some(super::TextDecoration {
+            offset: 1.0,
+            thickness: 0.5,
+        });
+        run.strikethrough = Some(super::TextDecoration {
+            offset: -3.0,
+            thickness: 0.5,
+        });
+
+        let pixels = [0x10, 0x20, 0x30, 0xFF, 0x40, 0x50, 0x60, 0xFF];
+        let (image, width_px, height_px) = super::decode_model_image(&Image {
+            bytes: Some(pixels.to_vec()),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(2),
+            height_px: Some(1),
+            ..Image::default()
+        })
+        .expect("raw image decodes");
+        assert_eq!((width_px, height_px), (2, 1));
+
+        let mut scene = super::PageScene::default();
+        scene
+            .push_fill_rect(2.0, 3.0, 20.0, 8.0, rgb::Color::new(0x12, 0x34, 0x56))
+            .expect("rectangle projects");
+        let image_operation = scene
+            .push_image(
+                image.scene.clone(),
+                12.0,
+                6.0,
+                super::SceneTransform::from_translate(8.0, 12.0),
+            )
+            .expect("image projects")
+            .expect("valid image emits an operation");
+        scene
+            .push_glyph_run(&run, 10.0, 50.0)
+            .expect("glyph run projects");
+
+        let settings = super::PageSettings::from_wh(200.0, 100.0).expect("finite page");
+        let direct_pdf = {
+            let direct_image = image
+                .scene
+                .to_pdf_image()
+                .expect("direct image reconstructs");
+            let direct_font = run
+                .scene_font
+                .to_pdf_font()
+                .expect("direct font reconstructs");
+            let mut document = super::PdfDoc::new();
+            let mut page = document.start_page_with(settings.clone());
+            let mut surface = page.surface();
+            super::pdf::replay_geometry_operations(&mut surface, &scene, 0..1)
+                .expect("geometry replays");
+            assert!(super::pdf::draw_image_for_test(
+                &mut surface,
+                &scene,
+                image_operation,
+                direct_image,
+            ));
+            super::pdf::draw_run_for_test(&mut surface, run, 10.0, 50.0, direct_font);
+            surface.finish();
+            page.finish();
+            document.finish().expect("direct PDF finishes")
+        };
+        let scene_pdf = {
+            let mut document = super::PdfDoc::new();
+            let mut page = document.start_page_with(settings);
+            let mut surface = page.surface();
+            super::pdf::replay_complete_page_scene(&mut surface, &scene)
+                .expect("complete scene replays");
+            surface.finish();
+            page.finish();
+            document.finish().expect("scene PDF finishes")
+        };
+
+        assert_eq!(scene_pdf, direct_pdf);
+    }
+
+    #[test]
+    fn neutral_scene_resources_reconstruct_every_raster_encoding_and_reject_invalid_data() {
+        let png = vec![
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x03, 0x08, 0x02, 0x00, 0x00,
+            0x00, 0x36, 0x88, 0x49, 0xD6, 0x00, 0x00, 0x00, 0x0B, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0xDA, 0x63, 0x60, 0xC0, 0x02, 0x00, 0x00, 0x15, 0x00, 0x01, 0x39, 0xC1, 0xE0, 0x23,
+            0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        ];
+        let jpeg = vec![
+            0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, b'J', b'F', b'I', b'F', 0x00, 0x01, 0x01, 0x00,
+            0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xC0, 0x00, 0x11, 0x08, 0x00, 0x03, 0x00,
+            0x02, 0x03, 0x01, 0x11, 0x00, 0x02, 0x11, 0x00, 0x03, 0x11, 0x00, 0xFF, 0xDA, 0x00,
+            0x0C, 0x03, 0x01, 0x00, 0x02, 0x00, 0x03, 0x00, 0x00, 0x3F, 0x00, 0x00, 0xFF, 0xD9,
+        ];
+        let gif = vec![
+            b'G', b'I', b'F', b'8', b'9', b'a', 0x02, 0x00, 0x03, 0x00, 0x80, 0x00, 0x00, 0x00,
+            0x00, 0x00, 0xFF, 0xFF, 0xFF, 0x2C, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x03, 0x00,
+            0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3B,
+        ];
+        let webp = vec![
+            0x52, 0x49, 0x46, 0x46, 0x1A, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50,
+            0x38, 0x4C, 0x0E, 0x00, 0x00, 0x00, 0x2F, 0x01, 0x80, 0x00, 0x00, 0x07, 0x10, 0x11,
+            0xFD, 0x0F, 0x44, 0x44, 0xFF, 0x03,
+        ];
+        for (mime, bytes, encoding) in [
+            ("image/png", png, super::SceneImageEncoding::Png),
+            ("image/jpeg", jpeg, super::SceneImageEncoding::Jpeg),
+            ("image/gif", gif, super::SceneImageEncoding::Gif),
+            ("image/webp", webp, super::SceneImageEncoding::Webp),
+        ] {
+            let (image, width, height) = super::decode_image(&bytes, Some(mime))
+                .unwrap_or_else(|| panic!("{mime} fixture decodes"));
+            assert_eq!(image.scene.encoding, encoding);
+            let rebuilt = image
+                .scene
+                .to_pdf_image()
+                .expect("neutral encoded resource reconstructs");
+            assert_eq!(rebuilt.size(), (width, height));
+            assert_eq!(
+                rebuilt,
+                image
+                    .scene
+                    .to_pdf_image()
+                    .expect("resource reconstruction is deterministic")
+            );
+        }
+
+        let pixels = vec![0x10, 0x20, 0x30, 0xFF, 0x40, 0x50, 0x60, 0xFF];
+        let raw = super::SceneImageResource {
+            encoding: super::SceneImageEncoding::Rgba8,
+            bytes: std::sync::Arc::new(pixels),
+            width_px: 2,
+            height_px: 1,
+        };
+        assert_eq!(
+            raw.to_pdf_image()
+                .expect("raw resource reconstructs")
+                .size(),
+            (2, 1)
+        );
+
+        for invalid in [
+            super::SceneImageResource {
+                encoding: super::SceneImageEncoding::Png,
+                bytes: std::sync::Arc::new(vec![1, 2, 3]),
+                width_px: 1,
+                height_px: 1,
+            },
+            super::SceneImageResource {
+                encoding: super::SceneImageEncoding::Rgba8,
+                bytes: std::sync::Arc::new(vec![1, 2, 3]),
+                width_px: 1,
+                height_px: 1,
+            },
+        ] {
+            assert_eq!(
+                invalid
+                    .to_pdf_image()
+                    .expect_err("invalid image is rejected")
+                    .to_string(),
+                "render failed: page scene contains an invalid image resource"
+            );
+        }
+
+        let invalid_font = super::SceneFontResource {
+            bytes: std::sync::Arc::new(vec![1, 2, 3]),
+            source_id: 1,
+            index: 0,
+        };
+        assert_eq!(
+            invalid_font
+                .to_pdf_font()
+                .expect_err("invalid font is rejected")
+                .to_string(),
+            "render failed: page scene contains an invalid font resource"
+        );
+    }
+
+    #[test]
+    fn remaining_rectangles_enter_the_page_scene_in_backend_order() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let junction_color = rgb::Color::new(0x16, 0x5D, 0xA8);
+        let junction = super::VerticalBorderLine {
+            x: 50.0,
+            paint: super::TableBorderPaint {
+                color: junction_color,
+                width: 3.0,
+            },
+        };
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let mut scene = super::PageScene::default();
+
+        super::draw_terminal_vertical_junction(&mut scene, 40.0, junction, 2.0)
+            .expect("junction paints");
+        super::draw_section_column_separators(
+            &mut scene,
+            geom,
+            &setup,
+            super::SectionColumnPaintHints {
+                gap_pt: Some(40.0),
+                layout: None,
+                separator: true,
+            },
+        )
+        .expect("column separator paints");
+
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect::new(48.5, 39.0, 3.0, 2.0).unwrap(),
+                    color: junction_color,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect::new(109.75, 20.0, 0.5, 60.0).unwrap(),
+                    color: rgb::Color::black(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn remaining_rectangles_propagate_page_scene_capacity() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+
+        let mut junction_scene = super::PageScene::with_operation_limit(0);
+        let junction_result = super::draw_terminal_vertical_junction(
+            &mut junction_scene,
+            40.0,
+            super::VerticalBorderLine {
+                x: 50.0,
+                paint: super::TableBorderPaint {
+                    color: rgb::Color::new(0x16, 0x5D, 0xA8),
+                    width: 3.0,
+                },
+            },
+            2.0,
+        );
+
+        let mut separator_scene = super::PageScene::with_operation_limit(0);
+        let separator_result = super::draw_section_column_separators(
+            &mut separator_scene,
+            geom,
+            &SectionSetup {
+                columns: Some(2),
+                ..SectionSetup::default()
+            },
+            super::SectionColumnPaintHints {
+                gap_pt: Some(40.0),
+                layout: None,
+                separator: true,
+            },
+        );
+
+        for (result, scene) in [
+            (junction_result, junction_scene),
+            (separator_result, separator_scene),
+        ] {
+            assert_eq!(
+                result
+                    .expect_err("rectangle operation ceiling must propagate")
+                    .to_string(),
+                "render failed: page scene exceeds the 0-operation limit"
+            );
+            assert!(scene.operations.is_empty());
+        }
+    }
+
+    #[test]
+    fn running_surface_static_and_dynamic_glyphs_enter_the_page_scene() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let text = "Header 1";
+        let ranges = [(0, text.len(), CharProps::default())];
+        let dynamic_ranges = [(
+            "Header ".len(),
+            text.len(),
+            super::DynamicTextRun {
+                kind: super::DynamicTextKind::PageNumber,
+                page_field_index: None,
+                number_format: None,
+                text_format: None,
+                props: CharProps::default(),
+            },
+        )];
+        let line = shape(
+            text,
+            StyledText {
+                ranges: &ranges,
+                links: &[],
+                dynamic_ranges: &dynamic_ranges,
+            },
+            None,
+            parley::layout::Alignment::Start,
+            300.0,
+            &mut tcx,
+        )
+        .into_iter()
+        .next()
+        .expect("running text shapes");
+        assert_eq!(line.runs.len(), 2);
+
+        let geom = Geom::from_setup(&PageSetup::default());
+        let mut scene = super::PageScene::default();
+        let consumed = super::draw_running_surface_items(
+            &mut scene,
+            vec![super::RunningSurfaceItem::Line(line)],
+            super::RunningSurfacePaintPlacement {
+                vertical_bounds: (24.0, 100.0),
+                geom,
+                page_number: PageDisplayNumber {
+                    value: 7,
+                    format: Some(crate::model::PageNumberFormat::UpperRoman.into()),
+                },
+            },
+            &mut tcx,
+        )
+        .expect("running text paints");
+
+        assert!(consumed > 24.0);
+        assert_eq!(scene_glyph_texts(&scene), ["Header 1", "VII"]);
+        assert_eq!(scene.font_resources.len(), 1);
+        assert_eq!(scene.operations.len(), 2);
+    }
+
+    #[test]
+    fn running_surface_glyphs_propagate_page_scene_limits() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let text = "Bounded";
+        let line = shape(
+            text,
+            StyledText::plain(&[(0, text.len(), CharProps::default())]),
+            None,
+            parley::layout::Alignment::Start,
+            300.0,
+            &mut tcx,
+        )
+        .into_iter()
+        .next()
+        .expect("running text shapes");
+        let geom = Geom::from_setup(&PageSetup::default());
+        let mut scene = super::PageScene::with_operation_limit(0);
+        let result = super::draw_running_surface_items(
+            &mut scene,
+            vec![super::RunningSurfaceItem::Line(line)],
+            super::RunningSurfacePaintPlacement {
+                vertical_bounds: (24.0, 100.0),
+                geom,
+                page_number: PageDisplayNumber::decimal(1),
+            },
+            &mut tcx,
+        );
+
+        let error = result.expect_err("glyph operation ceiling must propagate");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-operation limit"
+        );
+        assert!(scene.operations.is_empty());
+        assert!(scene.font_resources.is_empty());
+        assert_eq!(scene.glyph_count, 0);
+    }
+
+    #[test]
+    fn running_line_background_and_leaders_enter_the_scene_before_glyphs() {
+        let shading = rgb::Color::new(0xEE, 0xF1, 0xF4);
+        let mut lines = paragraph_lines_with_marker_and_tabs(
+            ParaProps {
+                shading: Some(Color::rgb(0xEE, 0xF1, 0xF4)),
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "A\tB\tC".to_string(),
+                ..Run::default()
+            }],
+            None,
+            &[
+                TabStop {
+                    position_pt: 100.0,
+                    alignment: TabAlignment::Right,
+                    leader: TabLeader::Dot,
+                },
+                TabStop {
+                    position_pt: 140.0,
+                    alignment: TabAlignment::Bar,
+                    leader: TabLeader::None,
+                },
+            ],
+        );
+        assert_eq!(lines.len(), 1);
+        let line = lines.remove(0);
+        assert_eq!(line.leaders.len(), 2);
+
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let top = 24.0;
+        let x_abs = geom.left + line.x_indent;
+        let baseline = top + line.baseline;
+        let background = line.background.expect("paragraph shading reaches the line");
+        let mut expected = vec![(
+            super::SceneRect::new(x_abs, top, background.width, line.height).unwrap(),
+            shading,
+        )];
+        for leader in &line.leaders {
+            let start = x_abs + leader.start.min(leader.end);
+            let end = x_abs + leader.start.max(leader.end);
+            match leader.style {
+                TabLeader::Dot => {
+                    let mut x = start;
+                    let mut segments = 0;
+                    while x < end && segments < 2048 {
+                        let width = 1.0_f32.min(end - x);
+                        expected.push((
+                            super::SceneRect::new(x, baseline - 1.0, width, 1.0).unwrap(),
+                            leader.color,
+                        ));
+                        x += 4.0;
+                        segments += 1;
+                    }
+                }
+                TabLeader::Bar => expected.push((
+                    super::SceneRect::new(
+                        start - 0.4,
+                        top + 1.0,
+                        0.8,
+                        (line.height - 2.0).max(0.8),
+                    )
+                    .unwrap(),
+                    leader.color,
+                )),
+                style => panic!("unexpected test leader style: {style:?}"),
+            }
+        }
+
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut scene = super::PageScene::default();
+        super::draw_running_surface_items(
+            &mut scene,
+            vec![super::RunningSurfaceItem::Line(line)],
+            super::RunningSurfacePaintPlacement {
+                vertical_bounds: (top, 200.0),
+                geom,
+                page_number: PageDisplayNumber::decimal(1),
+            },
+            &mut tcx,
+        )
+        .expect("running line paints");
+
+        let first_glyph = scene
+            .operations
+            .iter()
+            .position(|operation| matches!(operation, super::PageSceneOp::GlyphRun(_)))
+            .expect("line text enters the scene");
+        assert_eq!(first_glyph, expected.len());
+        let actual = scene.operations[..first_glyph]
+            .iter()
+            .map(|operation| match operation {
+                super::PageSceneOp::FillRect { rect, color } => (*rect, *color),
+                operation => panic!("line paint must use fill rectangles: {operation:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn line_paint_projects_every_bounded_leader_style() {
+        let mut line = paragraph_lines(
+            ParaProps::default(),
+            vec![Run {
+                text: "line".to_string(),
+                ..Run::default()
+            }],
+        )
+        .remove(0);
+        line.height = 12.0;
+        line.background = None;
+        line.runs.clear();
+        let color = rgb::Color::new(0x12, 0x34, 0x56);
+        line.leaders = vec![
+            super::TabLeaderSpan {
+                start: 0.0,
+                end: 9.0,
+                style: TabLeader::Dot,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: 20.0,
+                end: 31.0,
+                style: TabLeader::Hyphen,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: 40.0,
+                end: 50.0,
+                style: TabLeader::Underscore,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: 60.0,
+                end: 71.0,
+                style: TabLeader::Heavy,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: 80.0,
+                end: 91.0,
+                style: TabLeader::MiddleDot,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: 100.0,
+                end: 110.0,
+                style: TabLeader::None,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: 120.0,
+                end: 120.0,
+                style: TabLeader::Bar,
+                color,
+            },
+            super::TabLeaderSpan {
+                start: f32::NAN,
+                end: 10.0,
+                style: TabLeader::Dot,
+                color,
+            },
+        ];
+
+        let mut scene = super::PageScene::default();
+        super::project_page_scene_line_paint(&mut scene, &line, 10.0, 20.0, 30.0)
+            .expect("leader styles paint");
+
+        let expected = [
+            (10.0, 29.0, 1.0, 1.0),
+            (14.0, 29.0, 1.0, 1.0),
+            (18.0, 29.0, 1.0, 1.0),
+            (30.0, 28.8, 3.0, 0.8),
+            (36.0, 28.8, 3.0, 0.8),
+            (50.0, 31.0, 10.0, 0.8),
+            (70.0, 28.2, 4.0, 1.6),
+            (76.0, 28.2, 4.0, 1.6),
+            (90.0, 28.2, 2.0, 1.8),
+            (95.0, 28.2, 2.0, 1.8),
+            (100.0, 28.2, 1.0, 1.8),
+            (10.0 + 120.0 - 0.4, 21.0, 0.8, 10.0),
+        ];
+        assert_eq!(scene.operations.len(), expected.len());
+        for (operation, (x, y, width, height)) in scene.operations.iter().zip(expected) {
+            let super::PageSceneOp::FillRect {
+                rect,
+                color: actual_color,
+            } = operation
+            else {
+                panic!("leader style must project as a rectangle: {operation:?}");
+            };
+            assert_eq!(*rect, super::SceneRect::new(x, y, width, height).unwrap());
+            assert_eq!(*actual_color, color);
+        }
+    }
+
+    #[test]
+    fn line_background_consumes_scene_capacity_before_glyphs() {
+        let mut lines = paragraph_lines(
+            ParaProps {
+                shading: Some(Color::rgb(0xEE, 0xF1, 0xF4)),
+                ..ParaProps::default()
+            },
+            vec![Run {
+                text: "Bounded line".to_string(),
+                ..Run::default()
+            }],
+        );
+        let line = lines.remove(0);
+        let geom = Geom::from_setup(&PageSetup::default());
+        let expected_background = super::SceneRect::new(
+            geom.left + line.x_indent,
+            24.0,
+            line.background.expect("line is shaded").width,
+            line.height,
+        )
+        .unwrap();
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut scene = super::PageScene::with_operation_limit(1);
+        let result = super::draw_running_surface_items(
+            &mut scene,
+            vec![super::RunningSurfaceItem::Line(line)],
+            super::RunningSurfacePaintPlacement {
+                vertical_bounds: (24.0, 100.0),
+                geom,
+                page_number: PageDisplayNumber::decimal(1),
+            },
+            &mut tcx,
+        );
+
+        let error = result.expect_err("glyph must exceed capacity after the background");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 1-operation limit"
+        );
+        assert_eq!(
+            scene.operations,
+            vec![super::PageSceneOp::FillRect {
+                rect: expected_background,
+                color: rgb::Color::new(0xEE, 0xF1, 0xF4),
+            }]
+        );
+        assert!(scene.font_resources.is_empty());
+        assert_eq!(scene.glyph_count, 0);
+    }
+
+    #[test]
+    fn markerless_line_segment_enters_the_scene_before_the_legend() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::LineNoMarkers,
+            categories: vec!["Low".to_string(), "High".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![0.0, 10.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 14);
+        let super::PageSceneOp::FillPolygon { points, color } = &paint[12] else {
+            panic!("line segment must precede the legend: {:?}", paint[12]);
+        };
+        let expected = [
+            (144.137_74, 164.483),
+            (247.137_74, 28.482_996),
+            (245.862_26, 27.517_004),
+            (142.862_26, 163.517),
+        ];
+        assert_eq!(points.len(), expected.len());
+        for (point, (x, y)) in points.iter().zip(expected) {
+            assert_close(point.x, x);
+            assert_close(point.y, y);
+        }
+        assert_eq!(*color, super::chart_series_color(0));
+        let super::PageSceneOp::FillRect {
+            rect,
+            color: legend_color,
+        } = &paint[13]
+        else {
+            panic!("line legend must remain last: {:?}", paint[13]);
+        };
+        assert_eq!(*rect, super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap());
+        assert_eq!(*legend_color, super::chart_series_color(0));
+        assert_eq!(
+            scene_glyph_texts(&scene),
+            vec!["0", "2.5", "5", "7.5", "10", "Low", "High", "Series"]
+        );
+    }
+
+    #[test]
+    fn area_fill_polygon_enters_the_scene_before_outline_and_markers() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Area,
+            categories: vec!["Low".to_string(), "High".to_string(), "Mid".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![0.0, 10.0, 5.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 19);
+        let super::PageSceneOp::FillPolygon { points, color } = &paint[12] else {
+            panic!("area fill must precede its outline: {:?}", paint[12]);
+        };
+        let expected = [
+            (126.333_33, 164.0),
+            (126.333_33, 164.0),
+            (195.0, 28.0),
+            (263.666_66, 96.0),
+            (263.666_66, 164.0),
+        ];
+        assert_eq!(points.len(), expected.len());
+        for (point, (x, y)) in points.iter().zip(expected) {
+            assert_close(point.x, x);
+            assert_close(point.y, y);
+        }
+        assert_eq!(*color, super::chart_series_color(0));
+        assert_eq!(
+            paint[13],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(124.333_33, 162.0, 4.0, 4.0).unwrap(),
+                color: super::chart_series_color(0),
+            }
+        );
+        assert_eq!(
+            paint[18],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap(),
+                color: super::chart_series_color(0),
+            }
+        );
+        assert_eq!(
+            scene_glyph_texts(&scene),
+            vec!["0", "2.5", "5", "7.5", "10", "Low", "High", "Mid", "Series"]
+        );
+    }
+
+    #[test]
+    fn area_shape_preserves_short_series_and_path_point_limits() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+        let mut scene = super::PageScene::with_path_point_limit(3);
+
+        super::fill_area_shape(&mut scene, &[], 20.0, color).expect("empty area is ignored");
+        super::fill_area_shape(&mut scene, &[(10.0, 5.0)], f32::NAN, color)
+            .expect("non-finite area is ignored");
+        assert!(scene.operations.is_empty());
+        assert_eq!(scene.path_point_count, 0);
+
+        super::fill_area_shape(&mut scene, &[(10.0, 5.0)], 20.0, color)
+            .expect("one-point area keeps its closed path");
+        assert_eq!(scene.path_point_count, 3);
+        assert_eq!(
+            scene.operations,
+            vec![super::PageSceneOp::FillPolygon {
+                points: vec![
+                    super::ScenePoint { x: 10.0, y: 20.0 },
+                    super::ScenePoint { x: 10.0, y: 5.0 },
+                    super::ScenePoint { x: 10.0, y: 20.0 },
+                ]
+                .into_boxed_slice(),
+                color,
+            }]
+        );
+
+        let unchanged = (scene.operations.len(), scene.path_point_count);
+        let error = super::fill_area_shape(&mut scene, &[(10.0, 5.0)], 20.0, color)
+            .expect_err("point ceiling rejects another area");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 3-path-point limit"
+        );
+        assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
+    }
+
+    #[test]
+    fn bubble_circles_enter_the_scene_before_the_legend() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Bubble,
+            categories: vec!["Small".to_string(), "Large".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![0.0, 10.0],
+                bubble_sizes: vec![1.0, 4.0],
+            }],
+            ..Chart::default()
+        };
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 15);
+        let expected = [
+            [
+                (150.5, 164.0),
+                (143.5, 171.0),
+                (136.5, 164.0),
+                (143.5, 157.0),
+            ],
+            [(260.5, 28.0), (246.5, 42.0), (232.5, 28.0), (246.5, 14.0)],
+        ];
+        for (operation, cardinal_points) in paint[12..14].iter().zip(expected) {
+            let super::PageSceneOp::FillPolygon { points, color } = operation else {
+                panic!("bubble must be a sampled polygon: {operation:?}");
+            };
+            assert_eq!(points.len(), 29);
+            for (point_index, (x, y)) in [0, 7, 14, 21].into_iter().zip(cardinal_points) {
+                assert_close(points[point_index].x, x);
+                assert_close(points[point_index].y, y);
+            }
+            assert_close(points[28].x, points[0].x);
+            assert_close(points[28].y, points[0].y);
+            assert_eq!(*color, super::chart_series_color(0));
+        }
+        assert_eq!(
+            paint[14],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap(),
+                color: super::chart_series_color(0),
+            }
+        );
+        let labels = scene_glyph_texts(&scene);
+        assert_eq!(labels.len(), 8);
+        assert_eq!(&labels[5..], ["Small", "Large", "Series"]);
+    }
+
+    #[test]
+    fn circle_sampling_is_finite_and_path_point_bounded() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+        let mut scene = super::PageScene::with_path_point_limit(29);
+
+        super::fill_circle_color(&mut scene, 20.0, 20.0, 0.0, color)
+            .expect("zero-radius circle is ignored");
+        super::fill_circle_color(&mut scene, 20.0, 20.0, f32::NAN, color)
+            .expect("non-finite circle is ignored");
+        assert!(scene.operations.is_empty());
+        assert_eq!(scene.path_point_count, 0);
+
+        super::fill_circle_color(&mut scene, 20.0, 20.0, 5.0, color)
+            .expect("one sampled circle fits the exact point budget");
+        assert_eq!(scene.path_point_count, 29);
+        let super::PageSceneOp::FillPolygon {
+            points,
+            color: actual_color,
+        } = &scene.operations[0]
+        else {
+            panic!(
+                "circle must project as a polygon: {:?}",
+                scene.operations[0]
+            );
+        };
+        assert_eq!(points.len(), 29);
+        assert_eq!(*actual_color, color);
+
+        let unchanged = (scene.operations.len(), scene.path_point_count);
+        let error = super::fill_circle_color(&mut scene, 20.0, 20.0, 5.0, color)
+            .expect_err("point ceiling rejects another circle");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 29-path-point limit"
+        );
+        assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
+    }
+
+    #[test]
+    fn pie_fan_sectors_enter_the_scene_before_legends() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Pie,
+            categories: vec!["Left".to_string(), "Right".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![1.0, 1.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        assert_eq!(scene.operations.len(), 11);
+        for (index, operation) in scene.operations[5..7].iter().enumerate() {
+            let super::PageSceneOp::FillPolygon { points, color } = operation else {
+                panic!("pie slice must be a fan polygon: {operation:?}");
+            };
+            assert_eq!(points.len(), 26);
+            assert_close(points[0].x, 195.0);
+            assert_close(points[0].y, 96.0);
+            assert_eq!(*color, super::chart_series_color(index));
+        }
+        let first = match &scene.operations[5] {
+            super::PageSceneOp::FillPolygon { points, .. } => points,
+            operation => panic!("first pie slice must be a polygon: {operation:?}"),
+        };
+        for (point_index, (x, y)) in
+            [1, 13, 25]
+                .into_iter()
+                .zip([(195.0, 38.88), (252.12, 96.0), (195.0, 153.12)])
+        {
+            assert_close(first[point_index].x, x);
+            assert_close(first[point_index].y, y);
+        }
+        let super::PageSceneOp::FillRect { rect, color } = &scene.operations[7] else {
+            panic!("pie legend must follow slices: {:?}", scene.operations[7]);
+        };
+        assert_eq!(*rect, super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap());
+        assert_eq!(*color, super::chart_series_color(0));
+        for (operation_index, label) in [(8, "Left"), (10, "Right")] {
+            let super::PageSceneOp::GlyphRun(run) = &scene.operations[operation_index] else {
+                panic!(
+                    "pie legend label must follow its swatch: {:?}",
+                    scene.operations[operation_index]
+                );
+            };
+            assert_eq!(run.font, super::SceneFontId(0));
+            assert_eq!(run.text.as_ref(), label);
+            assert_eq!(run.glyphs.len(), label.len());
+            assert_eq!(run.color, rgb::Color::new(0x25, 0x2D, 0x36));
+            assert!(run.highlight.is_none());
+            assert!(run.underline.is_none());
+            assert!(run.strikethrough.is_none());
+            assert!(run.link.is_none());
+            assert!(!run.is_rtl);
+        }
+        let super::PageSceneOp::FillRect { rect, color } = &scene.operations[9] else {
+            panic!(
+                "second pie legend swatch must follow the first label: {:?}",
+                scene.operations[9]
+            );
+        };
+        assert_eq!(
+            *rect,
+            super::SceneRect::new(145.4, 189.0, 6.0, 6.0).unwrap()
+        );
+        assert_eq!(*color, super::chart_series_color(1));
+        assert_eq!(scene.font_resources.len(), 1);
+        assert_eq!(scene.glyph_count, 9);
+    }
+
+    #[test]
+    fn sunburst_ring_sectors_enter_the_scene_after_the_hub() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Sunburst,
+            categories: vec!["Left".to_string(), "Right".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![1.0, 1.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        assert_eq!(scene.operations.len(), 10);
+        let expected_colors = [
+            super::chart_series_color(0),
+            rgb::Color::new(0xFF, 0xFF, 0xFF),
+            super::chart_series_color(1),
+            rgb::Color::new(0xFF, 0xFF, 0xFF),
+        ];
+        for (operation, expected_color) in scene.operations[6..10].iter().zip(expected_colors) {
+            let super::PageSceneOp::FillPolygon { points, color } = operation else {
+                panic!("sunburst ring must be an annular polygon: {operation:?}");
+            };
+            assert_eq!(points.len(), 50);
+            assert_eq!(*color, expected_color);
+        }
+        let first = match &scene.operations[6] {
+            super::PageSceneOp::FillPolygon { points, .. } => points,
+            operation => panic!("first sunburst ring must be a polygon: {operation:?}"),
+        };
+        for (point_index, (x, y)) in [0, 12, 24, 25, 49].into_iter().zip([
+            (195.0, 36.16),
+            (254.84, 96.0),
+            (195.0, 155.84),
+            (195.0, 122.329_6),
+            (195.0, 69.670_4),
+        ]) {
+            assert_close(first[point_index].x, x);
+            assert_close(first[point_index].y, y);
+        }
+    }
+
+    #[test]
+    fn sampled_sectors_preserve_invalid_inputs_and_path_point_limits() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+        let mut scene = super::PageScene::with_path_point_limit(26);
+
+        super::fill_pie_slice(
+            &mut scene,
+            super::PieSlice {
+                cx: 20.0,
+                cy: 20.0,
+                radius: 0.0,
+                start_angle: 0.0,
+                sweep: 1.0,
+            },
+            color,
+        )
+        .expect("zero-radius fan is ignored");
+        super::fill_pie_slice(
+            &mut scene,
+            super::PieSlice {
+                cx: 20.0,
+                cy: 20.0,
+                radius: 5.0,
+                start_angle: 0.0,
+                sweep: f32::NAN,
+            },
+            color,
+        )
+        .expect("non-finite fan is ignored");
+        super::fill_ring_slice(
+            &mut scene,
+            super::RingSlice {
+                cx: 20.0,
+                cy: 20.0,
+                inner_radius: 5.0,
+                outer_radius: 5.0,
+                start_angle: 0.0,
+                sweep: 1.0,
+            },
+            color,
+        )
+        .expect("zero-width ring is ignored");
+        assert!(scene.operations.is_empty());
+
+        super::fill_pie_slice(
+            &mut scene,
+            super::PieSlice {
+                cx: 20.0,
+                cy: 20.0,
+                radius: 5.0,
+                start_angle: -std::f32::consts::FRAC_PI_2,
+                sweep: std::f32::consts::PI,
+            },
+            color,
+        )
+        .expect("half-circle fan fits 26 points");
+        assert_eq!(scene.path_point_count, 26);
+        let unchanged = (scene.operations.len(), scene.path_point_count);
+        let error = super::fill_ring_slice(
+            &mut scene,
+            super::RingSlice {
+                cx: 20.0,
+                cy: 20.0,
+                inner_radius: 2.0,
+                outer_radius: 5.0,
+                start_angle: -std::f32::consts::FRAC_PI_2,
+                sweep: std::f32::consts::PI,
+            },
+            color,
+        )
+        .expect_err("point ceiling rejects a 50-point ring");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 26-path-point limit"
+        );
+        assert_eq!((scene.operations.len(), scene.path_point_count), unchanged);
+
+        let mut ring_scene = super::PageScene::with_path_point_limit(50);
+        super::fill_ring_slice(
+            &mut ring_scene,
+            super::RingSlice {
+                cx: 20.0,
+                cy: 20.0,
+                inner_radius: 2.0,
+                outer_radius: 5.0,
+                start_angle: -std::f32::consts::FRAC_PI_2,
+                sweep: std::f32::consts::PI,
+            },
+            color,
+        )
+        .expect("half-circle ring fits 50 points");
+        assert_eq!(ring_scene.path_point_count, 50);
+        let super::PageSceneOp::FillPolygon { points, .. } = &ring_scene.operations[0] else {
+            panic!(
+                "ring must project as a polygon: {:?}",
+                ring_scene.operations[0]
+            );
+        };
+        assert_eq!(points.len(), 50);
+    }
+
+    #[test]
+    fn chart_3d_shape_bodies_enter_the_scene_before_cylinder_caps() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+        let mut scene = super::PageScene::default();
+
+        super::fill_chart_bar_shape(
+            &mut scene,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 40.0,
+                h: 12.0,
+            },
+            ChartShape::Cylinder,
+            color,
+        )
+        .expect("horizontal cylinder paints");
+        super::fill_chart_bar_shape(
+            &mut scene,
+            super::ChartRect {
+                x: 60.0,
+                y: 20.0,
+                w: 20.0,
+                h: 12.0,
+            },
+            ChartShape::Pyramid,
+            color,
+        )
+        .expect("horizontal pyramid paints");
+        super::fill_chart_bar_shape(
+            &mut scene,
+            super::ChartRect {
+                x: 90.0,
+                y: 20.0,
+                w: 20.0,
+                h: 12.0,
+            },
+            ChartShape::Box,
+            color,
+        )
+        .expect("horizontal box paints");
+        super::fill_chart_column_shape(
+            &mut scene,
+            super::ChartRect {
+                x: 10.0,
+                y: 50.0,
+                w: 12.0,
+                h: 40.0,
+            },
+            ChartShape::Cylinder,
+            color,
+        )
+        .expect("vertical cylinder paints");
+        super::fill_chart_column_shape(
+            &mut scene,
+            super::ChartRect {
+                x: 30.0,
+                y: 50.0,
+                w: 12.0,
+                h: 20.0,
+            },
+            ChartShape::Pyramid,
+            color,
+        )
+        .expect("vertical pyramid paints");
+        super::fill_chart_column_shape(
+            &mut scene,
+            super::ChartRect {
+                x: 50.0,
+                y: 50.0,
+                w: 12.0,
+                h: 20.0,
+            },
+            ChartShape::Box,
+            color,
+        )
+        .expect("vertical box paints");
+
+        assert_eq!(scene.operations.len(), 10);
+        assert_eq!(scene.path_point_count, 122);
+        assert_eq!(
+            scene.operations[0],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(13.0, 20.0, 34.0, 12.0).unwrap(),
+                color,
+            }
+        );
+        for index in [1, 2, 6, 7] {
+            let super::PageSceneOp::FillPolygon {
+                points,
+                color: actual_color,
+            } = &scene.operations[index]
+            else {
+                panic!(
+                    "cylinder cap must be a polygon: {:?}",
+                    scene.operations[index]
+                );
+            };
+            assert_eq!(points.len(), 29);
+            assert_eq!(*actual_color, color);
+        }
+        assert_eq!(
+            scene.operations[3],
+            super::PageSceneOp::FillPolygon {
+                points: vec![
+                    super::ScenePoint { x: 60.0, y: 20.0 },
+                    super::ScenePoint { x: 60.0, y: 32.0 },
+                    super::ScenePoint { x: 80.0, y: 26.0 },
+                ]
+                .into_boxed_slice(),
+                color,
+            }
+        );
+        assert_eq!(
+            scene.operations[4],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(90.0, 20.0, 20.0, 12.0).unwrap(),
+                color,
+            }
+        );
+        assert_eq!(
+            scene.operations[5],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(10.0, 53.0, 12.0, 34.0).unwrap(),
+                color,
+            }
+        );
+        assert_eq!(
+            scene.operations[8],
+            super::PageSceneOp::FillPolygon {
+                points: vec![
+                    super::ScenePoint { x: 36.0, y: 50.0 },
+                    super::ScenePoint { x: 30.0, y: 70.0 },
+                    super::ScenePoint { x: 42.0, y: 70.0 },
+                ]
+                .into_boxed_slice(),
+                color,
+            }
+        );
+        assert_eq!(
+            scene.operations[9],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(50.0, 50.0, 12.0, 20.0).unwrap(),
+                color,
+            }
+        );
+    }
+
+    #[test]
+    fn chart_3d_shape_bodies_propagate_scene_limits() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+
+        let mut operation_limited = super::PageScene::with_operation_limit(0);
+        let error = super::fill_chart_bar_shape(
+            &mut operation_limited,
+            super::ChartRect {
+                x: 10.0,
+                y: 10.0,
+                w: 20.0,
+                h: 10.0,
+            },
+            ChartShape::Box,
+            color,
+        )
+        .expect_err("box body must honor the operation limit");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-operation limit"
+        );
+        assert!(operation_limited.operations.is_empty());
+
+        let mut point_limited = super::PageScene::with_path_point_limit(2);
+        let error = super::fill_chart_column_shape(
+            &mut point_limited,
+            super::ChartRect {
+                x: 10.0,
+                y: 30.0,
+                w: 12.0,
+                h: 20.0,
+            },
+            ChartShape::Pyramid,
+            color,
+        )
+        .expect_err("pyramid body must honor the path-point limit");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 2-path-point limit"
+        );
+        assert!(point_limited.operations.is_empty());
+        assert_eq!(point_limited.path_point_count, 0);
+
+        let mut invalid = super::PageScene::default();
+        super::fill_chart_bar_shape(
+            &mut invalid,
+            super::ChartRect {
+                x: 10.0,
+                y: 60.0,
+                w: 0.0,
+                h: 10.0,
+            },
+            ChartShape::Box,
+            color,
+        )
+        .expect("invalid body remains a no-op");
+        assert!(invalid.operations.is_empty());
+    }
+
+    #[test]
+    fn degenerate_line_segment_projects_a_bounded_square() {
+        let color = rgb::Color::new(0x24, 0x68, 0xAC);
+        let mut scene = super::PageScene::default();
+
+        super::fill_line_segment(&mut scene, (12.0, 14.0), (12.0, 14.0), 2.0, color)
+            .expect("degenerate line paints a square");
+        assert_eq!(
+            scene.operations,
+            vec![super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(11.0, 13.0, 2.0, 2.0).unwrap(),
+                color,
+            }]
+        );
+
+        let mut limited = super::PageScene::with_operation_limit(0);
+        let error = super::fill_line_segment(&mut limited, (12.0, 14.0), (12.0, 14.0), 2.0, color)
+            .expect_err("scene operation ceiling rejects degenerate line");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 0-operation limit"
+        );
+        assert!(limited.operations.is_empty());
+    }
+
+    #[test]
+    fn scatter_marker_dispatch_rectangles_enter_the_scene_in_paint_order() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::ScatterMarkers,
+            categories: vec!["Q1".to_string(), "Q2".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![12.5, 27.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
+        let axis = rgb::Color::new(0x5D, 0x66, 0x70);
+        let series = super::chart_series_color(0);
+        let expected = [
+            (92.0, 164.0, 206.0, 0.35, grid),
+            (92.0, 130.0, 206.0, 0.35, grid),
+            (92.0, 96.0, 206.0, 0.35, grid),
+            (92.0, 62.0, 206.0, 0.35, grid),
+            (92.0, 28.0, 206.0, 0.35, grid),
+            (92.0, 164.0, 206.0, 0.8, axis),
+            (92.0, 28.0, 0.8, 136.0, axis),
+            (141.0, 98.537_03, 5.0, 5.0, series),
+            (244.0, 25.5, 5.0, 5.0, series),
+            (92.0, 189.0, 6.0, 6.0, series),
+        ];
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 5 + expected.len());
+        for (operation, (x, y, width, height, color)) in paint[5..].iter().zip(expected) {
+            let super::PageSceneOp::FillRect {
+                rect,
+                color: actual_color,
+            } = operation
+            else {
+                panic!("dispatcher operation must be a rectangle: {operation:?}");
+            };
+            assert_close(rect.x, x);
+            assert_close(rect.y, y);
+            assert_close(rect.width, width);
+            assert_close(rect.height, height);
+            assert_eq!(*actual_color, color);
+        }
+        let labels = scene_glyph_texts(&scene);
+        assert_eq!(labels.len(), 8);
+        assert_eq!(&labels[5..], ["Q1", "Q2", "Series"]);
+    }
+
+    #[test]
+    fn waterfall_rectangles_enter_the_scene_in_paint_order() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Waterfall,
+            categories: vec![
+                "Start".to_string(),
+                "Change".to_string(),
+                "Total".to_string(),
+            ],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![10.0, -4.0, 12.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
+        let axis = rgb::Color::new(0x5D, 0x66, 0x70);
+        let total = rgb::Color::new(0x3B, 0x6E, 0xA8);
+        let negative = rgb::Color::new(0xC7, 0x52, 0x4A);
+        let connector = rgb::Color::new(0x9A, 0xA4, 0xAE);
+        let expected = [
+            (92.0, 164.0, 206.0, 0.35, grid),
+            (92.0, 130.0, 206.0, 0.35, grid),
+            (92.0, 96.0, 206.0, 0.35, grid),
+            (92.0, 62.0, 206.0, 0.35, grid),
+            (92.0, 28.0, 206.0, 0.35, grid),
+            (92.0, 164.0, 206.0, 0.8, axis),
+            (92.0, 28.0, 0.8, 136.0, axis),
+            (106.42, 50.666_67, 39.826_668, 113.333_33, total),
+            (175.086_67, 50.666_67, 39.826_668, 45.333_33, negative),
+            (146.246_67, 50.666_67, 28.84, 0.5, connector),
+            (243.753_33, 28.0, 39.826_668, 136.0, total),
+            (214.913_33, 164.0, 28.84, 0.5, connector),
+        ];
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 5 + expected.len());
+        for (operation, (x, y, width, height, color)) in paint[5..].iter().zip(expected) {
+            let super::PageSceneOp::FillRect {
+                rect,
+                color: actual_color,
+            } = operation
+            else {
+                panic!("waterfall operation must be a rectangle: {operation:?}");
+            };
+            assert_close(rect.x, x);
+            assert_close(rect.y, y);
+            assert_close(rect.width, width);
+            assert_close(rect.height, height);
+            assert_eq!(*actual_color, color);
+        }
+        assert_eq!(
+            scene_glyph_texts(&scene),
+            vec!["0", "3", "6", "9", "12", "Start", "Change", "Total"]
+        );
+    }
+
+    #[test]
+    fn treemap_rectangles_enter_the_scene_in_paint_order() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Treemap,
+            categories: vec!["Primary".to_string(), "Secondary".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![3.0, 1.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let white = rgb::Color::new(0xFF, 0xFF, 0xFF);
+        let first = super::chart_series_color(0);
+        let second = super::chart_series_color(1);
+        let expected = [
+            (92.0, 28.0, 154.5, 136.0, first),
+            (92.0, 28.0, 154.5, 0.75, white),
+            (92.0, 163.25, 154.5, 0.75, white),
+            (92.0, 28.0, 0.75, 136.0, white),
+            (245.75, 28.0, 0.75, 136.0, white),
+            (246.5, 28.0, 51.5, 136.0, second),
+            (246.5, 28.0, 51.5, 0.75, white),
+            (246.5, 163.25, 51.5, 0.75, white),
+            (246.5, 28.0, 0.75, 136.0, white),
+            (297.25, 28.0, 0.75, 136.0, white),
+        ];
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 5 + expected.len());
+        for (operation, (x, y, width, height, color)) in paint[5..].iter().zip(expected) {
+            let super::PageSceneOp::FillRect {
+                rect,
+                color: actual_color,
+            } = operation
+            else {
+                panic!("treemap operation must be a rectangle: {operation:?}");
+            };
+            assert_close(rect.x, x);
+            assert_close(rect.y, y);
+            assert_close(rect.width, width);
+            assert_close(rect.height, height);
+            assert_eq!(*actual_color, color);
+        }
+        assert_eq!(scene_glyph_texts(&scene), vec!["Primary", "Secondary"]);
+    }
+
+    #[test]
+    fn box_whisker_rectangles_enter_the_scene_in_paint_order() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::BoxWhisker,
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![0.0, 10.0, 20.0, 30.0, 40.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
+        let line = rgb::Color::new(0x35, 0x43, 0x52);
+        let fill = rgb::Color::new(0x7A, 0xA0, 0xC8);
+        let expected = [
+            (92.0, 164.0, 206.0, 0.35, grid),
+            (92.0, 130.0, 206.0, 0.35, grid),
+            (92.0, 96.0, 206.0, 0.35, grid),
+            (92.0, 62.0, 206.0, 0.35, grid),
+            (92.0, 28.0, 206.0, 0.35, grid),
+            (194.5, 28.0, 1.0, 136.0, line),
+            (174.812, 28.0, 40.376, 1.0, line),
+            (174.812, 164.0, 40.376, 1.0, line),
+            (166.16, 62.0, 57.68, 68.0, fill),
+            (166.16, 62.0, 57.68, 1.0, line),
+            (166.16, 130.0, 57.68, 1.0, line),
+            (166.16, 62.0, 1.0, 68.0, line),
+            (223.84, 62.0, 1.0, 68.0, line),
+            (166.16, 96.0, 57.68, 1.3, line),
+        ];
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 5 + expected.len());
+        for (operation, (x, y, width, height, color)) in paint[5..].iter().zip(expected) {
+            let super::PageSceneOp::FillRect {
+                rect,
+                color: actual_color,
+            } = operation
+            else {
+                panic!("box-whisker operation must be a rectangle: {operation:?}");
+            };
+            assert_close(rect.x, x);
+            assert_close(rect.y, y);
+            assert_close(rect.width, width);
+            assert_close(rect.height, height);
+            assert_eq!(*actual_color, color);
+        }
+        assert_eq!(scene_glyph_texts(&scene), vec!["0", "10", "20", "30", "40"]);
+    }
+
+    #[test]
+    fn radar_lines_and_markers_enter_the_scene_before_the_legend() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::RadarWithMarkers,
+            categories: vec![
+                "North".to_string(),
+                "East".to_string(),
+                "South".to_string(),
+                "West".to_string(),
+            ],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![4.0, 4.0, 4.0, 4.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let grid = rgb::Color::new(0xE1, 0xE5, 0xEA);
+        let axis = rgb::Color::new(0x5D, 0x66, 0x70);
+        let series = super::chart_series_color(0);
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 34);
+        for operation in &paint[5..21] {
+            let super::PageSceneOp::FillPolygon { points, color } = operation else {
+                panic!("radar grid edge must be a polygon: {operation:?}");
+            };
+            assert_eq!(points.len(), 4);
+            assert_eq!(*color, grid);
+        }
+        for operation in &paint[21..25] {
+            let super::PageSceneOp::FillPolygon { points, color } = operation else {
+                panic!("radar spoke must be a polygon: {operation:?}");
+            };
+            assert_eq!(points.len(), 4);
+            assert_eq!(*color, axis);
+        }
+
+        let markers = [
+            (193.0, 45.04, 4.0, 4.0),
+            (241.96, 94.0, 4.0, 4.0),
+            (193.0, 142.96, 4.0, 4.0),
+            (144.04, 94.0, 4.0, 4.0),
+        ];
+        for (index, (x, y, width, height)) in markers.into_iter().enumerate() {
+            let line = &paint[25 + index * 2];
+            let super::PageSceneOp::FillPolygon { points, color } = line else {
+                panic!("radar series edge must precede its marker: {line:?}");
+            };
+            assert_eq!(points.len(), 4);
+            assert_eq!(*color, series);
+
+            let operation = &paint[26 + index * 2];
+            let super::PageSceneOp::FillRect {
+                rect,
+                color: actual_color,
+            } = operation
+            else {
+                panic!("radar marker must follow its edge: {operation:?}");
+            };
+            assert_close(rect.x, x);
+            assert_close(rect.y, y);
+            assert_close(rect.width, width);
+            assert_close(rect.height, height);
+            assert_eq!(*actual_color, series);
+        }
+        assert_eq!(
+            paint[33],
+            super::PageSceneOp::FillRect {
+                rect: super::SceneRect::new(92.0, 189.0, 6.0, 6.0).unwrap(),
+                color: series,
+            }
+        );
+        assert_eq!(
+            scene_glyph_texts(&scene),
+            vec!["North", "East", "South", "West", "Series"]
+        );
+    }
+
+    #[test]
+    fn funnel_quadrilaterals_enter_the_scene_in_paint_order() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let chart = Chart {
+            kind: crate::model::ChartKind::Funnel,
+            categories: vec![
+                "Leads".to_string(),
+                "Qualified".to_string(),
+                "Closed".to_string(),
+            ],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![4.0, 2.0, 1.0],
+                ..ChartSeries::default()
+            }],
+            ..Chart::default()
+        };
+        let mut scene = super::PageScene::default();
+
+        super::draw_authored_chart(
+            &mut scene,
+            &chart,
+            super::ChartRect {
+                x: 10.0,
+                y: 20.0,
+                w: 300.0,
+                h: 180.0,
+            },
+            &mut tcx,
+        )
+        .expect("chart paints");
+
+        let expected = [
+            (
+                [
+                    (104.36, 29.0),
+                    (285.64, 29.0),
+                    (240.32, 72.333_33),
+                    (149.68, 72.333_33),
+                ],
+                super::chart_series_color(0),
+            ),
+            (
+                [
+                    (149.68, 74.333_33),
+                    (240.32, 74.333_33),
+                    (217.66, 117.666_66),
+                    (172.34, 117.666_66),
+                ],
+                super::chart_series_color(1),
+            ),
+            (
+                [
+                    (172.34, 119.666_66),
+                    (217.66, 119.666_66),
+                    (211.315_2, 163.0),
+                    (178.684_8, 163.0),
+                ],
+                super::chart_series_color(2),
+            ),
+        ];
+        let paint = scene_without_glyph_runs(&scene);
+        assert_eq!(paint.len(), 5 + expected.len());
+        for (operation, (expected_points, expected_color)) in paint[5..].iter().zip(expected) {
+            let super::PageSceneOp::FillPolygon { points, color } = operation else {
+                panic!("funnel stage must be a polygon: {operation:?}");
+            };
+            assert_eq!(*color, expected_color);
+            assert_eq!(points.len(), expected_points.len());
+            for (point, (x, y)) in points.iter().zip(expected_points) {
+                assert_close(point.x, x);
+                assert_close(point.y, y);
+            }
+        }
+        assert_eq!(
+            scene_glyph_texts(&scene),
+            vec!["Leads", "Qualified", "Closed"]
+        );
+    }
+
+    #[test]
+    fn table_cell_paint_projects_ordered_backend_neutral_scene_operations() {
+        let shading = rgb::Color::new(0xE8, 0xEC, 0xF1);
+        let top = super::TableBorderPaint {
+            color: rgb::Color::new(0xC4, 0x21, 0x32),
+            width: 2.0,
+        };
+        let left = super::TableBorderPaint {
+            color: rgb::Color::new(0x1E, 0x7A, 0x46),
+            width: 3.0,
+        };
+        let bottom = super::TableBorderPaint {
+            color: rgb::Color::new(0x16, 0x5D, 0xA8),
+            width: 4.0,
+        };
+        let right = super::TableBorderPaint {
+            color: rgb::Color::new(0x7A, 0x3E, 0xA1),
+            width: 5.0,
+        };
+        let cell = super::CellBox {
+            x: 10.0,
+            right: 50.0,
+            width: 40.0,
+            lines: Vec::new(),
+            insets: super::CellInsets::zero(),
+            shading: Some(shading),
+            valign: VCell::Top,
+            border_edges: super::CellBorderEdges::outer(),
+        };
+        let borders = super::TableBorderPaints {
+            top,
+            left,
+            bottom,
+            right,
+            inside_h: super::TableBorderPaint::default(),
+            inside_v: super::TableBorderPaint::default(),
+        };
+        let mut scene = super::PageScene::default();
+
+        let appended = super::project_table_cell_paint(
+            &mut scene,
+            &cell,
+            super::TableCellPaintPlacement {
+                x_offset: 7.0,
+                top: 20.0,
+                bottom: 50.0,
+                row_height: 30.0,
+            },
+            borders,
+        )
+        .expect("bounded cell paint projects");
+
+        assert_eq!(appended, 0..5);
+        assert_eq!(
+            scene.operations,
+            vec![
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 17.0,
+                        y: 20.0,
+                        width: 40.0,
+                        height: 30.0,
+                    },
+                    color: shading,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 15.5,
+                        y: 19.0,
+                        width: 44.0,
+                        height: 2.0,
+                    },
+                    color: top.color,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 15.5,
+                        y: 48.0,
+                        width: 44.0,
+                        height: 4.0,
+                    },
+                    color: bottom.color,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 15.5,
+                        y: 19.0,
+                        width: 3.0,
+                        height: 33.0,
+                    },
+                    color: left.color,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: 54.5,
+                        y: 19.0,
+                        width: 5.0,
+                        height: 33.0,
+                    },
+                    color: right.color,
+                },
+            ]
+        );
+
+        let unchanged = scene.operations.len();
+        scene
+            .push_fill_rect(f32::NAN, 0.0, 1.0, 1.0, shading)
+            .expect("invalid rectangles are ignored");
+        scene
+            .push_fill_rect(0.0, 0.0, 0.0, 1.0, shading)
+            .expect("empty rectangles are ignored");
+        assert_eq!(scene.operations.len(), unchanged);
+
+        let mut limited = super::PageScene::with_operation_limit(1);
+        limited
+            .push_fill_rect(0.0, 0.0, 1.0, 1.0, shading)
+            .expect("first operation fits");
+        let error = limited
+            .push_fill_rect(1.0, 0.0, 1.0, 1.0, shading)
+            .expect_err("operation ceiling rejects overflow");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 1-operation limit"
+        );
+        assert_eq!(limited.operations.len(), 1);
+    }
+
+    #[test]
+    fn mixed_table_border_widths_extend_perpendicular_edges_exactly() {
+        let paint = |width| {
+            Some(super::TableBorderPaint {
+                color: rgb::Color::black(),
+                width,
+            })
+        };
+        let rects = super::cell_border_rects(
+            10.0,
+            20.0,
+            16.0,
+            24.0,
+            super::CellBorderPaints {
+                top: paint(1.0),
+                left: paint(2.0),
+                bottom: paint(3.0),
+                right: paint(4.0),
+            },
+        )
+        .expect("finite mixed-width cell");
+
+        assert_eq!(
+            rects,
+            [
+                Some(super::BorderRect {
+                    x: 9.0,
+                    y: 19.5,
+                    w: 9.0,
+                    h: 1.0,
+                }),
+                Some(super::BorderRect {
+                    x: 9.0,
+                    y: 22.5,
+                    w: 9.0,
+                    h: 3.0,
+                }),
+                Some(super::BorderRect {
+                    x: 9.0,
+                    y: 19.5,
+                    w: 2.0,
+                    h: 6.0,
+                }),
+                Some(super::BorderRect {
+                    x: 14.0,
+                    y: 19.5,
+                    w: 4.0,
+                    h: 6.0,
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn six_way_table_border_geometry_keeps_shared_edges_canonical() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![cell("A"), cell("B")],
+                },
+                Row {
+                    cells: vec![cell("C"), cell("D")],
+                },
+            ],
+            ..Table::default()
+        };
+        for (side, size) in [
+            (TableBorderSide::Top, 8),
+            (TableBorderSide::Left, 16),
+            (TableBorderSide::Bottom, 24),
+            (TableBorderSide::Right, 32),
+            (TableBorderSide::InsideHorizontal, 40),
+            (TableBorderSide::InsideVertical, 48),
+        ] {
+            table.border_sizes.set(side, size);
+        }
+        let rows = laid_out_table_rows(&table, geom);
+        let upper_left = &rows[0].cells[0];
+        let upper_right = &rows[0].cells[1];
+        let lower_left = &rows[1].cells[0];
+        let upper_left_rects = super::cell_border_rects(
+            upper_left.x,
+            0.0,
+            upper_left.right,
+            rows[0].height,
+            super::CellBorderPaints::resolve(upper_left.border_edges, rows[0].border),
+        )
+        .expect("upper-left cell");
+        let upper_right_rects = super::cell_border_rects(
+            upper_right.x,
+            0.0,
+            upper_right.right,
+            rows[0].height,
+            super::CellBorderPaints::resolve(upper_right.border_edges, rows[0].border),
+        )
+        .expect("upper-right cell");
+        let lower_left_rects = super::cell_border_rects(
+            lower_left.x,
+            rows[0].height,
+            lower_left.right,
+            rows[0].height + rows[1].height,
+            super::CellBorderPaints::resolve(lower_left.border_edges, rows[1].border),
+        )
+        .expect("lower-left cell");
+
+        assert_eq!(
+            upper_left_rects[3], upper_right_rects[2],
+            "insideV must overpaint at one canonical rectangle"
+        );
+        assert_eq!(
+            upper_left_rects[1], lower_left_rects[0],
+            "insideH must overpaint at one canonical rectangle"
+        );
+    }
+
+    #[test]
+    fn vertical_t_junction_precedence_is_topology_and_bidi_stable() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let split_row = || Row {
+            cells: vec![cell("A"), cell("B")],
+        };
+        let spanning_row = || Row {
+            cells: vec![Cell {
+                col_span: 2,
+                blocks: vec![para("span", None)],
+                ..Cell::default()
+            }],
+        };
+
+        for bidi_visual in [false, true] {
+            let mut terminating = Table {
+                rows: vec![split_row(), spanning_row()],
+                bidi_visual,
+                ..Table::default()
+            };
+            terminating.border_colors.set(
+                TableBorderSide::InsideHorizontal,
+                Color::rgb(0xC4, 0x21, 0x32),
+            );
+            terminating.border_colors.set(
+                TableBorderSide::InsideVertical,
+                Color::rgb(0x16, 0x5D, 0xA8),
+            );
+            terminating
+                .border_sizes
+                .set(TableBorderSide::InsideHorizontal, 16);
+            terminating
+                .border_sizes
+                .set(TableBorderSide::InsideVertical, 24);
+            let rows = laid_out_table_rows(&terminating, geom);
+            let previous = super::row_vertical_border_lines(&rows[0], 0.0);
+            let current = super::row_vertical_border_lines(&rows[1], 0.0);
+            let junctions = super::terminal_vertical_junctions(&previous, &rows[1], &current, 0.0);
+
+            assert_eq!(junctions.len(), 1, "bidi_visual={bidi_visual}");
+            assert_eq!(
+                junctions[0].0.paint, rows[0].border.inside_v,
+                "bidi_visual={bidi_visual}"
+            );
+            assert_eq!(
+                junctions[0].1, rows[1].border.inside_h.width,
+                "bidi_visual={bidi_visual}"
+            );
+
+            let continuing = Table {
+                rows: vec![spanning_row(), split_row()],
+                ..terminating.clone()
+            };
+            let rows = laid_out_table_rows(&continuing, geom);
+            let previous = super::row_vertical_border_lines(&rows[0], 0.0);
+            let current = super::row_vertical_border_lines(&rows[1], 0.0);
+            assert!(
+                super::terminal_vertical_junctions(&previous, &rows[1], &current, 0.0).is_empty(),
+                "the current row paints its own vertical last; bidi_visual={bidi_visual}"
+            );
+            assert!(
+                current
+                    .iter()
+                    .any(|line| line.paint == rows[1].border.inside_v),
+                "bidi_visual={bidi_visual}"
+            );
+
+            let uniform = Table {
+                rows: vec![split_row(), spanning_row()],
+                bidi_visual,
+                ..Table::default()
+            };
+            let rows = laid_out_table_rows(&uniform, geom);
+            let previous = super::row_vertical_border_lines(&rows[0], 0.0);
+            let current = super::row_vertical_border_lines(&rows[1], 0.0);
+            assert!(
+                super::terminal_vertical_junctions(&previous, &rows[1], &current, 0.0).is_empty(),
+                "equal paints need no compatibility-changing overlay"
+            );
+        }
+    }
+
+    #[test]
+    fn table_border_width_is_uniformly_bounded_across_asymmetric_cells_and_rows() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let rows = laid_out_table_rows(
+            &Table {
+                rows: vec![
+                    Row {
+                        cells: vec![cell("A"), cell("B")],
+                    },
+                    Row {
+                        cells: vec![cell("C"), cell("one\ntwo\nthree\nfour")],
+                    },
+                ],
+                col_widths_pct: vec![0.04, 0.96],
+                border_size_eighths: Some(96),
+                ..Table::default()
+            },
+            geom,
+        );
+        assert!(rows[1].height > rows[0].height);
+        let bounded_width = rows
+            .iter()
+            .flat_map(|row| {
+                row.cells
+                    .iter()
+                    .map(move |cell| cell.width.min(row.height) * 0.5)
+            })
+            .fold(12.0_f32, f32::min);
+        assert!(bounded_width < 12.0);
+        assert!(rows.iter().all(|row| {
+            [
+                row.border.top,
+                row.border.left,
+                row.border.bottom,
+                row.border.right,
+                row.border.inside_h,
+                row.border.inside_v,
+            ]
+            .into_iter()
+            .all(|paint| (paint.width - bounded_width).abs() < f32::EPSILON)
+        }));
+
+        let upper_left = &rows[0].cells[0];
+        let upper_right = &rows[0].cells[1];
+        let left_rects = super::table_border_rects(
+            upper_left.x,
+            0.0,
+            upper_left.right,
+            rows[0].height,
+            rows[0].border.top.width,
+        )
+        .expect("upper-left cell");
+        let right_rects = super::table_border_rects(
+            upper_right.x,
+            0.0,
+            upper_right.right,
+            rows[0].height,
+            rows[0].border.top.width,
+        )
+        .expect("upper-right cell");
+        assert_eq!(left_rects[3], right_rects[2]);
+
+        let lower_right = &rows[1].cells[1];
+        let lower_rects = super::table_border_rects(
+            lower_right.x,
+            rows[0].height,
+            lower_right.right,
+            rows[0].height + rows[1].height,
+            rows[1].border.top.width,
+        )
+        .expect("lower-right cell");
+        assert_eq!(right_rects[1], lower_rects[0]);
+    }
+
+    #[test]
+    fn six_way_table_border_widths_share_the_table_geometry_bound() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![cell("A"), cell("B")],
+                },
+                Row {
+                    cells: vec![cell("C"), cell("one\ntwo\nthree\nfour")],
+                },
+            ],
+            col_widths_pct: vec![0.04, 0.96],
+            ..Table::default()
+        };
+        let cases = [
+            (TableBorderSide::Top, 8, 1.0_f32),
+            (TableBorderSide::Left, 16, 2.0),
+            (TableBorderSide::Bottom, 24, 3.0),
+            (TableBorderSide::Right, 32, 4.0),
+            (TableBorderSide::InsideHorizontal, 64, 8.0),
+            (TableBorderSide::InsideVertical, u16::MAX, 12.0),
+        ];
+        for (side, size, _) in cases {
+            table.border_sizes.set(side, size);
+        }
+        let rows = laid_out_table_rows(&table, geom);
+        let max_width = rows
+            .iter()
+            .flat_map(|row| {
+                row.cells
+                    .iter()
+                    .map(move |cell| cell.width.min(row.height) * 0.5)
+            })
+            .fold(f32::INFINITY, f32::min);
+
+        assert!(max_width < 12.0);
+        for (side, _, authored_width) in cases {
+            assert!(rows.iter().all(|row| {
+                (row.border.get(side).width - authored_width.min(max_width)).abs() < f32::EPSILON
+            }));
+        }
+    }
+
+    #[test]
+    fn table_border_shared_edges_use_canonical_coordinates_in_offset_tables() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        for bidi_visual in [false, true] {
+            let mut rows = laid_out_table_rows(
+                &Table {
+                    rows: vec![Row {
+                        cells: vec![cell("A"), cell("B"), cell("C"), cell("D")],
+                    }],
+                    col_widths_pct: vec![0.1, 0.2, 0.3, 0.4],
+                    width_pct: Some(0.73),
+                    align: Some(Align::Center),
+                    bidi_visual,
+                    border_size_eighths: Some(24),
+                    ..Table::default()
+                },
+                geom,
+            );
+            let row = rows.remove(0);
+            let mut cells = row.cells.iter().collect::<Vec<_>>();
+            cells.sort_by(|left, right| left.x.total_cmp(&right.x));
+            for pair in cells.windows(2) {
+                let [left, right] = pair else { unreachable!() };
+                assert_eq!(left.right, right.x, "bidi_visual={bidi_visual}");
+                let left_rects = super::table_border_rects(
+                    left.x,
+                    0.0,
+                    left.right,
+                    row.height,
+                    row.border.inside_v.width,
+                )
+                .expect("left offset cell");
+                let right_rects = super::table_border_rects(
+                    right.x,
+                    0.0,
+                    right.right,
+                    row.height,
+                    row.border.inside_v.width,
+                )
+                .expect("right offset cell");
+                assert_eq!(left_rects[3], right_rects[2], "bidi_visual={bidi_visual}");
+            }
+        }
+    }
+
+    #[test]
+    fn preferred_table_width_alignment_indent_and_bidi_define_local_box() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let base = Table {
+            rows: vec![Row {
+                cells: vec![cell("A"), cell("B")],
+            }],
+            col_widths_pct: vec![0.25, 0.75],
+            width_pct: Some(0.5),
+            ..Table::default()
+        };
+        let cases = [
+            (
+                "ltr center ignores indent",
+                Some(Align::Center),
+                false,
+                Some(720),
+                vec![(45.0, 22.5), (67.5, 67.5)],
+            ),
+            (
+                "ltr trailing ignores indent",
+                Some(Align::Right),
+                false,
+                Some(720),
+                vec![(90.0, 22.5), (112.5, 67.5)],
+            ),
+            (
+                "ltr leading indent",
+                Some(Align::Left),
+                false,
+                Some(720),
+                vec![(36.0, 22.5), (58.5, 67.5)],
+            ),
+            (
+                "ltr default leading indent",
+                None,
+                false,
+                Some(720),
+                vec![(36.0, 22.5), (58.5, 67.5)],
+            ),
+            (
+                "rtl center ignores indent",
+                Some(Align::Center),
+                true,
+                Some(720),
+                vec![(112.5, 22.5), (45.0, 67.5)],
+            ),
+            (
+                "rtl leading indent and local mirror",
+                Some(Align::Left),
+                true,
+                Some(720),
+                vec![(121.5, 22.5), (54.0, 67.5)],
+            ),
+            (
+                "rtl trailing ignores indent",
+                Some(Align::Right),
+                true,
+                Some(720),
+                vec![(67.5, 22.5), (0.0, 67.5)],
+            ),
+        ];
+
+        for (name, align, bidi_visual, indent_twips, expected) in cases {
+            let boxes = laid_out_table_boxes(
+                &Table {
+                    align,
+                    bidi_visual,
+                    indent_twips,
+                    ..base.clone()
+                },
+                geom,
+            );
+            assert_table_boxes(&boxes, &expected);
+            assert!(
+                (table_box_bounds(&boxes).1 - table_box_bounds(&boxes).0 - 90.0).abs() < 0.1,
+                "{name}: boxes={boxes:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn nested_table_rows_retain_their_inner_grid_geometry() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let inner = Table {
+            rows: vec![Row {
+                cells: vec![cell("key"), cell("a much wider value")],
+            }],
+            col_widths_pct: vec![0.25, 0.75],
+            width_pct: Some(0.8),
+            align: Some(Align::Center),
+            ..Table::default()
+        };
+        let outer = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Table(inner)],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+
+        let mut rows = laid_out_table_rows(&outer, geom);
+        let outer_cell = rows.remove(0).cells.remove(0);
+        assert_eq!(outer_cell.lines.len(), 1);
+        let Some(super::CellVisual::NestedRow { row }) = outer_cell.lines[0].cell_visual.as_ref()
+        else {
+            panic!("nested table row must remain a grid visual")
+        };
+        assert_eq!(row.cells.len(), 2);
+        assert_close(row.cells[0].x, 17.4);
+        assert_close(row.cells[0].width, 34.8);
+        assert_close(row.cells[0].right, row.cells[1].x);
+        assert_close(row.cells[1].width, 104.4);
+        assert_close(row.cells[1].right, 156.6);
+    }
+
+    #[test]
+    fn empty_nested_table_rows_retain_their_grid_box() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let outer = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Table(Table {
+                        rows: vec![Row {
+                            cells: vec![Cell::default(), Cell::default()],
+                        }],
+                        ..Table::default()
+                    })],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+
+        let mut rows = laid_out_table_rows(&outer, geom);
+        let outer_cell = rows.remove(0).cells.remove(0);
+        assert_eq!(outer_cell.lines.len(), 1);
+        let nested = nested_visual_row(&outer_cell.lines[0]);
+        assert_eq!(nested.cells.len(), 2);
+        assert_close(nested.height, 14.0);
+    }
+
+    #[test]
+    fn preferred_table_width_is_column_relative_and_malformed_values_are_bounded() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let base = Table {
+            rows: vec![Row {
+                cells: vec![cell("A"), cell("B")],
+            }],
+            col_widths_pct: vec![0.5, 0.5],
+            align: Some(Align::Center),
+            ..Table::default()
+        };
+
+        let column_boxes = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                ..base.clone()
+            },
+            geom.with_content_width(81.0),
+        );
+        assert_table_boxes(&column_boxes, &[(20.25, 20.25), (40.5, 20.25)]);
+
+        for width_pct in [
+            None,
+            Some(0.0),
+            Some(-0.5),
+            Some(f32::NAN),
+            Some(f32::NEG_INFINITY),
+            Some(f32::INFINITY),
+            Some(2.0),
+        ] {
+            let boxes = laid_out_table_boxes(
+                &Table {
+                    width_pct,
+                    ..base.clone()
+                },
+                geom,
+            );
+            assert_table_boxes(&boxes, &[(0.0, 90.0), (90.0, 90.0)]);
+        }
+
+        let bounded_indent = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                align: Some(Align::Left),
+                indent_twips: Some(i32::MAX),
+                ..base.clone()
+            },
+            geom,
+        );
+        assert_table_boxes(&bounded_indent, &[(90.0, 45.0), (135.0, 45.0)]);
+
+        let negative_indent = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                align: Some(Align::Left),
+                indent_twips: Some(-720),
+                ..base.clone()
+            },
+            geom,
+        );
+        assert_table_boxes(&negative_indent, &[(0.0, 45.0), (45.0, 45.0)]);
+
+        let justify_fallback = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                align: Some(Align::Justify),
+                indent_twips: Some(720),
+                ..base.clone()
+            },
+            geom,
+        );
+        assert_table_boxes(&justify_fallback, &[(0.0, 45.0), (45.0, 45.0)]);
+        let rtl_justify_fallback = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                align: Some(Align::Justify),
+                bidi_visual: true,
+                indent_twips: Some(720),
+                ..base.clone()
+            },
+            geom,
+        );
+        assert_table_boxes(&rtl_justify_fallback, &[(135.0, 45.0), (90.0, 45.0)]);
+
+        let malformed_columns = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                col_widths_pct: vec![f32::INFINITY, 1.0],
+                ..base.clone()
+            },
+            geom,
+        );
+        assert!(malformed_columns
+            .iter()
+            .all(|(x, width)| x.is_finite() && width.is_finite() && *width > 0.0));
+        assert!((table_box_bounds(&malformed_columns).0 - 45.0).abs() < 0.1);
+        assert!((table_box_bounds(&malformed_columns).1 - 135.0).abs() < 0.1);
+
+        let underflowing_columns = laid_out_table_boxes(
+            &Table {
+                width_pct: Some(0.5),
+                col_widths_pct: vec![f32::MIN_POSITIVE, f32::MAX],
+                ..base
+            },
+            geom,
+        );
+        assert!(underflowing_columns
+            .iter()
+            .all(|(x, width)| x.is_finite() && width.is_finite() && *width > 0.0));
+        assert!((table_box_bounds(&underflowing_columns).0 - 45.0).abs() < 0.1);
+        assert!((table_box_bounds(&underflowing_columns).1 - 135.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn table_box_survives_header_repetition_and_row_splitting() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let tall_blocks = (0..12)
+            .map(|index| para(&format!("line {index}"), None))
+            .collect();
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![cell("Header A"), cell("Header B")],
+                },
+                Row {
+                    cells: vec![
+                        Cell {
+                            blocks: tall_blocks,
+                            ..Cell::default()
+                        },
+                        cell("Body"),
+                    ],
+                },
+            ],
+            header_rows: 1,
+            col_widths_pct: vec![0.5, 0.5],
+            width_pct: Some(0.5),
+            align: Some(Align::Left),
+            indent_twips: Some(400),
+            ..Table::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+        let pagination = paginate(flow, geom, &SectionSetup::default());
+        assert!(pagination.pages.len() > 1);
+        let row_boxes = pagination
+            .pages
+            .iter()
+            .flatten()
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Row(row) => Some(
+                    row.cells
+                        .iter()
+                        .map(|cell| (cell.x, cell.width))
+                        .collect::<Vec<_>>(),
+                ),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(row_boxes.len() > table.rows.len());
+        for boxes in row_boxes {
+            assert_table_boxes(&boxes, &[(20.0, 45.0), (65.0, 45.0)]);
+        }
+    }
+
+    #[test]
+    fn table_cell_paragraphs_use_line_spacing() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let cell = |line_pct| Cell {
+            blocks: vec![Block::Paragraph(Paragraph {
+                props: ParaProps {
+                    spacing: Spacing {
+                        line_pct: Some(line_pct),
+                        ..Spacing::default()
+                    },
+                    indent: Indent {
+                        left_pt: Some(12.0),
+                        ..Indent::default()
+                    },
+                    ..ParaProps::default()
+                },
+                runs: vec![Run {
+                    text: "cell text".to_string(),
+                    ..Run::default()
+                }],
+            })],
+            ..Cell::default()
+        };
+        let mut capture = LayoutCapture::default();
+        let single = shape_cell(&cell(1.0), 160.0, 0, &mut tcx, &mut capture);
+        let double = shape_cell(&cell(2.0), 160.0, 0, &mut tcx, &mut capture);
+
+        assert_eq!(single.len(), 1);
+        assert_eq!(double.len(), 1);
+        assert!(double[0].height > single[0].height * 1.8);
+        assert!((single[0].x_indent - 12.0).abs() < 0.1);
+        assert!(
+            (cell_line_origin(100.0, cell_insets(None, 160.0), &single[0]) - 115.0).abs() < 0.1
+        );
+    }
+
+    #[test]
+    fn table_cell_absolute_line_spacing_reaches_direct_and_nested_paragraphs() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let paragraph = |text: &str| {
+            Block::Paragraph(Paragraph {
+                runs: vec![Run {
+                    text: text.to_string(),
+                    ..Run::default()
+                }],
+                ..Paragraph::default()
+            })
+        };
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![
+                        paragraph("direct"),
+                        Block::Table(Table {
+                            rows: vec![Row {
+                                cells: vec![Cell {
+                                    blocks: vec![paragraph("nested")],
+                                    ..Cell::default()
+                                }],
+                            }],
+                            ..Table::default()
+                        }),
+                    ],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let cell_line_spacing = vec![vec![vec![Some(LineSpacingHint::Exact(8.0)), None]]];
+        let nested_pagination = vec![vec![vec![
+            None,
+            Some(TablePaginationHints {
+                rows: vec![TableRowPaginationHint::default()],
+                cells: vec![vec![vec![None]]],
+                cell_line_spacing: vec![vec![vec![Some(LineSpacingHint::AtLeast(40.0))]]],
+                #[cfg(feature = "docx")]
+                cell_column_breaks: Vec::new(),
+                nested: vec![vec![vec![None]]],
+                cell_tabs: vec![vec![vec![Vec::new()]]],
+            }),
+        ]]];
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table_with_row_pagination(
+            &table,
+            &mut flow,
+            Geom::from_setup(&PageSetup::default()),
+            &mut tcx,
+            &mut capture,
+            TablePaginationView {
+                cell_line_spacing: Some(&cell_line_spacing),
+                nested: Some(&nested_pagination),
+                ..TablePaginationView::default()
+            },
+        );
+        let FlowItem::Table { rows, .. } = &flow[0] else {
+            panic!("table flow item");
+        };
+        let lines = &rows[0].cells[0].lines;
+
+        assert_eq!(lines.len(), 2);
+        assert_close(lines[0].height, 8.0);
+        assert!(lines[0].clip_to_height);
+        let nested = nested_visual_row(&lines[1]);
+        assert_eq!(nested.cells[0].lines.len(), 1);
+        assert_close(nested.cells[0].lines[0].height, 40.0);
+        assert_close(lines[1].height, nested.height);
+        assert_close(nested.height, 46.0);
+        assert!(!lines[1].clip_to_height);
+    }
+
+    #[test]
+    fn table_cell_explicit_paragraph_spacing_expands_row_not_line_box() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut row_for = |before_pt, after_pt| {
+            let table = Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Paragraph(Paragraph {
+                            props: ParaProps {
+                                spacing: Spacing {
+                                    before_pt,
+                                    after_pt,
+                                    ..Spacing::default()
+                                },
+                                shading: Some(Color::rgb(0xEE, 0xF1, 0xF4)),
+                                ..ParaProps::default()
+                            },
+                            runs: vec![Run {
+                                text: "cell text".to_string(),
+                                ..Run::default()
+                            }],
+                        })],
+                        ..Cell::default()
+                    }],
+                }],
+                ..Table::default()
+            };
+            let mut flow = Vec::new();
+            let mut capture = LayoutCapture::default();
+            layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+            let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+                panic!("table flow item")
+            };
+            rows.remove(0)
+        };
+
+        let compact = row_for(None, None);
+        let spaced = row_for(Some(11.0), Some(7.0));
+        let compact_line = &compact.cells[0].lines[0];
+        let spaced_line = &spaced.cells[0].lines[0];
+
+        assert_close(spaced_line.height, compact_line.height);
+        assert_close(spaced_line.baseline, compact_line.baseline);
+        assert_eq!(spaced_line.background, compact_line.background);
+        assert_close(spaced_line.cell_spacing.before, 11.0);
+        assert_close(spaced_line.cell_spacing.after, 7.0);
+        assert_close(spaced_line.cell_extent() - spaced_line.height, 18.0);
+        assert_close(spaced.height - compact.height, 18.0);
+    }
+
+    #[test]
+    fn table_cell_spacing_attaches_to_true_paragraph_edges_and_rejects_invalid_values() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let paragraph = |text: &str, spacing: Spacing| Paragraph {
+            props: ParaProps {
+                spacing,
+                ..ParaProps::default()
+            },
+            runs: vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+        };
+        let mut capture = LayoutCapture::default();
+        let lines = shape_cell(
+            &Cell {
+                blocks: vec![Block::Paragraph(paragraph(
+                    "one\ntwo\nthree",
+                    Spacing {
+                        before_pt: Some(9.0),
+                        after_pt: Some(4.0),
+                        ..Spacing::default()
+                    },
+                ))],
+                ..Cell::default()
+            },
+            160.0,
+            0,
+            &mut tcx,
+            &mut capture,
+        );
+
+        assert_eq!(lines.len(), 3);
+        assert_eq!(
+            lines
+                .iter()
+                .map(|line| (line.cell_spacing.before, line.cell_spacing.after))
+                .collect::<Vec<_>>(),
+            [(9.0, 0.0), (0.0, 0.0), (0.0, 4.0)]
+        );
+
+        for spacing in [
+            Spacing::default(),
+            Spacing {
+                before_pt: Some(0.0),
+                after_pt: Some(-1.0),
+                ..Spacing::default()
+            },
+            Spacing {
+                before_pt: Some(f32::NAN),
+                after_pt: Some(f32::INFINITY),
+                ..Spacing::default()
+            },
+        ] {
+            let mut capture = LayoutCapture::default();
+            let invalid = shape_cell(
+                &Cell {
+                    blocks: vec![Block::Paragraph(paragraph("bounded", spacing))],
+                    ..Cell::default()
+                },
+                160.0,
+                0,
+                &mut tcx,
+                &mut capture,
+            );
+            assert_eq!(invalid.len(), 1);
+            assert_eq!(invalid[0].cell_spacing, super::CellLineSpacing::default());
+        }
+
+        let mut truncated = lines;
+        super::truncate_cell_paragraph_lines(
+            &mut truncated,
+            2,
+            Spacing {
+                before_pt: Some(9.0),
+                after_pt: Some(4.0),
+                ..Spacing::default()
+            },
+        );
+        assert_eq!(truncated.len(), 2);
+        assert_close(truncated[0].cell_spacing.before, 9.0);
+        assert_close(truncated[1].cell_spacing.after, 0.0);
+    }
+
+    #[test]
+    fn max_cell_line_truncation_omits_nonfinal_trailing_spacing() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let text = std::iter::repeat_n("line", super::MAX_CELL_LINES + 1)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut capture = LayoutCapture::default();
+        let lines = shape_cell(
+            &Cell {
+                blocks: vec![Block::Paragraph(Paragraph {
+                    props: ParaProps {
+                        spacing: Spacing {
+                            before_pt: Some(3.0),
+                            after_pt: Some(5.0),
+                            ..Spacing::default()
+                        },
+                        ..ParaProps::default()
+                    },
+                    runs: vec![Run {
+                        text,
+                        ..Run::default()
+                    }],
+                })],
+                ..Cell::default()
+            },
+            160.0,
+            0,
+            &mut tcx,
+            &mut capture,
+        );
+
+        assert_eq!(lines.len(), super::MAX_CELL_LINES);
+        assert_close(lines[0].cell_spacing.before, 3.0);
+        assert_close(lines.last().unwrap().cell_spacing.after, 0.0);
+    }
+
+    #[test]
+    fn table_cell_spacing_follows_direct_and_nested_source_order_without_default_gap() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let paragraph = |text: &str, before_pt, after_pt| {
+            Block::Paragraph(Paragraph {
+                props: ParaProps {
+                    spacing: Spacing {
+                        before_pt,
+                        after_pt,
+                        ..Spacing::default()
+                    },
+                    ..ParaProps::default()
+                },
+                runs: vec![Run {
+                    text: text.to_string(),
+                    ..Run::default()
+                }],
+            })
+        };
+        let cell = Cell {
+            blocks: vec![
+                paragraph("direct", Some(2.0), Some(3.0)),
+                Block::Table(Table {
+                    rows: vec![Row {
+                        cells: vec![Cell {
+                            blocks: vec![paragraph("nested", Some(5.0), Some(7.0))],
+                            ..Cell::default()
+                        }],
+                    }],
+                    ..Table::default()
+                }),
+                paragraph("tail", None, None),
+            ],
+            ..Cell::default()
+        };
+        let mut capture = LayoutCapture::default();
+        let lines = shape_cell(&cell, 160.0, 0, &mut tcx, &mut capture);
+
+        assert_eq!(
+            lines.iter().map(shaped_line_text).collect::<Vec<_>>(),
+            ["direct", "nested", "tail"]
+        );
+        assert_eq!(
+            lines
+                .iter()
+                .map(|line| (line.cell_spacing.before, line.cell_spacing.after))
+                .collect::<Vec<_>>(),
+            [(2.0, 3.0), (0.0, 0.0), (0.0, 0.0)]
+        );
+        let nested = nested_visual_row(&lines[1]);
+        let nested_line = &nested.cells[0].lines[0];
+        assert_eq!(
+            (
+                nested_line.cell_spacing.before,
+                nested_line.cell_spacing.after
+            ),
+            (5.0, 7.0)
+        );
+        assert_close(nested.height - nested_line.height, 18.0);
+    }
+
+    #[test]
+    fn table_cell_vertical_alignment_uses_full_spacing_extent() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut rows = laid_out_table_rows(
+            &Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Paragraph(Paragraph {
+                            props: ParaProps {
+                                spacing: Spacing {
+                                    before_pt: Some(6.0),
+                                    after_pt: Some(4.0),
+                                    ..Spacing::default()
+                                },
+                                ..ParaProps::default()
+                            },
+                            runs: vec![Run {
+                                text: "aligned".to_string(),
+                                ..Run::default()
+                            }],
+                        })],
+                        ..Cell::default()
+                    }],
+                }],
+                ..Table::default()
+            },
+            geom,
+        );
+        let mut cell = rows.remove(0).cells.remove(0);
+        let row_height =
+            cell.insets.top + super::cell_lines_extent(&cell.lines) + cell.insets.bottom + 40.0;
+        let before = cell.lines[0].cell_spacing.before;
+
+        cell.valign = VCell::Top;
+        assert_close(super::cell_vertical_offset(&cell, row_height), 0.0);
+        cell.valign = VCell::Center;
+        assert_close(super::cell_vertical_offset(&cell, row_height), 20.0);
+        assert_close(
+            100.0 + cell.insets.top + super::cell_vertical_offset(&cell, row_height) + before,
+            100.0 + cell.insets.top + 20.0 + 6.0,
+        );
+        cell.valign = VCell::Bottom;
+        assert_close(super::cell_vertical_offset(&cell, row_height), 40.0);
+    }
+
+    #[test]
+    fn bidi_visual_table_mirrors_logical_cell_positions() {
+        let fonts = vec![
+            rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
+            rwml_fonts::noto_sans_arabic_subset().to_vec(),
+            rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+        ];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(
+            &Table {
+                rows: vec![Row {
+                    cells: vec![
+                        Cell {
+                            blocks: vec![Block::Paragraph(Paragraph {
+                                runs: vec![Run {
+                                    text: "خلية أولى 123".to_string(),
+                                    props: CharProps {
+                                        rtl: true,
+                                        ..CharProps::default()
+                                    },
+                                    ..Run::default()
+                                }],
+                                props: ParaProps {
+                                    align: Align::Right,
+                                    bidi: true,
+                                    ..ParaProps::default()
+                                },
+                            })],
+                            margins: Some(CellMargins {
+                                top: 40,
+                                right: 40,
+                                bottom: 60,
+                                left: 200,
+                            }),
+                            ..Cell::default()
+                        },
+                        Cell {
+                            blocks: vec![Block::Paragraph(Paragraph {
+                                runs: vec![Run {
+                                    text: "תא שני 456".to_string(),
+                                    props: CharProps {
+                                        rtl: true,
+                                        ..CharProps::default()
+                                    },
+                                    ..Run::default()
+                                }],
+                                props: ParaProps {
+                                    align: Align::Right,
+                                    bidi: true,
+                                    ..ParaProps::default()
+                                },
+                            })],
+                            margins: Some(CellMargins {
+                                top: 80,
+                                right: 240,
+                                bottom: 20,
+                                left: 60,
+                            }),
+                            ..Cell::default()
+                        },
+                    ],
+                }],
+                col_widths_pct: vec![25.0, 75.0],
+                bidi_visual: true,
+                ..Table::default()
+            },
+            &mut flow,
+            geom,
+            &mut tcx,
+            &mut capture,
+        );
+
+        let FlowItem::Table { rows, .. } = &flow[0] else {
+            panic!("table flow")
+        };
+        let cells = &rows[0].cells;
+        assert_eq!(cells.len(), 2);
+        assert!((cells[0].x - 135.0).abs() < 0.1, "cells={:?}", cells[0].x);
+        assert!((cells[1].x - 0.0).abs() < 0.1, "cells={:?}", cells[1].x);
+        assert!((cells[0].width - 45.0).abs() < 0.1);
+        assert!((cells[1].width - 135.0).abs() < 0.1);
+        assert!((cells[0].insets.left - 10.0).abs() < 0.1);
+        assert!((cells[0].insets.right - 2.0).abs() < 0.1);
+        assert!((cells[1].insets.left - 3.0).abs() < 0.1);
+        assert!((cells[1].insets.right - 12.0).abs() < 0.1);
+        assert!(cells[0]
+            .lines
+            .iter()
+            .flat_map(|line| &line.runs)
+            .any(|run| run.text.contains("خلية أولى 123")));
+        assert!(cells[1]
+            .lines
+            .iter()
+            .flat_map(|line| &line.runs)
+            .any(|run| run.text.contains("תא שני 456")));
+        assert!(
+            (cell_line_origin(cells[0].x, cells[0].insets, &cells[0].lines[0]) - 145.0).abs() < 0.1
+        );
+        assert!(
+            (cell_line_origin(cells[1].x, cells[1].insets, &cells[1].lines[0]) - 3.0).abs() < 0.1
+        );
+    }
+
+    #[test]
+    fn table_cell_margins_control_content_origin_and_row_height() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Paragraph(Paragraph {
+                        props: ParaProps::default(),
+                        runs: vec![Run {
+                            text: "Inset".to_string(),
+                            ..Run::default()
+                        }],
+                    })],
+                    margins: Some(CellMargins {
+                        top: 400,
+                        right: 720,
+                        bottom: 400,
+                        left: 720,
+                    }),
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+        let FlowItem::Table { rows, .. } = flow.remove(0) else {
+            panic!("table flow item")
+        };
+        let row = &rows[0];
+        let cell = &row.cells[0];
+
+        assert!(cell_line_origin(cell.x, cell.insets, &cell.lines[0]) - cell.x >= 36.0);
+        assert!(row.height >= cell.lines[0].height + 40.0);
+    }
+
+    #[test]
+    fn split_table_cell_keeps_outer_margins_on_outer_fragments_only() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![
+                        Block::Paragraph(Paragraph {
+                            props: ParaProps::default(),
+                            runs: vec![Run {
+                                text: "First line".to_string(),
+                                ..Run::default()
+                            }],
+                        }),
+                        Block::Paragraph(Paragraph {
+                            props: ParaProps::default(),
+                            runs: vec![Run {
+                                text: "Second line".to_string(),
+                                ..Run::default()
+                            }],
+                        }),
+                    ],
+                    margins: Some(CellMargins {
+                        top: 400,
+                        bottom: 600,
+                        ..CellMargins::default()
+                    }),
+                    ..Cell::default()
+                }],
+            }],
+            border_color: Some(Color::rgb(0x31, 0x75, 0x9B)),
+            border_size_eighths: Some(24),
+            ..Table::default()
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+        let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+            panic!("table flow item")
+        };
+        let first_line_height = rows[0].cells[0].lines[0].height;
+        let (head, tail) = split_row(rows.remove(0), first_line_height + 50.0);
+        let tail = tail.expect("second line remains");
+
+        assert_eq!(head.cells[0].insets.top, 20.0);
+        assert_eq!(head.cells[0].insets.bottom, 0.0);
+        assert_eq!(tail.cells[0].insets.top, 0.0);
+        assert_eq!(tail.cells[0].insets.bottom, 30.0);
+        let expected_border = super::table_border_paints(&table);
+        assert_eq!(head.border, expected_border);
+        assert_eq!(tail.border, expected_border);
+        assert_eq!(
+            head.cells[0].border_edges,
+            super::CellBorderEdges {
+                top: Some(TableBorderSide::Top),
+                left: Some(TableBorderSide::Left),
+                bottom: None,
+                right: Some(TableBorderSide::Right),
+            }
+        );
+        assert_eq!(
+            tail.cells[0].border_edges,
+            super::CellBorderEdges {
+                top: None,
+                left: Some(TableBorderSide::Left),
+                bottom: Some(TableBorderSide::Bottom),
+                right: Some(TableBorderSide::Right),
+            }
+        );
+    }
+
+    #[test]
+    fn split_table_cell_spacing_stays_on_true_outer_lines() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Paragraph(Paragraph {
+                        props: ParaProps {
+                            spacing: Spacing {
+                                before_pt: Some(8.0),
+                                after_pt: Some(6.0),
+                                ..Spacing::default()
+                            },
+                            ..ParaProps::default()
+                        },
+                        runs: vec![Run {
+                            text: "first\nmiddle\nlast".to_string(),
+                            ..Run::default()
+                        }],
+                    })],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let mut rows = laid_out_table_rows(&table, geom);
+        let row = rows.remove(0);
+        let original_extent = super::cell_lines_extent(&row.cells[0].lines);
+        assert_eq!(row.cells[0].lines.len(), 3);
+        let first_budget = row.cells[0].insets.top
+            + row.cells[0].insets.bottom
+            + row.cells[0].lines[0].cell_extent();
+
+        let (first, rest) = split_row(row, first_budget);
+        let rest = rest.expect("two lines remain");
+        let middle_budget = rest.cells[0].insets.top
+            + rest.cells[0].insets.bottom
+            + rest.cells[0].lines[0].cell_extent();
+        let (middle, last) = split_row(rest, middle_budget);
+        let last = last.expect("final line remains");
+
+        assert_eq!(first.cells[0].lines.len(), 1);
+        assert_eq!(middle.cells[0].lines.len(), 1);
+        assert_eq!(last.cells[0].lines.len(), 1);
+        assert_eq!(
+            first.cells[0].lines[0].cell_spacing,
+            super::CellLineSpacing {
+                before: 8.0,
+                after: 0.0
+            }
+        );
+        assert_eq!(
+            middle.cells[0].lines[0].cell_spacing,
+            super::CellLineSpacing::default()
+        );
+        assert_eq!(
+            last.cells[0].lines[0].cell_spacing,
+            super::CellLineSpacing {
+                before: 0.0,
+                after: 6.0
+            }
+        );
+        assert_close(
+            super::cell_lines_extent(&first.cells[0].lines)
+                + super::cell_lines_extent(&middle.cells[0].lines)
+                + super::cell_lines_extent(&last.cells[0].lines),
+            original_extent,
+        );
+    }
+
+    fn cell_row_with_pagination(paragraphs: &[(&str, PaginationHint)]) -> super::RowLayout {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: paragraphs
+                        .iter()
+                        .map(|(text, _)| {
+                            Block::Paragraph(Paragraph {
+                                runs: vec![Run {
+                                    text: (*text).to_string(),
+                                    ..Run::default()
+                                }],
+                                ..Paragraph::default()
+                            })
+                        })
+                        .collect(),
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let cell_pagination = vec![vec![paragraphs
+            .iter()
+            .map(|(_, hint)| Some(*hint))
+            .collect::<Vec<_>>()]];
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table_with_row_pagination(
+            &table,
+            &mut flow,
+            geom,
+            &mut tcx,
+            &mut capture,
+            TablePaginationView {
+                cells: Some(&cell_pagination),
+                ..TablePaginationView::default()
+            },
+        );
+        let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+            panic!("table flow item")
+        };
+        rows.remove(0)
+    }
+
+    fn nested_cell_row_with_pagination(
+        nested_cells: &[Vec<(&str, PaginationHint)>],
+    ) -> super::RowLayout {
+        nested_cell_row_with_pagination_and_row_policy(nested_cells, false)
+    }
+
+    fn nested_cell_row_with_pagination_and_row_policy(
+        nested_cells: &[Vec<(&str, PaginationHint)>],
+        cant_split: bool,
+    ) -> super::RowLayout {
+        nested_cell_row_with_pagination_at_height(nested_cells, cant_split, 400.0)
+    }
+
+    fn nested_cell_row_with_pagination_at_height(
+        nested_cells: &[Vec<(&str, PaginationHint)>],
+        cant_split: bool,
+        page_height: f32,
+    ) -> super::RowLayout {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: page_height,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let nested_row = Row {
+            cells: nested_cells
+                .iter()
+                .map(|paragraphs| Cell {
+                    blocks: paragraphs
+                        .iter()
+                        .map(|(text, _)| {
+                            Block::Paragraph(Paragraph {
+                                runs: vec![Run {
+                                    text: (*text).to_string(),
+                                    ..Run::default()
+                                }],
+                                ..Paragraph::default()
+                            })
+                        })
+                        .collect(),
+                    ..Cell::default()
+                })
+                .collect(),
+        };
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Table(Table {
+                        rows: vec![nested_row],
+                        ..Table::default()
+                    })],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let cell_pagination = vec![vec![vec![None]]];
+        let nested_pagination = vec![vec![vec![Some(TablePaginationHints {
+            rows: vec![TableRowPaginationHint { cant_split }],
+            cells: vec![nested_cells
+                .iter()
+                .map(|paragraphs| {
+                    paragraphs
+                        .iter()
+                        .map(|(_, hint)| Some(*hint))
+                        .collect::<Vec<_>>()
+                })
+                .collect()],
+            cell_line_spacing: vec![nested_cells
+                .iter()
+                .map(|paragraphs| vec![None; paragraphs.len()])
+                .collect()],
+            #[cfg(feature = "docx")]
+            cell_column_breaks: Vec::new(),
+            nested: vec![nested_cells
+                .iter()
+                .map(|paragraphs| vec![None; paragraphs.len()])
+                .collect()],
+            cell_tabs: vec![nested_cells
+                .iter()
+                .map(|paragraphs| vec![Vec::new(); paragraphs.len()])
+                .collect()],
+        })]]];
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table_with_row_pagination(
+            &table,
+            &mut flow,
+            geom,
+            &mut tcx,
+            &mut capture,
+            TablePaginationView {
+                cells: Some(&cell_pagination),
+                nested: Some(&nested_pagination),
+                ..TablePaginationView::default()
+            },
+        );
+        let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+            panic!("table flow item")
+        };
+        rows.remove(0)
+    }
+
+    fn deeply_nested_cell_row(depth: u32) -> super::RowLayout {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut cell = Cell {
+            blocks: vec![Block::Paragraph(Paragraph {
+                runs: vec![Run {
+                    text: "bounded".to_string(),
+                    ..Run::default()
+                }],
+                ..Paragraph::default()
+            })],
+            ..Cell::default()
+        };
+        let mut direct_hints = vec![Some(PaginationHint {
+            keep_lines: true,
+            ..PaginationHint::default()
+        })];
+        let mut nested_hints = vec![None];
+        for _ in 0..depth {
+            let table_hints = TablePaginationHints {
+                rows: vec![TableRowPaginationHint::default()],
+                cells: vec![vec![direct_hints]],
+                cell_line_spacing: vec![vec![vec![None]]],
+                #[cfg(feature = "docx")]
+                cell_column_breaks: Vec::new(),
+                nested: vec![vec![nested_hints]],
+                cell_tabs: vec![vec![vec![Vec::new()]]],
+            };
+            cell = Cell {
+                blocks: vec![Block::Table(Table {
+                    rows: vec![Row { cells: vec![cell] }],
+                    ..Table::default()
+                })],
+                ..Cell::default()
+            };
+            direct_hints = vec![None];
+            nested_hints = vec![Some(table_hints)];
+        }
+        let table = Table {
+            rows: vec![Row { cells: vec![cell] }],
+            ..Table::default()
+        };
+        let cell_pagination = vec![vec![direct_hints]];
+        let nested_pagination = vec![vec![nested_hints]];
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table_with_row_pagination(
+            &table,
+            &mut flow,
+            geom,
+            &mut tcx,
+            &mut capture,
+            TablePaginationView {
+                cells: Some(&cell_pagination),
+                nested: Some(&nested_pagination),
+                ..TablePaginationView::default()
+            },
+        );
+        let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+            panic!("table flow item")
+        };
+        rows.remove(0)
+    }
+
+    fn row_avail_for_lines(row: &super::RowLayout, count: usize) -> f32 {
+        let cell = &row.cells[0];
+        cell.insets.top
+            + cell.insets.bottom
+            + cell
+                .lines
+                .iter()
+                .take(count)
+                .map(LineLayout::cell_extent)
+                .sum::<f32>()
+    }
+
+    fn nested_visual_row(line: &LineLayout) -> &super::RowLayout {
+        let Some(super::CellVisual::NestedRow { row }) = line.cell_visual.as_ref() else {
+            panic!("nested row visual")
+        };
+        row
+    }
+
+    fn nested_fragment_line_counts(cell: &super::CellBox) -> Vec<Vec<usize>> {
+        cell.lines
+            .iter()
+            .map(|line| {
+                nested_visual_row(line)
+                    .cells
+                    .iter()
+                    .map(|cell| cell.lines.len())
+                    .collect()
+            })
+            .collect()
+    }
+
+    fn nested_chain_depth_and_terminal_lines(row: &super::RowLayout) -> (usize, usize) {
+        let mut depth = 0usize;
+        let mut cell = &row.cells[0];
+        loop {
+            let Some(line) = cell.lines.first() else {
+                return (depth, 0);
+            };
+            let Some(super::CellVisual::NestedRow { row }) = line.cell_visual.as_ref() else {
+                return (depth, cell.lines.len());
+            };
+            depth += 1;
+            cell = &row.cells[0];
+        }
+    }
+
+    #[test]
+    fn table_cell_widow_control_avoids_a_three_plus_one_split() {
+        let row = cell_row_with_pagination(&[(
+            "one\ntwo\nthree\nfour",
+            PaginationHint {
+                widow_control: true,
+                ..PaginationHint::default()
+            },
+        )]);
+        assert_eq!(row.cells[0].lines.len(), 4);
+        let avail = row_avail_for_lines(&row, 3);
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("two widow-protected lines remain");
+
+        assert_eq!(head.cells[0].lines.len(), 2);
+        assert_eq!(tail.cells[0].lines.len(), 2);
+    }
+
+    #[test]
+    fn table_cell_keep_lines_uses_the_last_legal_paragraph_boundary() {
+        let row = cell_row_with_pagination(&[
+            ("lead", PaginationHint::default()),
+            (
+                "one\ntwo\nthree",
+                PaginationHint {
+                    keep_lines: true,
+                    ..PaginationHint::default()
+                },
+            ),
+        ]);
+        assert_eq!(row.cells[0].lines.len(), 4);
+        let avail = row_avail_for_lines(&row, 3);
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("kept paragraph remains");
+
+        assert_eq!(head.cells[0].lines.len(), 1);
+        assert_eq!(tail.cells[0].lines.len(), 3);
+    }
+
+    #[test]
+    fn table_cell_keep_next_raises_the_minimum_row_fragment() {
+        let row = cell_row_with_pagination(&[
+            (
+                "heading",
+                PaginationHint {
+                    keep_next: true,
+                    ..PaginationHint::default()
+                },
+            ),
+            ("body one\nbody two", PaginationHint::default()),
+        ]);
+        assert_eq!(row.cells[0].lines.len(), 3);
+        let cell = &row.cells[0];
+        let expected = cell.insets.top + cell.lines[0].height + cell.lines[1].height;
+
+        assert!((first_row_fragment_height(&row) - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn table_cell_keep_next_chains_direct_paragraphs() {
+        let keep_next = PaginationHint {
+            keep_next: true,
+            ..PaginationHint::default()
+        };
+        let row = cell_row_with_pagination(&[
+            ("heading one", keep_next),
+            ("heading two", keep_next),
+            ("body", PaginationHint::default()),
+        ]);
+        let cell = &row.cells[0];
+        assert_eq!(cell.lines.len(), 3);
+        let expected = cell.insets.top
+            + cell.lines.iter().map(|line| line.height).sum::<f32>()
+            + cell.insets.bottom;
+
+        assert!((first_row_fragment_height(&row) - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn nested_table_cell_keep_next_chains_same_cell_paragraphs() {
+        let keep_next = PaginationHint {
+            keep_next: true,
+            ..PaginationHint::default()
+        };
+        let row = nested_cell_row_with_pagination(&[vec![
+            ("heading one", keep_next),
+            ("heading two", keep_next),
+            ("body", PaginationHint::default()),
+        ]]);
+        let cell = &row.cells[0];
+        assert_eq!(cell.lines.len(), 1);
+        let nested = nested_visual_row(&cell.lines[0]);
+        let nested_cell = &nested.cells[0];
+        assert_eq!(nested_cell.lines.len(), 3);
+        assert_eq!(
+            nested_cell.lines[0]
+                .cell_paragraph
+                .expect("first nested paragraph")
+                .scope_id,
+            nested_cell.lines[2]
+                .cell_paragraph
+                .expect("last nested paragraph")
+                .scope_id
+        );
+        let expected = cell.insets.top + cell.lines[0].cell_extent() + cell.insets.bottom;
+
+        assert!((first_row_fragment_height(&row) - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn nested_table_keeps_cell_paragraph_streams_separate() {
+        let row = nested_cell_row_with_pagination(&[
+            vec![(
+                "heading",
+                PaginationHint {
+                    keep_next: true,
+                    ..PaginationHint::default()
+                },
+            )],
+            vec![("separate cell", PaginationHint::default())],
+        ]);
+        let cell = &row.cells[0];
+        assert_eq!(cell.lines.len(), 1);
+        let nested = nested_visual_row(&cell.lines[0]);
+        assert_eq!(nested.cells.len(), 2);
+        assert_eq!(nested.cells[0].lines.len(), 1);
+        assert_eq!(nested.cells[1].lines.len(), 1);
+        assert_close(nested.cells[0].right, nested.cells[1].x);
+        let first = nested.cells[0].lines[0]
+            .cell_paragraph
+            .expect("first nested cell paragraph");
+        let second = nested.cells[1].lines[0]
+            .cell_paragraph
+            .expect("second nested cell paragraph");
+        assert!(first.pagination.keep_next);
+        assert!(!second.pagination.keep_next);
+
+        assert_close(first_row_fragment_height(&row), row.height);
+    }
+
+    #[test]
+    fn nested_table_cell_widow_control_avoids_a_three_plus_one_split() {
+        let row = nested_cell_row_with_pagination(&[vec![(
+            "one\ntwo\nthree\nfour",
+            PaginationHint {
+                widow_control: true,
+                ..PaginationHint::default()
+            },
+        )]]);
+        assert_eq!(
+            nested_fragment_line_counts(&row.cells[0]),
+            vec![vec![2], vec![2]]
+        );
+        let avail = row_avail_for_lines(&row, 1);
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("two nested widow-protected lines remain");
+
+        assert_eq!(nested_fragment_line_counts(&head.cells[0]), vec![vec![2]]);
+        assert_eq!(nested_fragment_line_counts(&tail.cells[0]), vec![vec![2]]);
+    }
+
+    #[test]
+    fn nested_table_cant_split_requires_a_whole_first_fragment_but_allows_progress() {
+        let row = nested_cell_row_with_pagination_at_height(
+            &[
+                vec![("one\ntwo\nthree\nfour", PaginationHint::default())],
+                vec![("five", PaginationHint::default())],
+            ],
+            true,
+            73.0,
+        );
+        let cell = &row.cells[0];
+        assert!(cell.lines.len() > 1);
+        let whole_row =
+            cell.insets.top + super::cell_lines_extent(&cell.lines) + cell.insets.bottom;
+        assert!((first_row_fragment_height(&row) - whole_row).abs() < 0.01);
+        let avail = row_avail_for_lines(&row, 1);
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("over-tall nested row content remains");
+
+        assert_eq!(head.cells[0].lines.len(), 1);
+        assert!(!tail.cells[0].lines.is_empty());
+    }
+
+    #[test]
+    fn over_tall_nested_kept_table_cell_still_splits_for_progress() {
+        let row = nested_cell_row_with_pagination_at_height(
+            &[vec![(
+                "one\ntwo\nthree\nfour\nfive",
+                PaginationHint {
+                    keep_lines: true,
+                    ..PaginationHint::default()
+                },
+            )]],
+            false,
+            73.0,
+        );
+        let counts = nested_fragment_line_counts(&row.cells[0]);
+        assert!(counts.len() > 1);
+        assert_eq!(counts.iter().flatten().sum::<usize>(), 5);
+        let avail = row_avail_for_lines(&row, 1);
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("over-tall nested kept content remains");
+
+        assert_eq!(head.cells[0].lines.len(), 1);
+        let head_counts = nested_fragment_line_counts(&head.cells[0]);
+        let tail_counts = nested_fragment_line_counts(&tail.cells[0]);
+        assert_eq!(
+            head_counts
+                .iter()
+                .chain(tail_counts.iter())
+                .flatten()
+                .sum::<usize>(),
+            5
+        );
+    }
+
+    #[test]
+    fn nested_table_rendering_stops_content_at_the_depth_limit() {
+        let at_limit = deeply_nested_cell_row(super::MAX_CELL_DEPTH);
+        let beyond_limit = deeply_nested_cell_row(super::MAX_CELL_DEPTH + 1);
+
+        assert_eq!(
+            nested_chain_depth_and_terminal_lines(&at_limit),
+            (super::MAX_CELL_DEPTH as usize, 1)
+        );
+        assert_eq!(
+            nested_chain_depth_and_terminal_lines(&beyond_limit),
+            (super::MAX_CELL_DEPTH as usize, 0)
+        );
+    }
+
+    #[test]
+    fn table_cell_widow_control_keeps_a_short_paragraph_whole() {
+        let row = cell_row_with_pagination(&[(
+            "one\ntwo\nthree",
+            PaginationHint {
+                widow_control: true,
+                ..PaginationHint::default()
+            },
+        )]);
+        let cell = &row.cells[0];
+        assert_eq!(cell.lines.len(), 3);
+        let expected = cell.insets.top
+            + cell.lines.iter().map(|line| line.height).sum::<f32>()
+            + cell.insets.bottom;
+
+        assert!((first_row_fragment_height(&row) - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn table_cells_choose_independent_legal_split_points() {
+        let mut protected = cell_row_with_pagination(&[(
+            "one\ntwo\nthree\nfour",
+            PaginationHint {
+                widow_control: true,
+                ..PaginationHint::default()
+            },
+        )]);
+        let mut plain =
+            cell_row_with_pagination(&[("alpha\nbeta\ngamma\ndelta", PaginationHint::default())]);
+        let avail = row_avail_for_lines(&protected, 3);
+        let row = super::RowLayout {
+            height: protected.height.max(plain.height),
+            cells: vec![protected.cells.remove(0), plain.cells.remove(0)],
+            cant_split: false,
+            border: super::TableBorderPaints::default(),
+            table_id: None,
+        };
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("both cells have remaining lines");
+
+        assert_eq!(head.cells[0].lines.len(), 2);
+        assert_eq!(head.cells[1].lines.len(), 3);
+        assert_eq!(tail.cells[0].lines.len(), 2);
+        assert_eq!(tail.cells[1].lines.len(), 1);
+    }
+
+    #[test]
+    fn multi_fragment_table_row_preserves_only_true_outer_horizontal_edges() {
+        let row = pagination_table_row(false, 3);
+        let (first, rest) = split_row(row, 10.0);
+        let (middle, last) = split_row(rest.expect("two lines remain"), 10.0);
+        let last = last.expect("one line remains");
+
+        assert_eq!(first.cells[0].border_edges.top, Some(TableBorderSide::Top));
+        assert_eq!(first.cells[0].border_edges.bottom, None);
+        assert_eq!(middle.cells[0].border_edges.top, None);
+        assert_eq!(middle.cells[0].border_edges.bottom, None);
+        assert_eq!(last.cells[0].border_edges.top, None);
+        assert_eq!(
+            last.cells[0].border_edges.bottom,
+            Some(TableBorderSide::Bottom)
+        );
+    }
+
+    #[test]
+    fn over_tall_kept_table_cell_still_splits_for_progress() {
+        let row = cell_row_with_pagination(&[(
+            "one\ntwo\nthree\nfour\nfive",
+            PaginationHint {
+                keep_lines: true,
+                ..PaginationHint::default()
+            },
+        )]);
+        assert_eq!(row.cells[0].lines.len(), 5);
+        let avail = row_avail_for_lines(&row, 2);
+
+        let (head, tail) = split_row(row, avail);
+        let tail = tail.expect("over-tall kept content remains");
+
+        assert_eq!(head.cells[0].lines.len(), 2);
+        assert_eq!(tail.cells[0].lines.len(), 3);
+    }
+
+    #[test]
+    fn strict_registered_font_shapes_latin_and_korean() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+
+        let lines = shape(
+            "Latin 한글 paragraph",
+            StyledText::plain(&[(0, "Latin 한글 paragraph".len(), CharProps::default())]),
+            None,
+            parley::layout::Alignment::Start,
+            320.0,
+            &mut tcx,
+        );
+
+        assert!(
+            !lines.is_empty(),
+            "strict registered font produced no lines"
+        );
+        assert!(
+            lines.iter().map(|line| line.height).sum::<f32>() > 0.0,
+            "strict registered font produced zero layout height"
+        );
+    }
+
+    #[test]
+    fn strict_bundled_fonts_shape_arabic_and_hebrew_without_notdef_glyphs() {
+        let fonts = vec![
+            rwml_fonts::noto_sans_arabic_subset().to_vec(),
+            rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+        ];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let arabic = "سلام ١٢٣";
+        let hebrew = "שלום 12,34";
+        let arabic_lines = shape(
+            arabic,
+            StyledText::plain(&[(0, arabic.len(), CharProps::default())]),
+            None,
+            parley::layout::Alignment::Start,
+            320.0,
+            &mut tcx,
+        );
+        let hebrew_lines = shape(
+            hebrew,
+            StyledText::plain(&[(0, hebrew.len(), CharProps::default())]),
+            None,
+            parley::layout::Alignment::Start,
+            320.0,
+            &mut tcx,
+        );
+        let isolated_arabic = "س ل ا م";
+        let isolated_arabic_lines = shape(
+            isolated_arabic,
+            StyledText::plain(&[(0, isolated_arabic.len(), CharProps::default())]),
+            None,
+            parley::layout::Alignment::Start,
+            320.0,
+            &mut tcx,
+        );
+
+        for lines in [&arabic_lines, &hebrew_lines] {
+            assert!(!lines.is_empty());
+            assert!(lines
+                .iter()
+                .flat_map(|line| &line.runs)
+                .flat_map(|run| &run.glyphs)
+                .all(|glyph| glyph.glyph_id.to_u32() != 0));
+        }
+        let mut joined_ids = arabic_lines
+            .iter()
+            .flat_map(|line| &line.runs)
+            .flat_map(|run| &run.glyphs)
+            .filter(|glyph| {
+                arabic[glyph.text_range.clone()]
+                    .chars()
+                    .any(|ch| matches!(ch, 'س' | 'ل' | 'ا' | 'م'))
+            })
+            .map(|glyph| glyph.glyph_id.to_u32())
+            .collect::<Vec<_>>();
+        let mut isolated_ids = isolated_arabic_lines
+            .iter()
+            .flat_map(|line| &line.runs)
+            .flat_map(|run| &run.glyphs)
+            .filter(|glyph| {
+                isolated_arabic[glyph.text_range.clone()]
+                    .chars()
+                    .any(|ch| matches!(ch, 'س' | 'ل' | 'ا' | 'م'))
+            })
+            .map(|glyph| glyph.glyph_id.to_u32())
+            .collect::<Vec<_>>();
+        joined_ids.sort_unstable();
+        isolated_ids.sort_unstable();
+        assert_ne!(joined_ids, isolated_ids);
+    }
+
+    #[test]
+    fn strict_garbage_font_bytes_do_not_panic() {
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut font_cx = strict_font_context(&[vec![1, 2, 3, 4, 5]]);
+            let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+            let mut font_cache = HashMap::new();
+            let mut tcx = TextCx {
+                font_cx: &mut font_cx,
+                layout_cx: &mut layout_cx,
+                font_cache: &mut font_cache,
+            };
+            let _ = shape(
+                "Latin 한글 paragraph",
+                StyledText::plain(&[(0, "Latin 한글 paragraph".len(), CharProps::default())]),
+                None,
+                parley::layout::Alignment::Start,
+                320.0,
+                &mut tcx,
+            );
+        }));
+
+        assert!(result.is_ok(), "garbage strict font bytes panicked");
+    }
+
+    #[test]
+    fn color_and_link_lookup_are_correct_after_binary_search() {
+        use super::{color_at, link_at, rgb};
+        use crate::model::{CharProps, Color};
+        use std::rc::Rc;
+        let red = CharProps {
+            color: Some(Color { r: 255, g: 0, b: 0 }),
+            ..Default::default()
+        };
+        // [0,5)=red, gap [5,10), [10,15)=default (no color) — ordered, non-overlapping.
+        let ranges = vec![
+            (0usize, 5usize, red),
+            (10usize, 15usize, CharProps::default()),
+        ];
+        assert_eq!(color_at(&ranges, 0), rgb::Color::new(255, 0, 0));
+        assert_eq!(color_at(&ranges, 4), rgb::Color::new(255, 0, 0));
+        assert_eq!(color_at(&ranges, 5), rgb::Color::new(0, 0, 0)); // gap → black
+        assert_eq!(color_at(&ranges, 12), rgb::Color::new(0, 0, 0)); // range w/o color
+        assert_eq!(color_at(&ranges, 99), rgb::Color::new(0, 0, 0)); // past end
+        assert_eq!(color_at(&[], 0), rgb::Color::new(0, 0, 0)); // empty
+
+        let u: Rc<str> = Rc::from("http://x");
+        let links = vec![(2usize, 6usize, u)];
+        assert_eq!(link_at(&links, 1), None); // before
+        assert_eq!(link_at(&links, 2).as_deref(), Some("http://x"));
+        assert_eq!(link_at(&links, 5).as_deref(), Some("http://x"));
+        assert_eq!(link_at(&links, 6), None); // end exclusive
+        assert_eq!(link_at(&[], 0), None);
+    }
+
+    #[test]
+    fn maps_symbol_font_text_to_unicode_for_rendering() {
+        let symbol = CharProps {
+            font: Some("Symbol".to_string()),
+            ..CharProps::default()
+        };
+        assert_eq!(display_text(&symbol, "abg\u{00D3}"), "αβγ©");
+
+        let wingdings = CharProps {
+            font: Some("Wingdings".to_string()),
+            ..CharProps::default()
+        };
+        assert_eq!(display_text(&wingdings, "AJ\u{00FC}"), "✌☺✓");
+    }
+
+    #[test]
+    fn page_field_text_uses_current_page_when_available() {
+        let field = FieldRole::Simple {
+            instruction: "PAGE".to_string(),
+        };
+        assert_eq!(
+            page_field_text(&CharProps::default(), "1", &field, Some(7)),
+            "7"
+        );
+        assert_eq!(
+            page_field_text(&CharProps::default(), "1", &field, None),
+            "1"
+        );
+
+        let filename = FieldRole::Simple {
+            instruction: "FILENAME \\p".to_string(),
+        };
+        assert_eq!(
+            page_field_text(&CharProps::default(), "report.docx", &filename, Some(7)),
+            "report.docx"
+        );
+    }
+
+    #[test]
+    fn unsupported_placeholder_texts_cover_preserved_objects_only() {
+        let features = FeatureInventory {
+            fields: 3,
+            floating_shapes: 2,
+            charts: 1,
+            ole_objects: 4,
+            unsupported_metafiles: 5,
+            ..FeatureInventory::default()
+        };
+
+        assert_eq!(
+            unsupported_placeholder_texts(&features),
+            vec![
+                "[rwml preview placeholder: 2 floating shapes preserved but not positioned]",
+                "[rwml preview placeholder: 1 chart preserved but not modeled]",
+                "[rwml preview placeholder: 4 OLE objects preserved but not modeled]",
+                "[rwml preview placeholder: 5 WMF/EMF images preserved but not rendered]",
+            ]
+        );
+    }
+
+    #[test]
+    fn known_floating_shape_overlays_reduce_aggregate_placeholder_count() {
+        let features = FeatureInventory {
+            floating_shapes: 3,
+            charts: 1,
+            ..FeatureInventory::default()
+        };
+
+        assert_eq!(
+            super::unsupported_placeholder_texts_with_known_shapes(&features, 2),
+            vec![
+                "[rwml preview placeholder: 1 floating shape preserved but not positioned]",
+                "[rwml preview placeholder: 1 chart preserved but not modeled]",
+            ]
+        );
+        assert_eq!(
+            super::unsupported_placeholder_texts_with_known_shapes(&features, 3),
+            vec!["[rwml preview placeholder: 1 chart preserved but not modeled]"]
+        );
+    }
+
+    #[test]
+    fn undecodable_image_placeholder_texts_describe_skipped_rasters() {
+        assert!(super::undecodable_image_placeholder_texts(0).is_empty());
+        assert_eq!(
+            super::undecodable_image_placeholder_texts(2),
+            vec![
+                "[rwml preview placeholder: 2 raster images skipped because the PDF backend could not decode them]"
+            ]
+        );
+    }
+
+    #[test]
+    fn missing_image_placeholder_texts_describe_unavailable_bytes() {
+        assert!(super::missing_image_placeholder_texts(0).is_empty());
+        assert_eq!(
+            super::missing_image_placeholder_texts(2),
+            vec![
+                "[rwml preview placeholder: 2 images unavailable because their bytes were not extracted]"
+            ]
+        );
+    }
+
+    #[test]
+    fn floating_shape_overlays_use_anchor_geometry() {
+        let geom = Geom::from_setup(&PageSetup::default());
+        let overlays = super::floating_shape_overlays_for_pages(
+            &[FloatingShape {
+                id: "7".to_string(),
+                name: Some("Float one".to_string()),
+                description: Some("A floating object".to_string()),
+                text: Some("Shape body".to_string()),
+                preset_geometry: Some("roundRect".to_string()),
+                fill_color: Some(Color::rgb(0xFF, 0x88, 0x00)),
+                outline_color: Some(Color::rgb(0x00, 0x33, 0x66)),
+                simple_position_enabled: Some(true),
+                simple_position: Some(ShapePoint {
+                    x_emu: 182_880,
+                    y_emu: 274_320,
+                }),
+                effect_extent: Some(ShapeEffectExtent {
+                    left_emu: 9_144,
+                    top_emu: 18_288,
+                    right_emu: 27_432,
+                    bottom_emu: 36_576,
+                }),
+                anchor_block_index: Some(0),
+                anchor_text: Some("Before anchor After anchor".to_string()),
+                anchor_char_offset: Some("Before anchor ".chars().count()),
+                extent: Some(ShapeExtent {
+                    cx_emu: 914_400,
+                    cy_emu: 457_200,
+                }),
+                horizontal_position: Some(ShapePosition {
+                    relative_from: Some("column".to_string()),
+                    offset_emu: Some(91_440),
+                    align: None,
+                }),
+                vertical_position: Some(ShapePosition {
+                    relative_from: Some("paragraph".to_string()),
+                    offset_emu: None,
+                    align: Some("top".to_string()),
+                }),
+                relative_height: Some(251_659_264),
+                behind_doc: Some(false),
+                layout_in_cell: Some(true),
+                locked: Some(false),
+                allow_overlap: Some(true),
+                distance: crate::ShapeDistance {
+                    top_emu: Some(12_700),
+                    bottom_emu: Some(25_400),
+                    left_emu: Some(38_100),
+                    right_emu: Some(50_800),
+                },
+                wrapping: Some(crate::ShapeWrapping {
+                    kind: "square".to_string(),
+                    text: Some("bothSides".to_string()),
+                    distance: crate::ShapeDistance {
+                        top_emu: Some(9_144),
+                        bottom_emu: Some(18_288),
+                        left_emu: Some(27_432),
+                        right_emu: Some(36_576),
+                    },
+                    polygon: vec![
+                        ShapePoint { x_emu: 0, y_emu: 0 },
+                        ShapePoint {
+                            x_emu: 914_400,
+                            y_emu: 0,
+                        },
+                        ShapePoint {
+                            x_emu: 914_400,
+                            y_emu: 457_200,
+                        },
+                        ShapePoint {
+                            x_emu: 0,
+                            y_emu: 457_200,
+                        },
+                    ],
+                }),
+            }],
+            geom,
+            &[],
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+
+        assert_eq!(overlays.len(), 1);
+        let overlay = &overlays[0];
+        assert!((overlay.x - 14.4).abs() < 0.01);
+        assert!((overlay.y - 21.6).abs() < 0.01);
+        assert!((overlay.w - 72.0).abs() < 0.01);
+        assert!((overlay.h - 36.0).abs() < 0.01);
+        assert_eq!(overlay.page_index, 0);
+        assert_eq!(
+            overlay.label,
+            "floating shape 1: Float one (72 x 36 pt, x simplePos 14.4 pt, y simplePos 21.6 pt, z 251659264, front, anchor dist t 1 pt, b 2 pt, l 3 pt, r 4 pt, wrap square bothSides wrap dist t 0.7 pt, b 1.4 pt, l 2.2 pt, r 2.9 pt wrap polygon 4 pts, geometry roundRect, effect l 0.7 pt, t 1.4 pt, r 2.2 pt, b 2.9 pt, fill #FF8800, outline #003366, anchor Before anchor After anchor, text Shape body)"
+        );
+    }
+
+    #[test]
+    fn floating_shape_coordinates_use_distinct_physical_margin_bands() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 600.0,
+            height_pt: 800.0,
+            margin_pt: 72.0,
+            margin_left_pt: Some(60.0),
+            margin_right_pt: Some(90.0),
+            margin_top_pt: Some(72.0),
+            margin_bottom_pt: Some(108.0),
+            landscape: false,
+        });
+        let coordinate = |axis, relative_from: &str, align: Option<&str>, size| {
+            super::floating_shape_coordinate(
+                Some(&ShapePosition {
+                    relative_from: Some(relative_from.to_string()),
+                    offset_emu: align.is_none().then_some(0),
+                    align: align.map(str::to_string),
+                }),
+                axis,
+                geom,
+                size,
+            )
+        };
+
+        let horizontal = [
+            ("leftMargin", None, 0.0),
+            ("leftMargin", Some("center"), 15.0),
+            ("rightMargin", None, 510.0),
+            ("rightMargin", Some("center"), 540.0),
+            ("margin", None, 60.0),
+            ("page", None, 0.0),
+        ];
+        for (relative_from, align, expected) in horizontal {
+            let actual = coordinate(super::ShapeAxis::Horizontal, relative_from, align, 30.0);
+            assert!(
+                (actual - expected).abs() < 0.01,
+                "horizontal {relative_from:?} {align:?}: expected {expected}, got {actual}"
+            );
+        }
+
+        let vertical = [
+            ("topMargin", None, 0.0),
+            ("topMargin", Some("center"), 16.0),
+            ("bottomMargin", None, 692.0),
+            ("bottomMargin", Some("center"), 726.0),
+            ("margin", None, 72.0),
+            ("page", None, 0.0),
+        ];
+        for (relative_from, align, expected) in vertical {
+            let actual = coordinate(super::ShapeAxis::Vertical, relative_from, align, 40.0);
+            assert!(
+                (actual - expected).abs() < 0.01,
+                "vertical {relative_from:?} {align:?}: expected {expected}, got {actual}"
+            );
+        }
+    }
+
+    #[test]
+    fn floating_shape_overlays_follow_anchor_z_order() {
+        let geom = Geom::from_setup(&PageSetup::default());
+        let overlays = super::floating_shape_overlays_for_pages(
+            &[
+                FloatingShape {
+                    id: "front".to_string(),
+                    name: Some("Front".to_string()),
+                    description: None,
+                    text: None,
+                    preset_geometry: None,
+                    fill_color: None,
+                    outline_color: None,
+                    simple_position_enabled: None,
+                    simple_position: None,
+                    effect_extent: None,
+                    anchor_block_index: None,
+                    anchor_text: None,
+                    anchor_char_offset: None,
+                    extent: None,
+                    horizontal_position: None,
+                    vertical_position: None,
+                    relative_height: Some(20),
+                    behind_doc: Some(false),
+                    layout_in_cell: None,
+                    locked: None,
+                    allow_overlap: None,
+                    distance: crate::ShapeDistance::default(),
+                    wrapping: None,
+                },
+                FloatingShape {
+                    id: "back".to_string(),
+                    name: Some("Back".to_string()),
+                    description: None,
+                    text: None,
+                    preset_geometry: None,
+                    fill_color: None,
+                    outline_color: None,
+                    simple_position_enabled: None,
+                    simple_position: None,
+                    effect_extent: None,
+                    anchor_block_index: None,
+                    anchor_text: None,
+                    anchor_char_offset: None,
+                    extent: None,
+                    horizontal_position: None,
+                    vertical_position: None,
+                    relative_height: Some(10),
+                    behind_doc: Some(true),
+                    layout_in_cell: None,
+                    locked: None,
+                    allow_overlap: None,
+                    distance: crate::ShapeDistance::default(),
+                    wrapping: None,
+                },
+            ],
+            geom,
+            &[],
+            &HashMap::new(),
+            &HashMap::new(),
+        );
+
+        assert_eq!(overlays.len(), 2);
+        assert!(overlays[0].behind_doc);
+        assert!(!overlays[1].behind_doc);
+        assert!(overlays[0].label.contains("Back"));
+        assert!(overlays[1].label.contains("Front"));
+    }
+
+    #[test]
+    fn floating_overlay_frames_project_behind_body_front_scene_order() {
+        let overlay = |x, y, behind_doc| super::FloatingShapeOverlay {
+            page_index: 0,
+            behind_doc,
+            label: "shape".to_string(),
+            x,
+            y,
+            w: 30.0,
+            h: 40.0,
+        };
+        let fill = rgb::Color::new(0xF6, 0xF8, 0xFA);
+        let border = rgb::Color::new(0x5D, 0x6B, 0x78);
+        let body = rgb::Color::new(0x10, 0x20, 0x30);
+        let expected_frame = |x, y| {
+            vec![
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x,
+                        y,
+                        width: 30.0,
+                        height: 40.0,
+                    },
+                    color: fill,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x,
+                        y,
+                        width: 30.0,
+                        height: super::BORDER,
+                    },
+                    color: border,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x,
+                        y: y + 40.0 - super::BORDER,
+                        width: 30.0,
+                        height: super::BORDER,
+                    },
+                    color: border,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x,
+                        y,
+                        width: super::BORDER,
+                        height: 40.0,
+                    },
+                    color: border,
+                },
+                super::PageSceneOp::FillRect {
+                    rect: super::SceneRect {
+                        x: x + 30.0 - super::BORDER,
+                        y,
+                        width: super::BORDER,
+                        height: 40.0,
+                    },
+                    color: border,
+                },
+            ]
+        };
+
+        let mut scene = super::PageScene::default();
+        let behind = super::project_floating_overlay_frame(&mut scene, &overlay(10.0, 20.0, true))
+            .expect("behind frame projects");
+        scene
+            .push_fill_rect(0.0, 0.0, 1.0, 1.0, body)
+            .expect("body sentinel projects");
+        let front = super::project_floating_overlay_frame(&mut scene, &overlay(50.0, 60.0, false))
+            .expect("front frame projects");
+
+        assert_eq!(behind, 0..5);
+        assert_eq!(front, 6..11);
+        let mut expected = expected_frame(10.0, 20.0);
+        expected.push(super::PageSceneOp::FillRect {
+            rect: super::SceneRect {
+                x: 0.0,
+                y: 0.0,
+                width: 1.0,
+                height: 1.0,
+            },
+            color: body,
+        });
+        expected.extend(expected_frame(50.0, 60.0));
+        assert_eq!(scene.operations, expected);
+    }
+
+    #[test]
+    fn floating_overlay_label_enters_the_scene_after_the_frame() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let overlay = super::FloatingShapeOverlay {
+            page_index: 0,
+            behind_doc: false,
+            label: "shape".to_string(),
+            x: 10.0,
+            y: 20.0,
+            w: 80.0,
+            h: 40.0,
+        };
+        let mut scene = super::PageScene::default();
+
+        super::draw_floating_shape_overlay(&mut scene, &overlay, &mut tcx).expect("overlay paints");
+
+        assert_eq!(scene.operations.len(), 6);
+        let super::PageSceneOp::GlyphRun(run) = &scene.operations[5] else {
+            panic!(
+                "floating label must follow its frame: {:?}",
+                scene.operations[5]
+            );
+        };
+        assert_eq!(run.font, super::SceneFontId(0));
+        assert_eq!(run.text.as_ref(), "shape");
+        assert_eq!(run.glyphs.len(), 5);
+        assert_eq!(run.color, rgb::Color::new(0x32, 0x3A, 0x43));
+        assert!(!run.is_rtl);
+        assert_eq!(scene.font_resources.len(), 1);
+        assert_eq!(scene.glyph_count, 5);
+    }
+
+    #[test]
+    fn floating_overlay_label_propagates_the_scene_operation_limit() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let overlay = super::FloatingShapeOverlay {
+            page_index: 0,
+            behind_doc: false,
+            label: "shape".to_string(),
+            x: 10.0,
+            y: 20.0,
+            w: 80.0,
+            h: 40.0,
+        };
+        let mut scene = super::PageScene::with_operation_limit(5);
+
+        let error = super::draw_floating_shape_overlay(&mut scene, &overlay, &mut tcx)
+            .expect_err("label must honor the operation ceiling after its frame");
+        assert_eq!(
+            error.to_string(),
+            "render failed: page scene exceeds the 5-operation limit"
+        );
+        assert_eq!(scene.operations.len(), 5);
+    }
+
+    #[test]
+    fn floating_shape_overlays_use_anchor_block_page() {
+        let geom = Geom::from_setup(&PageSetup::default());
+        let page_two_geom = Geom::from_setup(&PageSetup {
+            width_pt: 300.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            landscape: true,
+            ..PageSetup::default()
+        });
+        let mut block_pages = HashMap::new();
+        block_pages.insert(2, 1);
+        let overlays = super::floating_shape_overlays_for_pages(
+            &[FloatingShape {
+                id: "late".to_string(),
+                name: Some("Late".to_string()),
+                description: None,
+                text: None,
+                preset_geometry: None,
+                fill_color: None,
+                outline_color: None,
+                simple_position_enabled: None,
+                simple_position: None,
+                effect_extent: None,
+                anchor_block_index: Some(2),
+                anchor_text: None,
+                anchor_char_offset: None,
+                extent: Some(ShapeExtent {
+                    cx_emu: 304_800,
+                    cy_emu: 304_800,
+                }),
+                horizontal_position: Some(ShapePosition {
+                    relative_from: Some("page".to_string()),
+                    offset_emu: None,
+                    align: Some("right".to_string()),
+                }),
+                vertical_position: None,
+                relative_height: None,
+                behind_doc: None,
+                layout_in_cell: None,
+                locked: None,
+                allow_overlap: None,
+                distance: crate::ShapeDistance::default(),
+                wrapping: None,
+            }],
+            geom,
+            &[geom, page_two_geom],
+            &block_pages,
+            &HashMap::new(),
+        );
+
+        assert_eq!(overlays.len(), 1);
+        assert_eq!(overlays[0].page_index, 1);
+        assert_close(overlays[0].x, 276.0);
+    }
+
+    #[test]
+    fn floating_shape_overlays_use_anchor_line_page_for_spanning_block() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 90.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            margin_left_pt: None,
+            margin_right_pt: None,
+            margin_top_pt: None,
+            margin_bottom_pt: None,
+            landscape: false,
+        });
+        let mut font_cx = FontContext::default();
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let text = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi \
+            omicron pi rho sigma tau upsilon phi chi psi omega alpha beta gamma delta epsilon \
+            zeta eta theta iota kappa lambda mu nu xi omicron pi rho sigma tau upsilon phi chi \
+            psi omega anchor target";
+        let lines = shape(
+            text,
+            StyledText::plain(&[(0, text.len(), CharProps::default())]),
+            None,
+            parley::layout::Alignment::Start,
+            geom.content_w(),
+            &mut tcx,
+        );
+        let mut items = vec![FlowItem::BlockStart {
+            index: 0,
+            pagination: super::PaginationHint::default(),
+        }];
+        items.extend(lines.clone().into_iter().map(FlowItem::Line));
+        let pagination = paginate(items, geom, &SectionSetup::default());
+        assert!(
+            pagination.pages.len() >= 2,
+            "fixture paragraph should span at least two pages"
+        );
+        let page_two_anchor_offset = pagination.pages[1]
+            .iter()
+            .find_map(|placed| match &placed.item {
+                FlowItem::Line(line) => {
+                    line_char_range(line, text).map(|(start, end)| start.saturating_add(1).min(end))
+                }
+                _ => None,
+            })
+            .expect("page-two line range");
+
+        let overlays = super::floating_shape_overlays_for_pages(
+            &[FloatingShape {
+                id: "late-anchor".to_string(),
+                name: Some("Late anchor".to_string()),
+                description: None,
+                text: None,
+                preset_geometry: None,
+                fill_color: None,
+                outline_color: None,
+                simple_position_enabled: None,
+                simple_position: None,
+                effect_extent: None,
+                anchor_block_index: Some(0),
+                anchor_text: Some(text.to_string()),
+                anchor_char_offset: Some(page_two_anchor_offset),
+                extent: None,
+                horizontal_position: None,
+                vertical_position: None,
+                relative_height: None,
+                behind_doc: None,
+                layout_in_cell: None,
+                locked: None,
+                allow_overlap: None,
+                distance: crate::ShapeDistance::default(),
+                wrapping: None,
+            }],
+            geom,
+            &[],
+            &pagination.block_pages,
+            &pagination.block_line_pages,
+        );
+
+        assert_eq!(overlays.len(), 1);
+        assert_eq!(overlays[0].page_index, 1);
+    }
+
+    #[test]
+    fn lays_out_dynamic_page_number_footer_line() {
+        let geom = Geom::from_setup(&PageSetup::default());
+        let mut font_cx = FontContext::default();
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+
+        let line = layout_page_number_line(PageDisplayNumber::decimal(7), geom, &mut tcx)
+            .expect("page number line");
+        let text: String = line.runs.iter().map(|run| run.text.as_ref()).collect();
+        assert_eq!(text, "7");
+        assert!(
+            line.runs.iter().any(|run| run.x > geom.content_w() * 0.4),
+            "page number should be centered in the content box"
+        );
+
+        let roman = layout_page_number_line(
+            PageDisplayNumber {
+                value: 7,
+                format: Some(crate::model::PageNumberFormat::UpperRoman.into()),
+            },
+            geom,
+            &mut tcx,
+        )
+        .expect("formatted page number line");
+        let text: String = roman.runs.iter().map(|run| run.text.as_ref()).collect();
+        assert_eq!(text, "VII");
+    }
+
+    #[test]
+    fn display_page_numbers_follow_restarts_and_inherit_formats() {
+        let first = SectionSetup {
+            page_number_start: Some(5),
+            page_number_format: Some(crate::model::PageNumberFormat::LowerRoman),
+            ..Default::default()
+        };
+        let continuing = SectionSetup::default();
+        let restarted = SectionSetup {
+            page_number_start: Some(3),
+            page_number_format: Some(crate::model::PageNumberFormat::UpperLetter),
+            ..Default::default()
+        };
+        let mut page_sections = vec![None, None, None, None, None];
+        assign_section_to_render_pages(&mut page_sections, 0, 0, &first, 0);
+        assign_section_to_render_pages(&mut page_sections, 1, 2, &continuing, 1);
+        assign_section_to_render_pages(&mut page_sections, 3, 4, &restarted, 2);
+
+        let text = display_page_numbers(&page_sections, &restarted)
+            .into_iter()
+            .map(PageDisplayNumber::text)
+            .collect::<Option<Vec<_>>>()
+            .expect("display formats are representable");
+        assert_eq!(text, ["v", "vi", "vii", "C", "D"]);
+    }
+
+    #[test]
+    fn dynamic_page_number_text_prefers_field_format_and_applies_text_format() {
+        let section_page = PageDisplayNumber {
+            value: 7,
+            format: Some(crate::model::PageNumberFormat::UpperRoman.into()),
+        };
+        let inherited = dynamic_text_for_field(
+            &FieldRole::Simple {
+                instruction: "PAGE".to_string(),
+            },
+            &CharProps::default(),
+            None,
+        )
+        .expect("plain PAGE is dynamic");
+        assert_eq!(
+            dynamic_page_number_text(&inherited, section_page).as_deref(),
+            Some("VII")
+        );
+
+        let overridden = dynamic_text_for_field(
+            &FieldRole::Simple {
+                instruction: "PAGE \\* CardText \\* Upper".to_string(),
+            },
+            &CharProps::default(),
+            None,
+        )
+        .expect("formatted PAGE is dynamic");
+        assert_eq!(
+            dynamic_page_number_text(&overridden, section_page).as_deref(),
+            Some("SEVEN")
+        );
+
+        assert!(dynamic_text_for_field(
+            &FieldRole::Simple {
+                instruction: "PAGE \\q malformed".to_string(),
+            },
+            &CharProps::default(),
+            None,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn selects_first_even_and_default_running_surfaces_by_page() {
+        let setup = crate::model::DocSetup {
+            header: vec![para("default header", None)],
+            first_header: vec![para("first header", None)],
+            even_header: vec![para("even header", None)],
+            footer: vec![para("default footer", None)],
+            first_footer: vec![para("first footer", None)],
+            even_footer: vec![para("even footer", None)],
+            ..Default::default()
+        };
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 1, true);
+        assert_eq!(block_text(header), "first header");
+        assert_eq!(block_text(footer), "first footer");
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 2, false);
+        assert_eq!(block_text(header), "even header");
+        assert_eq!(block_text(footer), "even footer");
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 3, false);
+        assert_eq!(block_text(header), "default header");
+        assert_eq!(block_text(footer), "default footer");
+    }
+
+    #[test]
+    fn running_surface_selection_falls_back_to_default_when_variant_is_empty() {
+        let setup = crate::model::DocSetup {
+            header: vec![para("default header", None)],
+            footer: vec![para("default footer", None)],
+            even_header: vec![para("even header", None)],
+            ..Default::default()
+        };
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 1, true);
+        assert_eq!(block_text(header), "default header");
+        assert_eq!(block_text(footer), "default footer");
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 2, false);
+        assert_eq!(block_text(header), "even header");
+        assert_eq!(block_text(footer), "default footer");
+    }
+
+    #[test]
+    fn title_page_suppresses_default_running_surface_on_first_page() {
+        let setup = crate::model::DocSetup {
+            header: vec![para("default header", None)],
+            footer: vec![para("default footer", None)],
+            title_page: true,
+            ..Default::default()
+        };
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 1, true);
+        assert!(header.is_empty());
+        assert!(footer.is_empty());
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 2, false);
+        assert_eq!(block_text(header), "default header");
+        assert_eq!(block_text(footer), "default footer");
+    }
+
+    #[test]
+    fn selects_first_running_surface_on_first_page_of_later_section() {
+        let setup = SectionSetup {
+            header: vec![para("section default header", None)],
+            first_header: vec![para("section first header", None)],
+            even_header: vec![para("section even header", None)],
+            footer: vec![para("section default footer", None)],
+            first_footer: vec![para("section first footer", None)],
+            even_footer: vec![para("section even footer", None)],
+            ..Default::default()
+        };
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 3, true);
+        assert_eq!(block_text(header), "section first header");
+        assert_eq!(block_text(footer), "section first footer");
+
+        let (header, footer) = running_header_footer_blocks_for_page(&setup, 4, false);
+        assert_eq!(block_text(header), "section even header");
+        assert_eq!(block_text(footer), "section even footer");
+    }
+
+    #[test]
+    fn section_page_assignment_tracks_section_start_page() {
+        let first = SectionSetup {
+            header: vec![para("first default header", None)],
+            first_header: vec![para("first first header", None)],
+            even_header: vec![para("first even header", None)],
+            ..Default::default()
+        };
+        let final_setup = SectionSetup {
+            header: vec![para("final default header", None)],
+            first_header: vec![para("final first header", None)],
+            even_header: vec![para("final even header", None)],
+            ..Default::default()
+        };
+        let mut page_sections = vec![None, None, None, None];
+
+        assign_section_to_render_pages(&mut page_sections, 0, 1, &first, 0);
+        assign_section_to_render_pages(&mut page_sections, 2, 3, &final_setup, 1);
+
+        let first_page = page_sections[0].as_ref().expect("first page section");
+        assert_eq!(first_page.first_page_index, 0);
+        assert_eq!(first_page.section_index, 0);
+        let second_page = page_sections[1].as_ref().expect("second page section");
+        assert_eq!(second_page.first_page_index, 0);
+        let final_first_page = page_sections[2].as_ref().expect("final first page section");
+        assert_eq!(final_first_page.first_page_index, 2);
+        assert_eq!(final_first_page.section_index, 1);
+
+        let (header, _) = running_header_footer_blocks_for_page(
+            &final_first_page.setup,
+            3,
+            final_first_page.first_page_index == 2,
+        );
+        assert_eq!(block_text(header), "final first header");
+
+        let final_second_page = page_sections[3]
+            .as_ref()
+            .expect("final second page section");
+        let (header, _) = running_header_footer_blocks_for_page(
+            &final_second_page.setup,
+            4,
+            final_second_page.first_page_index == 3,
+        );
+        assert_eq!(block_text(header), "final even header");
+    }
+
+    #[test]
+    fn pagination_selects_later_section_running_surface_after_section_break() {
+        let first = SectionSetup {
+            header: vec![para("first section header", None)],
+            ..Default::default()
+        };
+        let final_setup = SectionSetup {
+            header: vec![para("second default header", None)],
+            first_header: vec![para("second first header", None)],
+            ..Default::default()
+        };
+        let pagination = paginate(
+            vec![FlowItem::SectionBreak(first)],
+            Geom::from_setup(&PageSetup::default()),
+            &final_setup,
+        );
+
+        let second_page = pagination.page_sections[1]
+            .as_ref()
+            .expect("second page section");
+        let (header, _) = running_header_footer_blocks_for_page(
+            &second_page.setup,
+            2,
+            second_page.first_page_index == 1,
+        );
+        assert_eq!(block_text(header), "second first header");
+    }
+
+    #[test]
+    fn parity_filler_stays_in_ending_section_and_target_stays_first_page() {
+        let ending = SectionSetup {
+            section_break: Some(SectionBreakKind::OddPage),
+            header: vec![para("ending section", None)],
+            ..SectionSetup::default()
+        };
+        let final_setup = SectionSetup {
+            header: vec![para("following section", None)],
+            ..SectionSetup::default()
+        };
+        let pagination = paginate(
+            vec![
+                pagination_line(10.0),
+                FlowItem::SectionBreak(ending),
+                pagination_line(10.0),
+            ],
+            Geom::from_setup(&PageSetup::default()),
+            &final_setup,
+        );
+
+        assert_eq!(page_line_counts(&pagination), vec![1, 0, 1]);
+        let filler = pagination.page_sections[1]
+            .as_ref()
+            .expect("parity filler section");
+        assert_eq!(block_text(&filler.setup.header), "ending section");
+        assert_eq!(filler.first_page_index, 0);
+        let target = pagination.page_sections[2]
+            .as_ref()
+            .expect("following section target");
+        assert_eq!(block_text(&target.setup.header), "following section");
+        assert_eq!(target.first_page_index, 2);
+    }
+
+    #[test]
+    fn parity_uses_pages_created_by_automatic_overflow() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let ending = SectionSetup {
+            section_break: Some(SectionBreakKind::EvenPage),
+            page: PageSetup {
+                width_pt: 220.0,
+                height_pt: 100.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
+            header: vec![para("ending section", None)],
+            ..SectionSetup::default()
+        };
+        let final_setup = SectionSetup {
+            header: vec![para("following section", None)],
+            ..SectionSetup::default()
+        };
+        let mut items = (0..5).map(|_| pagination_line(20.0)).collect::<Vec<_>>();
+        items.push(FlowItem::SectionBreak(ending));
+        items.push(pagination_line(20.0));
+
+        let pagination = paginate(items, geom, &final_setup);
+
+        assert_eq!(page_line_counts(&pagination), vec![3, 2, 0, 1]);
+        assert_eq!(
+            block_text(
+                &pagination.page_sections[2]
+                    .as_ref()
+                    .expect("parity filler section")
+                    .setup
+                    .header
+            ),
+            "ending section"
+        );
+        let target = pagination.page_sections[3]
+            .as_ref()
+            .expect("following section target");
+        assert_eq!(block_text(&target.setup.header), "following section");
+        assert_eq!(target.first_page_index, 3);
+    }
+
+    #[test]
+    fn equal_width_columns_fill_across_before_creating_a_page() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let line = || {
+            FlowItem::Line(LineLayout {
+                height: 10.0,
+                baseline: 8.0,
+                clip_to_height: false,
+                x_indent: 0.0,
+                char_range: None,
+                background: None,
+                cell_spacing: Default::default(),
+                cell_paragraph: None,
+                cell_cant_split_group: None,
+                cell_visual: None,
+                leaders: Vec::new(),
+                runs: Vec::new(),
+            })
+        };
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+
+        let pagination = paginate((0..8).map(|_| line()).collect(), geom, &setup);
+
+        assert_eq!(pagination.pages.len(), 1);
+        let x_positions = pagination.pages[0]
+            .iter()
+            .filter_map(|placed| matches!(&placed.item, FlowItem::Line(_)).then_some(placed.x))
+            .collect::<Vec<_>>();
+        assert_eq!(x_positions.len(), 8);
+        assert!(x_positions[..6].iter().all(|x| x.abs() < 0.1));
+        assert!(x_positions[6..].iter().all(|x| *x > 90.0));
+    }
+
+    #[test]
+    fn manual_column_breaks_advance_columns_before_pages() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate(items, geom, &setup);
+
+        assert_eq!(pagination.pages.len(), 2);
+        let first_page_lines = pagination.pages[0]
+            .iter()
+            .filter(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .collect::<Vec<_>>();
+        assert_eq!(first_page_lines.len(), 2);
+        assert!(first_page_lines[0].x.abs() < 0.1);
+        assert!(first_page_lines[1].x > 90.0);
+        let second_page_line = pagination.pages[1]
+            .iter()
+            .find(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .expect("line after the second manual column break");
+        assert!(second_page_line.x.abs() < 0.1);
+    }
+
+    #[test]
+    fn explicit_equal_column_gap_controls_column_width_and_origin() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+
+        let pagination = paginate_with_column_gap(
+            (0..8).map(|_| pagination_line(10.0)).collect(),
+            geom,
+            &setup,
+            Some(40.0),
+            None,
+            false,
+        );
+
+        let second_column = pagination.pages[0]
+            .iter()
+            .find(|placed| matches!(&placed.item, FlowItem::Line(_)) && placed.x > 0.0)
+            .expect("second-column line");
+        assert_close(second_column.width, 70.0);
+        assert_close(second_column.x, 110.0);
+    }
+
+    #[test]
+    fn column_separator_midpoints_follow_equal_fitting_and_scaled_layouts() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let equal = ColumnLayout::new_with_layout(geom, Some(2), Some(40.0), None);
+        assert_close(equal.separator_x(0).unwrap(), 90.0);
+        assert_eq!(equal.separator_x(1), None);
+
+        let fitting_source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 80.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let fitting = ColumnLayout::new_with_layout(geom, Some(9), None, Some(&fitting_source));
+        assert_close(fitting.separator_x(0).unwrap(), 70.0);
+
+        let scaled_source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 120.0,
+                    space_after_pt: 60.0,
+                },
+                SectionColumnHint {
+                    width_pt: 120.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let scaled = ColumnLayout::new_with_layout(geom, Some(2), None, Some(&scaled_source));
+        assert_close(scaled.separator_x(0).unwrap(), 90.0);
+
+        let single = ColumnLayout::new_with_layout(geom, Some(1), None, None);
+        assert_eq!(single.separator_x(0), None);
+    }
+
+    #[test]
+    fn unequal_column_layout_preserves_fitting_widths_and_origins() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 80.0,
+                    space_after_pt: 999.0,
+                },
+            ],
+        };
+
+        let layout = ColumnLayout::new_with_layout(geom, Some(9), Some(40.0), Some(&source));
+
+        assert_eq!(layout.count, 2);
+        assert_close(layout.width(0), 60.0);
+        assert_close(layout.x(0), 0.0);
+        assert_close(layout.width(1), 80.0);
+        assert_close(layout.x(1), 80.0);
+        assert_close(layout.shaping_width(), 60.0);
+    }
+
+    #[test]
+    fn unequal_column_layout_scales_overwide_geometry_when_columns_remain_legible() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 120.0,
+                    space_after_pt: 60.0,
+                },
+                SectionColumnHint {
+                    width_pt: 120.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+
+        let layout = ColumnLayout::new_with_layout(geom, Some(2), None, Some(&source));
+
+        assert_close(layout.width(0), 72.0);
+        assert_close(layout.x(1), 108.0);
+        assert_close(layout.width(1), 72.0);
+    }
+
+    #[test]
+    fn unequal_column_layout_falls_back_when_scaling_would_make_a_column_too_narrow() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 20.0,
+                    space_after_pt: 60.0,
+                },
+                SectionColumnHint {
+                    width_pt: 200.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+
+        let layout = ColumnLayout::new_with_layout(geom, Some(2), None, Some(&source));
+
+        assert_close(layout.width(0), 81.0);
+        assert_close(layout.x(1), 99.0);
+        assert_close(layout.width(1), 81.0);
+    }
+
+    #[test]
+    fn unequal_columns_control_manual_column_break_placement() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate_with_column_gap(items, geom, &setup, None, Some(&source), false);
+        let lines = pagination.pages[0]
+            .iter()
+            .filter(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .collect::<Vec<_>>();
+
+        assert_eq!(lines.len(), 2);
+        assert_close(lines[0].x, 0.0);
+        assert_close(lines[0].width, 60.0);
+        assert_close(lines[1].x, 80.0);
+        assert_close(lines[1].width, 100.0);
+    }
+
+    #[test]
+    fn wider_unequal_target_column_rewraps_a_single_column_paragraph() {
+        let page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 120.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let model = DocModel {
+            blocks: vec![
+                para("seed", None),
+                para(
+                    "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu",
+                    None,
+                ),
+            ],
+            setup: crate::model::DocSetup {
+                page,
+                columns: Some(2),
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let column_breaks = vec![vec!["seed".len()], Vec::new()];
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let layout = super::layout_pages_with_fonts_and_pagination(
+            &model,
+            &fonts,
+            super::SourceRenderHints {
+                column_break_offsets: &column_breaks,
+                final_section_column_layout: Some(&source),
+                ..super::SourceRenderHints::default()
+            },
+            &[],
+        )
+        .expect("unequal-column model lays out");
+
+        assert_eq!(layout.pages, 1);
+        assert_eq!(layout.block_pages, [Some(1), Some(1)]);
+    }
+
+    #[test]
+    fn cross_track_unequal_paragraph_reshapes_each_track() {
+        let page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 160.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let short_text = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu";
+        let long_text = std::iter::repeat_n(
+            "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu",
+            8,
+        )
+        .collect::<Vec<_>>()
+        .join(" ");
+        let mut long_paragraph = list_paragraph(&long_text, 0, true, "7.");
+        long_paragraph.runs.push(Run {
+            text: " 1".to_string(),
+            field: FieldRole::Simple {
+                instruction: "PAGE".to_string(),
+            },
+            ..Run::default()
+        });
+        let long_source_chars = long_paragraph.text().chars().count();
+        let model = DocModel {
+            blocks: vec![
+                para("seed", None),
+                para(short_text, None),
+                Block::Paragraph(long_paragraph),
+            ],
+            setup: crate::model::DocSetup {
+                page,
+                columns: Some(2),
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let column_breaks = vec![vec!["seed".len()], Vec::new(), Vec::new()];
+        let hints = super::SourceRenderHints {
+            column_break_offsets: &column_breaks,
+            final_section_column_layout: Some(&source),
+            ..super::SourceRenderHints::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&page);
+        let setup = SectionSetup::from(&model.setup);
+        let mut conservative_capture = LayoutCapture::default();
+        let conservative_items = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut conservative_capture,
+            hints,
+            &[],
+            None,
+        );
+        let conservative =
+            paginate_with_column_gap(conservative_items, geom, &setup, None, Some(&source), false);
+        let mut adaptive_capture = LayoutCapture::page_fields();
+        let adaptive = super::collect_and_paginate_pdf_flow(
+            &model,
+            geom,
+            &mut tcx,
+            &mut adaptive_capture,
+            hints,
+            &[],
+            None,
+        );
+        let conservative_short = &conservative.block_line_widths[&1];
+        let adaptive_short = &adaptive.block_line_widths[&1];
+        let conservative_long = &conservative.block_line_widths[&2];
+        let adaptive_long = &adaptive.block_line_widths[&2];
+
+        assert!(adaptive_short.len() < conservative_short.len());
+        assert!(adaptive_short
+            .iter()
+            .all(|width| (*width - 100.0).abs() < 0.01));
+        assert!(adaptive_long.len() < conservative_long.len());
+        assert!(adaptive_long
+            .iter()
+            .any(|width| (*width - 60.0).abs() < 0.01));
+        assert!(adaptive_long
+            .iter()
+            .any(|width| (*width - 100.0).abs() < 0.01));
+        let adaptive_ranges = &adaptive.block_line_pages[&2];
+        assert_eq!(
+            adaptive_ranges.first().map(|line| line.range.start),
+            Some(0)
+        );
+        assert_eq!(
+            adaptive_ranges.last().map(|line| line.range.end),
+            Some(long_source_chars)
+        );
+        assert!(adaptive_ranges
+            .windows(2)
+            .all(|lines| lines[0].range.end == lines[1].range.start));
+        let marker_count = adaptive
+            .pages
+            .iter()
+            .flatten()
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Line(line) => Some(line),
+                _ => None,
+            })
+            .filter(|line| drawn_line_text(line).contains("7. "))
+            .count();
+        assert_eq!(marker_count, 1);
+        assert_eq!(adaptive_capture.page_fields.len(), 1);
+        let page_field_indices = adaptive
+            .pages
+            .iter()
+            .flatten()
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Line(line) => Some(line),
+                _ => None,
+            })
+            .flat_map(|line| &line.runs)
+            .filter_map(|run| run.dynamic.as_ref())
+            .map(|dynamic| dynamic.page_field_index)
+            .collect::<Vec<_>>();
+        assert!(!page_field_indices.is_empty());
+        assert!(page_field_indices.iter().all(|index| *index == Some(0)));
+    }
+
+    #[test]
+    fn equal_line_count_unequal_paragraph_uses_live_boundaries() {
+        let page = PageSetup {
+            width_pt: 182.0,
+            height_pt: 120.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let text = "alpha beta gamma delta epsilon zeta eta";
+        let mut target = Paragraph {
+            runs: vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        };
+        target.props.spacing.before_pt = Some(32.0);
+        let model = DocModel {
+            blocks: vec![para("seed", None), Block::Paragraph(target)],
+            setup: crate::model::DocSetup {
+                page,
+                columns: Some(2),
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 62.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let hints = super::SourceRenderHints {
+            final_section_column_layout: Some(&source),
+            ..super::SourceRenderHints::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&page);
+        let setup = SectionSetup::from(&model.setup);
+        let mut conservative_capture = LayoutCapture::default();
+        let conservative_items = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut conservative_capture,
+            hints,
+            &[],
+            None,
+        );
+        let conservative =
+            paginate_with_column_gap(conservative_items, geom, &setup, None, Some(&source), false);
+        let mut adaptive_capture = LayoutCapture::default();
+        let adaptive = super::collect_and_paginate_pdf_flow(
+            &model,
+            geom,
+            &mut tcx,
+            &mut adaptive_capture,
+            hints,
+            &[],
+            None,
+        );
+        let ranges = |pagination: &super::Pagination| {
+            pagination.block_line_pages[&1]
+                .iter()
+                .map(|line| (line.range.start, line.range.end))
+                .collect::<Vec<_>>()
+        };
+        let conservative_ranges = ranges(&conservative);
+        let adaptive_ranges = ranges(&adaptive);
+
+        assert_eq!(
+            conservative_ranges,
+            [(0, 11), (11, 17), (17, 23), (23, 31), (31, 39)]
+        );
+        assert_eq!(adaptive_ranges.len(), conservative_ranges.len());
+        assert_eq!(
+            adaptive_ranges,
+            [(0, 11), (11, 17), (17, 23), (23, 36), (36, 39)]
+        );
+        assert_eq!(
+            adaptive.block_line_widths[&1],
+            [60.0, 62.0, 62.0, 62.0, 62.0]
+        );
+    }
+
+    #[test]
+    fn rtl_wider_unequal_start_column_rewraps_single_column_paragraph() {
+        let page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 120.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let model = DocModel {
+            blocks: vec![para(
+                "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu",
+                None,
+            )],
+            setup: crate::model::DocSetup {
+                page,
+                columns: Some(2),
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let layout = super::layout_pages_with_fonts_and_pagination(
+            &model,
+            &fonts,
+            super::SourceRenderHints {
+                final_section_column_layout: Some(&source),
+                final_section_column_rtl: true,
+                ..super::SourceRenderHints::default()
+            },
+            &[],
+        )
+        .expect("RTL unequal-column model lays out");
+
+        assert_eq!(layout.pages, 1);
+        assert_eq!(layout.block_pages, [Some(1)]);
+    }
+
+    #[test]
+    fn rtl_unequal_columns_advance_left_and_reset_right_after_manual_breaks() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let source = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+            FlowItem::ColumnBreak,
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate_with_column_gap(items, geom, &setup, None, Some(&source), true);
+        let first_page = pagination.pages[0]
+            .iter()
+            .filter(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .collect::<Vec<_>>();
+        let second_page = pagination.pages[1]
+            .iter()
+            .find(|placed| matches!(&placed.item, FlowItem::Line(_)))
+            .expect("line after RTL page reset");
+
+        assert_eq!(first_page.len(), 2);
+        assert_close(first_page[0].x, 80.0);
+        assert_close(first_page[0].width, 100.0);
+        assert_close(first_page[1].x, 0.0);
+        assert_close(first_page[1].width, 60.0);
+        assert_close(second_page.x, 80.0);
+        assert_close(second_page.width, 100.0);
+    }
+
+    #[test]
+    fn rtl_columns_advance_left_on_overflow_and_reset_right_on_new_page() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 60.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let lines_per_column = ((geom.bottom() - geom.top()) / 10.0).floor() as usize;
+        let pagination = paginate_with_column_gap(
+            (0..lines_per_column * 2 + 1)
+                .map(|_| pagination_line(10.0))
+                .collect(),
+            geom,
+            &setup,
+            Some(20.0),
+            None,
+            true,
+        );
+        let page_xs = pagination
+            .pages
+            .iter()
+            .map(|page| {
+                page.iter()
+                    .filter(|placed| matches!(&placed.item, FlowItem::Line(_)))
+                    .map(|placed| placed.x)
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(page_xs.len(), 2);
+        assert_eq!(page_xs[0].len(), lines_per_column * 2);
+        for x in &page_xs[0][..lines_per_column] {
+            assert_close(*x, 100.0);
+        }
+        for x in &page_xs[0][lines_per_column..] {
+            assert_close(*x, 0.0);
+        }
+        assert_close(page_xs[1][0], 100.0);
+    }
+
+    #[test]
+    fn section_column_direction_state_resets_at_each_boundary() {
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::SectionColumnRtl,
+            FlowItem::SectionBreak(setup.clone()),
+            pagination_line(10.0),
+            FlowItem::SectionBreak(setup.clone()),
+            pagination_line(10.0),
+        ];
+
+        assert_eq!(
+            super::section_column_rtl_by_item(&items, true),
+            vec![true, true, true, false, false, true]
+        );
+
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let pagination = paginate_with_column_gap(items, geom, &setup, None, None, true);
+        let first_line_x = |page: &[super::PlacedItem]| {
+            page.iter()
+                .find(|placed| matches!(&placed.item, FlowItem::Line(_)))
+                .map(|placed| placed.x)
+                .expect("section line")
+        };
+
+        assert_eq!(pagination.pages.len(), 3);
+        assert!(first_line_x(&pagination.pages[0]) > 90.0);
+        assert_close(first_line_x(&pagination.pages[1]), 0.0);
+        assert!(first_line_x(&pagination.pages[2]) > 90.0);
+    }
+
+    #[test]
+    fn one_column_layout_is_invariant_under_section_rtl() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let setup = SectionSetup {
+            columns: Some(1),
+            ..SectionSetup::default()
+        };
+        let ltr =
+            paginate_with_column_gap(vec![pagination_line(10.0)], geom, &setup, None, None, false);
+        let rtl =
+            paginate_with_column_gap(vec![pagination_line(10.0)], geom, &setup, None, None, true);
+
+        assert_eq!(ltr.pages.len(), rtl.pages.len());
+        assert_close(ltr.pages[0][0].x, rtl.pages[0][0].x);
+        assert_close(ltr.pages[0][0].width, rtl.pages[0][0].width);
+    }
+
+    #[test]
+    fn section_local_column_gaps_follow_ending_section_boundaries() {
+        let setup = SectionSetup {
+            columns: Some(2),
+            ..SectionSetup::default()
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::SectionColumnGap(40.0),
+            FlowItem::SectionBreak(setup),
+            pagination_line(10.0),
+        ];
+
+        assert_eq!(
+            super::section_column_gaps_by_item(&items, Some(10.0)),
+            vec![Some(40.0), Some(40.0), Some(40.0), Some(10.0)]
+        );
+
+        let blocks = vec![
+            para("ending", None),
+            Block::SectionBreak(SectionSetup::default()),
+            para("final", None),
+        ];
+        assert_eq!(
+            super::section_column_gaps_by_block(&blocks, &[None, Some(40.0), None], Some(10.0),),
+            vec![Some(40.0), Some(40.0), Some(10.0)]
+        );
+    }
+
+    #[test]
+    fn section_local_unequal_layouts_follow_ending_section_boundaries() {
+        let ending = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let final_layout = SectionColumnLayoutHints {
+            columns: vec![SectionColumnHint {
+                width_pt: 180.0,
+                space_after_pt: 0.0,
+            }],
+        };
+        let items = vec![
+            pagination_line(10.0),
+            FlowItem::SectionColumnLayout(Rc::new(ending.clone())),
+            FlowItem::SectionBreak(SectionSetup::default()),
+            pagination_line(10.0),
+        ];
+
+        assert_eq!(
+            super::section_column_layouts_by_item(&items, Some(&final_layout)),
+            vec![
+                Some(Rc::new(ending.clone())),
+                Some(Rc::new(ending.clone())),
+                Some(Rc::new(ending.clone())),
+                Some(Rc::new(final_layout.clone())),
+            ]
+        );
+
+        let blocks = vec![
+            para("ending", None),
+            Block::SectionBreak(SectionSetup::default()),
+            para("final", None),
+        ];
+        assert_eq!(
+            super::section_column_layouts_by_block(
+                &blocks,
+                &[None, Some(ending.clone()), None],
+                Some(&final_layout),
+            ),
+            vec![Some(&ending), Some(&ending), Some(&final_layout)]
+        );
+    }
+
+    #[test]
+    fn column_paint_hints_follow_section_boundaries_and_final_state() {
+        let ending_layout = SectionColumnLayoutHints {
+            columns: vec![
+                SectionColumnHint {
+                    width_pt: 60.0,
+                    space_after_pt: 20.0,
+                },
+                SectionColumnHint {
+                    width_pt: 100.0,
+                    space_after_pt: 0.0,
+                },
+            ],
+        };
+        let final_layout = SectionColumnLayoutHints {
+            columns: vec![SectionColumnHint {
+                width_pt: 180.0,
+                space_after_pt: 0.0,
+            }],
+        };
+        let blocks = vec![
+            para("first", None),
+            Block::SectionBreak(SectionSetup::default()),
+            para("second", None),
+            Block::SectionBreak(SectionSetup::default()),
+            para("final", None),
+        ];
+        let ending_layouts = [None, Some(ending_layout.clone()), None, None, None];
+        let hints = super::section_column_paint_hints_by_section(
+            &blocks,
+            &[None, Some(40.0), None, Some(20.0), None],
+            &ending_layouts,
+            &[false, true, false, false, false],
+            Some(10.0),
+            Some(&final_layout),
+            true,
+        );
+
+        assert_eq!(hints.len(), 3);
+        assert_eq!(hints[0].gap_pt, Some(40.0));
+        assert_eq!(hints[0].layout, Some(&ending_layout));
+        assert!(hints[0].separator);
+        assert_eq!(hints[1].gap_pt, Some(20.0));
+        assert_eq!(hints[1].layout, None);
+        assert!(!hints[1].separator);
+        assert_eq!(hints[2].gap_pt, Some(10.0));
+        assert_eq!(hints[2].layout, Some(&final_layout));
+        assert!(hints[2].separator);
+    }
+
+    fn pagination_line(height: f32) -> FlowItem {
+        FlowItem::Line(LineLayout {
+            height,
+            baseline: height * 0.8,
+            clip_to_height: false,
+            x_indent: 0.0,
+            char_range: None,
+            background: None,
+            cell_spacing: Default::default(),
+            cell_paragraph: None,
+            cell_cant_split_group: None,
+            cell_visual: None,
+            leaders: Vec::new(),
+            runs: Vec::new(),
+        })
+    }
+
+    fn pagination_line_with_range(height: f32, start: usize, end: usize) -> FlowItem {
+        let FlowItem::Line(mut line) = pagination_line(height) else {
+            unreachable!()
+        };
+        line.char_range = Some(super::LineCharRange { start, end });
+        FlowItem::Line(line)
+    }
+
+    fn pagination_block(index: usize, pagination: PaginationHint) -> FlowItem {
+        FlowItem::BlockStart { index, pagination }
+    }
+
+    fn pagination_table_row(cant_split: bool, line_count: usize) -> super::RowLayout {
+        let lines = (0..line_count)
+            .map(|_| LineLayout {
+                height: 10.0,
+                baseline: 8.0,
+                clip_to_height: false,
+                x_indent: 0.0,
+                char_range: None,
+                background: None,
+                cell_spacing: Default::default(),
+                cell_paragraph: None,
+                cell_cant_split_group: None,
+                cell_visual: None,
+                leaders: Vec::new(),
+                runs: Vec::new(),
+            })
+            .collect::<Vec<_>>();
+        super::RowLayout {
+            height: line_count as f32 * 10.0,
+            cells: vec![super::CellBox {
+                x: 0.0,
+                right: 100.0,
+                width: 100.0,
+                lines,
+                insets: super::CellInsets::zero(),
+                shading: None,
+                valign: crate::model::VCell::Top,
+                border_edges: super::CellBorderEdges::outer(),
+            }],
+            cant_split,
+            border: super::TableBorderPaints::default(),
+            table_id: None,
+        }
+    }
+
+    fn page_row_counts(pagination: &super::Pagination) -> Vec<usize> {
+        pagination
+            .pages
+            .iter()
+            .map(|page| {
+                page.iter()
+                    .filter(|placed| matches!(placed.item, FlowItem::Row(_)))
+                    .count()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn table_row_break_policy_uses_remaining_space_or_moves_whole() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let splittable = paginate(
+            vec![
+                pagination_line(30.0),
+                FlowItem::Table {
+                    rows: vec![pagination_table_row(false, 4)],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+        let kept = paginate(
+            vec![
+                pagination_line(30.0),
+                FlowItem::Table {
+                    rows: vec![pagination_table_row(true, 4)],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert_eq!(page_row_counts(&splittable), vec![1, 1]);
+        assert_eq!(page_row_counts(&kept), vec![0, 1]);
+    }
+
+    #[test]
+    fn table_block_page_tracks_the_first_placed_row() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let pagination = paginate(
+            vec![
+                pagination_block(0, PaginationHint::default()),
+                pagination_line(45.0),
+                pagination_block(1, PaginationHint::default()),
+                FlowItem::Table {
+                    rows: vec![pagination_table_row(true, 2)],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert_eq!(page_row_counts(&pagination), vec![0, 1]);
+        assert_eq!(pagination.block_pages.get(&1), Some(&1));
+    }
+
+    #[test]
+    fn table_cell_spacing_alone_can_move_the_first_row_and_its_block_page() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let compact_row = pagination_table_row(true, 1);
+        let mut spaced_row = compact_row.clone();
+        spaced_row.cells[0].lines[0].cell_spacing = super::CellLineSpacing {
+            before: 8.0,
+            after: 6.0,
+        };
+        spaced_row.height += 14.0;
+        let paginate_row = |row| {
+            paginate(
+                vec![
+                    pagination_block(0, PaginationHint::default()),
+                    pagination_line(45.0),
+                    pagination_block(1, PaginationHint::default()),
+                    FlowItem::Table {
+                        rows: vec![row],
+                        header_rows: 0,
+                    },
+                ],
+                geom,
+                &SectionSetup::default(),
+            )
+        };
+
+        let compact = paginate_row(compact_row);
+        let spaced = paginate_row(spaced_row);
+
+        assert_eq!(page_row_counts(&compact), vec![1]);
+        assert_eq!(compact.block_pages.get(&1), Some(&0));
+        assert_eq!(page_row_counts(&spaced), vec![0, 1]);
+        assert_eq!(spaced.block_pages.get(&1), Some(&1));
+    }
+
+    #[test]
+    fn spanning_table_block_page_stays_on_its_first_row_fragment() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let pagination = paginate(
+            vec![
+                pagination_block(0, PaginationHint::default()),
+                FlowItem::Table {
+                    rows: vec![
+                        pagination_table_row(false, 8),
+                        pagination_table_row(true, 1),
+                    ],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert!(pagination.pages.len() > 1);
+        assert_eq!(pagination.block_pages.get(&0), Some(&0));
+    }
+
+    #[test]
+    fn over_tall_cant_split_row_starts_fresh_and_still_makes_progress() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let pagination = paginate(
+            vec![
+                pagination_line(10.0),
+                FlowItem::Table {
+                    rows: vec![pagination_table_row(true, 8)],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert_eq!(page_row_counts(&pagination), vec![0, 1, 1]);
+    }
+
+    #[test]
+    fn splittable_row_moves_when_remainder_cannot_hold_a_line() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let pagination = paginate(
+            vec![
+                pagination_line(55.0),
+                FlowItem::Table {
+                    rows: vec![pagination_table_row(false, 2)],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert_eq!(page_row_counts(&pagination), vec![0, 1]);
+    }
+
+    #[test]
+    fn splittable_row_moves_when_remainder_cannot_hold_single_line_cell_insets() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut row = pagination_table_row(false, 1);
+        row.cells[0].insets.top = 3.0;
+        row.cells[0].insets.bottom = 5.0;
+        row.height = 18.0;
+        let pagination = paginate(
+            vec![
+                pagination_line(45.0),
+                FlowItem::Table {
+                    rows: vec![row],
+                    header_rows: 0,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert_eq!(page_row_counts(&pagination), vec![0, 1]);
+    }
+
+    #[test]
+    fn split_table_row_repeats_headers_once_per_new_page() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let header_line = super::TableBorderPaint {
+            color: rgb::Color::new(0xA6, 0x1B, 0x29),
+            width: 3.0,
+        };
+        let header_paint = super::TableBorderPaints {
+            top: header_line,
+            left: header_line,
+            bottom: header_line,
+            right: header_line,
+            inside_h: header_line,
+            inside_v: header_line,
+        };
+        let mut header = pagination_table_row(true, 1);
+        header.border = header_paint;
+        let pagination = paginate(
+            vec![
+                pagination_line(30.0),
+                FlowItem::Table {
+                    rows: vec![header, pagination_table_row(false, 4)],
+                    header_rows: 1,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        assert_eq!(page_row_counts(&pagination), vec![2, 2]);
+        let repeated_header = pagination.pages[1]
+            .iter()
+            .find_map(|placed| match &placed.item {
+                FlowItem::Row(row) => Some(row),
+                _ => None,
+            })
+            .expect("second page starts with repeated header");
+        assert_eq!(repeated_header.border, header_paint);
+        assert_eq!(
+            repeated_header.cells[0].border_edges,
+            super::CellBorderEdges::outer()
+        );
+    }
+
+    #[test]
+    fn repeated_table_header_reuses_its_shaped_list_marker() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut marker_only = list_paragraph("", 0, true, "");
+        marker_only.props.spacing = Spacing {
+            before_pt: Some(4.0),
+            after_pt: Some(6.0),
+            ..Spacing::default()
+        };
+        let mut header_rows = laid_out_table_rows(
+            &Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Paragraph(marker_only)],
+                        ..Cell::default()
+                    }],
+                }],
+                header_rows: 1,
+                ..Table::default()
+            },
+            geom,
+        );
+        let pagination = paginate(
+            vec![
+                pagination_line(30.0),
+                FlowItem::Table {
+                    rows: vec![header_rows.remove(0), pagination_table_row(false, 4)],
+                    header_rows: 1,
+                },
+            ],
+            geom,
+            &SectionSetup::default(),
+        );
+
+        let rendered_headers: Vec<_> = pagination
+            .pages
+            .iter()
+            .flat_map(|page| page.iter())
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Row(row) => row
+                    .cells
+                    .first()
+                    .and_then(|cell| cell.lines.first())
+                    .map(|line| (shaped_line_text(line), line.cell_spacing, row.height)),
+                _ => None,
+            })
+            .filter(|(text, _, _)| text == "1. ")
+            .collect();
+        assert!(rendered_headers.len() > 1, "{rendered_headers:?}");
+        let expected_height = rendered_headers[0].2;
+        assert!(
+            rendered_headers.iter().all(|(text, spacing, height)| {
+                text == "1. "
+                    && *spacing
+                        == super::CellLineSpacing {
+                            before: 4.0,
+                            after: 6.0,
+                        }
+                    && (*height - expected_height).abs() < 0.001
+            }),
+            "{rendered_headers:?}"
+        );
+    }
+
+    fn page_line_counts(pagination: &super::Pagination) -> Vec<usize> {
+        pagination
+            .pages
+            .iter()
+            .map(|page| {
+                page.iter()
+                    .filter(|placed| matches!(placed.item, FlowItem::Line(_)))
+                    .count()
+            })
+            .collect()
+    }
+
+    fn first_page_line_tops(pagination: &super::Pagination) -> Vec<f32> {
+        pagination.pages[0]
+            .iter()
+            .filter_map(|placed| matches!(placed.item, FlowItem::Line(_)).then_some(placed.top))
+            .collect()
+    }
+
+    #[test]
+    fn top_and_bottom_band_moves_overlapping_lines_below_shape() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let items = vec![
+            pagination_block(0, PaginationHint::default()),
+            FlowItem::TopBottomBand {
+                top: 40.0,
+                bottom: 60.0,
+                anchor_offset: 5,
+            },
+            pagination_line_with_range(10.0, 0, 10),
+            pagination_line(10.0),
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate(items, geom, &SectionSetup::default());
+
+        assert_eq!(first_page_line_tops(&pagination), vec![20.0, 30.0, 60.0]);
+        assert_eq!(pagination.pages.len(), 1);
+    }
+
+    #[test]
+    fn top_and_bottom_band_does_not_reflow_content_before_its_anchor() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let items = vec![
+            pagination_block(0, PaginationHint::default()),
+            pagination_line(10.0),
+            pagination_line(10.0),
+            pagination_line(10.0),
+            pagination_block(1, PaginationHint::default()),
+            FlowItem::TopBottomBand {
+                top: 40.0,
+                bottom: 70.0,
+                anchor_offset: 0,
+            },
+            pagination_line_with_range(10.0, 0, 5),
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate(items, geom, &SectionSetup::default());
+
+        assert_eq!(
+            first_page_line_tops(&pagination),
+            vec![20.0, 30.0, 40.0, 50.0, 70.0]
+        );
+    }
+
+    #[test]
+    fn top_and_bottom_band_moves_only_post_anchor_overflow_to_another_page() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut items = vec![
+            pagination_block(0, PaginationHint::default()),
+            FlowItem::TopBottomBand {
+                top: 50.0,
+                bottom: 75.0,
+                anchor_offset: 0,
+            },
+            pagination_line_with_range(10.0, 0, 5),
+        ];
+        items.extend((0..3).map(|_| pagination_line(10.0)));
+
+        let pagination = paginate(items, geom, &SectionSetup::default());
+
+        assert_eq!(first_page_line_tops(&pagination), vec![20.0, 30.0, 40.0]);
+        assert_eq!(page_line_counts(&pagination), vec![3, 1]);
+    }
+
+    #[test]
+    fn top_and_bottom_band_follows_an_anchor_whose_first_line_advances() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let items = vec![
+            pagination_block(0, PaginationHint::default()),
+            pagination_line(50.0),
+            pagination_block(1, PaginationHint::default()),
+            FlowItem::TopBottomBand {
+                top: 20.0,
+                bottom: 50.0,
+                anchor_offset: 0,
+            },
+            pagination_line_with_range(20.0, 0, 5),
+            pagination_line(20.0),
+        ];
+
+        let pagination = paginate(items, geom, &SectionSetup::default());
+
+        assert_eq!(pagination.pages.len(), 2);
+        assert_eq!(page_line_counts(&pagination), vec![1, 2]);
+        assert_eq!(pagination.pages[1][0].top, 20.0);
+        assert_eq!(pagination.pages[1][1].top, 50.0);
+        assert_eq!(pagination.block_pages.get(&1), Some(&1));
+    }
+
+    #[test]
+    fn top_and_bottom_band_preserves_keep_lines_and_widow_control() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 110.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let keep_lines_items = vec![
+            pagination_block(0, PaginationHint::default()),
+            FlowItem::TopBottomBand {
+                top: 35.0,
+                bottom: 75.0,
+                anchor_offset: 0,
+            },
+            pagination_line_with_range(10.0, 0, 5),
+            pagination_block(
+                1,
+                PaginationHint {
+                    keep_lines: true,
+                    ..PaginationHint::default()
+                },
+            ),
+            pagination_line(10.0),
+            pagination_line(10.0),
+            pagination_line(10.0),
+        ];
+        let keep_lines = paginate(keep_lines_items, geom, &SectionSetup::default());
+        assert_eq!(page_line_counts(&keep_lines), vec![1, 3]);
+        assert_eq!(keep_lines.block_pages.get(&1), Some(&1));
+
+        let mut widow_items = vec![
+            pagination_block(0, PaginationHint::default()),
+            FlowItem::TopBottomBand {
+                top: 35.0,
+                bottom: 75.0,
+                anchor_offset: 0,
+            },
+            pagination_line_with_range(10.0, 0, 5),
+            pagination_block(
+                1,
+                PaginationHint {
+                    widow_control: true,
+                    ..PaginationHint::default()
+                },
+            ),
+        ];
+        widow_items.extend((0..4).map(|_| pagination_line(10.0)));
+        let widow = paginate(widow_items, geom, &SectionSetup::default());
+        assert_eq!(page_line_counts(&widow), vec![1, 4]);
+        assert_eq!(widow.block_pages.get(&1), Some(&1));
+    }
+
+    #[test]
+    fn top_and_bottom_band_defers_through_keep_next_chain() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 110.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let items = vec![
+            pagination_block(
+                0,
+                PaginationHint {
+                    keep_next: true,
+                    ..PaginationHint::default()
+                },
+            ),
+            FlowItem::TopBottomBand {
+                top: 35.0,
+                bottom: 75.0,
+                anchor_offset: 0,
+            },
+            pagination_line_with_range(10.0, 0, 5),
+            pagination_block(1, PaginationHint::default()),
+            pagination_line(10.0),
+            pagination_block(2, PaginationHint::default()),
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate(items, geom, &SectionSetup::default());
+
+        assert_eq!(first_page_line_tops(&pagination), vec![20.0, 30.0, 75.0]);
+    }
+
+    #[test]
+    fn top_and_bottom_band_uses_shared_anchor_boundaries_and_page_scope() {
+        let range = super::LineCharRange { start: 2, end: 5 };
+        assert!(range.contains(2));
+        assert!(range.contains(5));
+        assert!(!range.contains(6));
+
+        let bands = [super::ActiveTopBottomBand {
+            owner_block: Some(3),
+            page_index: 1,
+            top: 40.0,
+            bottom: 60.0,
+        }];
+        assert_eq!(
+            super::top_bottom_adjusted_y(45.0, 10.0, 1, &bands, None),
+            60.0
+        );
+        assert_eq!(
+            super::top_bottom_adjusted_y(45.0, 10.0, 0, &bands, None),
+            45.0
+        );
+        assert_eq!(
+            super::top_bottom_adjusted_y(45.0, 10.0, 1, &bands, Some(3)),
+            45.0
+        );
+    }
+
+    #[test]
+    fn top_and_bottom_bands_require_bounded_page_geometry() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let model = DocModel {
+            blocks: vec![para("anchor", None), para("following", None)],
+            setup: crate::model::DocSetup {
+                page: PageSetup {
+                    width_pt: 220.0,
+                    height_pt: 100.0,
+                    margin_pt: 20.0,
+                    ..PageSetup::default()
+                },
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let shape = FloatingShape {
+            id: "bounded-wrap".to_string(),
+            name: None,
+            description: None,
+            text: None,
+            preset_geometry: None,
+            fill_color: None,
+            outline_color: None,
+            simple_position_enabled: Some(false),
+            simple_position: None,
+            effect_extent: Some(ShapeEffectExtent {
+                left_emu: 0,
+                top_emu: 12_700,
+                right_emu: 0,
+                bottom_emu: 25_400,
+            }),
+            anchor_block_index: Some(0),
+            anchor_text: Some("anchor".to_string()),
+            anchor_char_offset: Some(0),
+            extent: Some(ShapeExtent {
+                cx_emu: 254_000,
+                cy_emu: 254_000,
+            }),
+            horizontal_position: None,
+            vertical_position: Some(ShapePosition {
+                relative_from: Some("page".to_string()),
+                offset_emu: Some(508_000),
+                align: None,
+            }),
+            relative_height: None,
+            behind_doc: Some(false),
+            layout_in_cell: Some(false),
+            locked: None,
+            allow_overlap: None,
+            distance: crate::ShapeDistance::default(),
+            wrapping: Some(crate::ShapeWrapping {
+                kind: "topAndBottom".to_string(),
+                text: None,
+                distance: crate::ShapeDistance {
+                    top_emu: Some(38_100),
+                    bottom_emu: Some(50_800),
+                    left_emu: None,
+                    right_emu: None,
+                },
+                polygon: Vec::new(),
+            }),
+        };
+
+        let bands = super::top_bottom_bands_by_block(&model, std::slice::from_ref(&shape), geom);
+        assert_eq!(bands.len(), 2);
+        assert!((bands[0][0].top - 36.0).abs() < 0.01);
+        assert!((bands[0][0].bottom - 66.0).abs() < 0.01);
+
+        let mut simple_position = shape.clone();
+        simple_position.simple_position_enabled = Some(true);
+        simple_position.simple_position = Some(ShapePoint {
+            x_emu: 0,
+            y_emu: 508_000,
+        });
+        simple_position.vertical_position = Some(ShapePosition {
+            relative_from: Some("paragraph".to_string()),
+            offset_emu: Some(0),
+            align: None,
+        });
+        let simple_position_bands =
+            super::top_bottom_bands_by_block(&model, &[simple_position], geom);
+        assert!((simple_position_bands[0][0].top - 36.0).abs() < 0.01);
+        assert!((simple_position_bands[0][0].bottom - 66.0).abs() < 0.01);
+
+        let mut negative_distances = shape.clone();
+        negative_distances
+            .wrapping
+            .as_mut()
+            .unwrap()
+            .distance
+            .top_emu = Some(-38_100);
+        negative_distances
+            .wrapping
+            .as_mut()
+            .unwrap()
+            .distance
+            .bottom_emu = Some(-50_800);
+        let negative_distance_bands =
+            super::top_bottom_bands_by_block(&model, &[negative_distances], geom);
+        assert!((negative_distance_bands[0][0].top - 39.0).abs() < 0.01);
+        assert!((negative_distance_bands[0][0].bottom - 62.0).abs() < 0.01);
+
+        let mut tiny_extent = shape.clone();
+        tiny_extent.extent = Some(ShapeExtent {
+            cx_emu: 12_700,
+            cy_emu: 12_700,
+        });
+        tiny_extent.effect_extent = None;
+        tiny_extent.distance = crate::ShapeDistance::default();
+        tiny_extent.wrapping.as_mut().unwrap().distance = crate::ShapeDistance::default();
+        let tiny_extent_bands = super::top_bottom_bands_by_block(&model, &[tiny_extent], geom);
+        assert!((tiny_extent_bands[0][0].top - 40.0).abs() < 0.01);
+        assert!((tiny_extent_bands[0][0].bottom - 41.0).abs() < 0.01);
+
+        let mut font_cx = FontContext::default();
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::default();
+        let items = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut capture,
+            super::SourceRenderHints::default(),
+            std::slice::from_ref(&shape),
+            None,
+        );
+        assert!(matches!(items[0], FlowItem::BlockStart { index: 0, .. }));
+        assert!(matches!(
+            items[1],
+            FlowItem::TopBottomBand { top, bottom, anchor_offset: 0 }
+                if (top - 36.0).abs() < 0.01 && (bottom - 66.0).abs() < 0.01
+        ));
+        let wrapped_pagination = paginate(items, geom, &SectionSetup::default());
+        assert_eq!(wrapped_pagination.block_pages.get(&0), Some(&0));
+        assert_eq!(wrapped_pagination.block_pages.get(&1), Some(&1));
+
+        let Block::Paragraph(mut page_break_paragraph) = para("wrapped", None) else {
+            unreachable!()
+        };
+        page_break_paragraph.props.page_break_before = true;
+        let page_break_model = DocModel {
+            blocks: vec![para("seed", None), Block::Paragraph(page_break_paragraph)],
+            setup: model.setup.clone(),
+            ..DocModel::default()
+        };
+        let mut page_break_shape = shape.clone();
+        page_break_shape.anchor_block_index = Some(1);
+        let mut capture = LayoutCapture::default();
+        let page_break_items = super::collect_pdf_flow_items(
+            &page_break_model,
+            geom,
+            &mut tcx,
+            &mut capture,
+            super::SourceRenderHints::default(),
+            &[page_break_shape],
+            None,
+        );
+        let anchor = page_break_items
+            .iter()
+            .position(|item| matches!(item, FlowItem::BlockStart { index: 1, .. }))
+            .unwrap();
+        assert!(matches!(page_break_items[anchor + 1], FlowItem::PageBreak));
+        assert!(matches!(
+            page_break_items[anchor + 2],
+            FlowItem::TopBottomBand { .. }
+        ));
+
+        let mut paragraph_relative = shape.clone();
+        paragraph_relative.vertical_position = Some(ShapePosition {
+            relative_from: Some("paragraph".to_string()),
+            offset_emu: Some(0),
+            align: None,
+        });
+        let mut behind_text = shape.clone();
+        behind_text.behind_doc = Some(true);
+        let mut top_margin_relative = shape.clone();
+        top_margin_relative.vertical_position = Some(ShapePosition {
+            relative_from: Some("topMargin".to_string()),
+            offset_emu: Some(0),
+            align: None,
+        });
+        let mut bottom_margin_relative = shape.clone();
+        bottom_margin_relative.vertical_position = Some(ShapePosition {
+            relative_from: Some("bottomMargin".to_string()),
+            offset_emu: Some(0),
+            align: None,
+        });
+        let top_margin_bands = super::top_bottom_bands_by_block(
+            &model,
+            std::slice::from_ref(&top_margin_relative),
+            geom,
+        );
+        assert!((top_margin_bands[0][0].top - 20.0).abs() < 0.01);
+        assert!((top_margin_bands[0][0].bottom - 26.0).abs() < 0.01);
+        let bottom_margin_bands = super::top_bottom_bands_by_block(
+            &model,
+            std::slice::from_ref(&bottom_margin_relative),
+            geom,
+        );
+        assert!((bottom_margin_bands[0][0].top - 76.0).abs() < 0.01);
+        assert!((bottom_margin_bands[0][0].bottom - 80.0).abs() < 0.01);
+
+        for mut margin_contained in [top_margin_relative, bottom_margin_relative] {
+            margin_contained.extent = Some(ShapeExtent {
+                cx_emu: 127_000,
+                cy_emu: 127_000,
+            });
+            margin_contained.effect_extent = None;
+            margin_contained.distance = crate::ShapeDistance::default();
+            margin_contained.wrapping.as_mut().unwrap().distance = crate::ShapeDistance::default();
+            assert!(
+                super::top_bottom_bands_by_block(&model, &[margin_contained], geom)[0].is_empty()
+            );
+        }
+        let mut missing_anchor_offset = shape.clone();
+        missing_anchor_offset.anchor_char_offset = None;
+        let mut layout_in_cell_flag = shape.clone();
+        layout_in_cell_flag.layout_in_cell = Some(true);
+        assert!(
+            !super::top_bottom_bands_by_block(&model, &[layout_in_cell_flag], geom)[0].is_empty()
+        );
+        let mut square = shape;
+        square.wrapping.as_mut().unwrap().kind = "square".to_string();
+        for unsupported in [
+            paragraph_relative,
+            behind_text,
+            missing_anchor_offset,
+            square,
+        ] {
+            assert!(super::top_bottom_bands_by_block(&model, &[unsupported], geom)[0].is_empty());
+        }
+    }
+
+    #[test]
+    fn top_and_bottom_bands_use_anchor_section_geometry() {
+        let first_page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let final_page = PageSetup {
+            width_pt: 300.0,
+            height_pt: 200.0,
+            margin_pt: 20.0,
+            landscape: true,
+            ..PageSetup::default()
+        };
+        let model = DocModel {
+            blocks: vec![
+                para("first anchor", None),
+                Block::SectionBreak(SectionSetup {
+                    page: first_page,
+                    ..SectionSetup::default()
+                }),
+                para("final anchor", None),
+            ],
+            setup: crate::model::DocSetup {
+                page: final_page,
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let shape = FloatingShape {
+            id: "section-wrap".to_string(),
+            name: None,
+            description: None,
+            text: None,
+            preset_geometry: None,
+            fill_color: None,
+            outline_color: None,
+            simple_position_enabled: Some(false),
+            simple_position: None,
+            effect_extent: None,
+            anchor_block_index: Some(0),
+            anchor_text: Some("first anchor".to_string()),
+            anchor_char_offset: Some(0),
+            extent: Some(ShapeExtent {
+                cx_emu: 254_000,
+                cy_emu: 254_000,
+            }),
+            horizontal_position: None,
+            vertical_position: Some(ShapePosition {
+                relative_from: Some("page".to_string()),
+                offset_emu: None,
+                align: Some("center".to_string()),
+            }),
+            relative_height: None,
+            behind_doc: Some(false),
+            layout_in_cell: Some(false),
+            locked: None,
+            allow_overlap: None,
+            distance: crate::ShapeDistance::default(),
+            wrapping: Some(crate::ShapeWrapping {
+                kind: "topAndBottom".to_string(),
+                text: None,
+                distance: crate::ShapeDistance::default(),
+                polygon: Vec::new(),
+            }),
+        };
+        let mut final_shape = shape.clone();
+        final_shape.id = "final-section-wrap".to_string();
+        final_shape.anchor_block_index = Some(2);
+        final_shape.anchor_text = Some("final anchor".to_string());
+        let bands = super::top_bottom_bands_by_block(
+            &model,
+            &[shape, final_shape],
+            Geom::from_setup(&final_page),
+        );
+
+        assert_close(bands[0][0].top, 40.0);
+        assert_close(bands[0][0].bottom, 60.0);
+        assert_close(bands[2][0].top, 90.0);
+        assert_close(bands[2][0].bottom, 110.0);
+    }
+
+    #[test]
+    fn keep_lines_moves_a_bounded_paragraph_to_a_fresh_page() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let items = vec![
+            pagination_block(0, PaginationHint::default()),
+            pagination_line(40.0),
+            pagination_block(
+                1,
+                PaginationHint {
+                    keep_lines: true,
+                    ..PaginationHint::default()
+                },
+            ),
+            pagination_line(10.0),
+            pagination_line(10.0),
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate(items, geom, &SectionSetup::default());
+
+        assert_eq!(page_line_counts(&pagination), vec![1, 3]);
+        assert_eq!(pagination.block_pages.get(&1), Some(&1));
+    }
+
+    #[test]
+    fn keep_next_moves_the_chain_when_the_following_first_line_would_split() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let items = vec![
+            pagination_block(0, PaginationHint::default()),
+            pagination_line(40.0),
+            pagination_block(
+                1,
+                PaginationHint {
+                    keep_next: true,
+                    ..PaginationHint::default()
+                },
+            ),
+            pagination_line(10.0),
+            FlowItem::Gap(4.0),
+            pagination_block(2, PaginationHint::default()),
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate(items, geom, &SectionSetup::default());
+
+        assert_eq!(page_line_counts(&pagination), vec![1, 2]);
+        assert_eq!(pagination.block_pages.get(&1), Some(&1));
+        assert_eq!(pagination.block_pages.get(&2), Some(&1));
+    }
+
+    #[test]
+    fn keep_next_chains_consecutive_paragraphs_as_one_bounded_group() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let keep_next = PaginationHint {
+            keep_next: true,
+            ..PaginationHint::default()
+        };
+        let items = vec![
+            pagination_block(0, PaginationHint::default()),
+            pagination_line(30.0),
+            pagination_block(1, keep_next),
+            pagination_line(10.0),
+            FlowItem::Gap(4.0),
+            pagination_block(2, keep_next),
+            pagination_line(10.0),
+            FlowItem::Gap(4.0),
+            pagination_block(3, PaginationHint::default()),
+            pagination_line(10.0),
+        ];
+
+        let pagination = paginate(items, geom, &SectionSetup::default());
+
+        assert_eq!(page_line_counts(&pagination), vec![1, 3]);
+        assert_eq!(pagination.block_pages.get(&1), Some(&1));
+        assert_eq!(pagination.block_pages.get(&2), Some(&1));
+        assert_eq!(pagination.block_pages.get(&3), Some(&1));
+    }
+
+    #[test]
+    fn widow_control_avoids_single_lines_at_both_page_edges() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut items = vec![
+            pagination_block(0, PaginationHint::default()),
+            pagination_line(30.0),
+            pagination_block(
+                1,
+                PaginationHint {
+                    widow_control: true,
+                    ..PaginationHint::default()
+                },
+            ),
+        ];
+        items.extend((0..4).map(|_| pagination_line(10.0)));
+
+        let pagination = paginate(items, geom, &SectionSetup::default());
+
+        assert_eq!(page_line_counts(&pagination), vec![3, 2]);
+    }
+
+    #[test]
+    fn disabled_widow_control_keeps_the_legacy_split() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut items = vec![
+            pagination_block(0, PaginationHint::default()),
+            pagination_line(50.0),
+            pagination_block(1, PaginationHint::default()),
+        ];
+        items.extend((0..4).map(|_| pagination_line(10.0)));
+
+        let pagination = paginate(items, geom, &SectionSetup::default());
+
+        assert_eq!(page_line_counts(&pagination), vec![2, 3]);
+    }
+
+    #[test]
+    fn widow_control_moves_a_single_bottom_line_with_the_paragraph() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut items = vec![
+            pagination_block(0, PaginationHint::default()),
+            pagination_line(50.0),
+            pagination_block(
+                1,
+                PaginationHint {
+                    widow_control: true,
+                    ..PaginationHint::default()
+                },
+            ),
+        ];
+        items.extend((0..4).map(|_| pagination_line(10.0)));
+
+        let pagination = paginate(items, geom, &SectionSetup::default());
+
+        assert_eq!(page_line_counts(&pagination), vec![1, 4]);
+    }
+
+    #[test]
+    fn automatically_created_pages_keep_their_section_setup() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let line = || {
+            FlowItem::Line(LineLayout {
+                height: 20.0,
+                baseline: 15.0,
+                clip_to_height: false,
+                x_indent: 0.0,
+                char_range: None,
+                background: None,
+                cell_spacing: Default::default(),
+                cell_paragraph: None,
+                cell_cant_split_group: None,
+                cell_visual: None,
+                leaders: Vec::new(),
+                runs: Vec::new(),
+            })
+        };
+        let first = SectionSetup {
+            page: PageSetup {
+                width_pt: 220.0,
+                height_pt: 100.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
+            header: vec![para("first section", None)],
+            ..SectionSetup::default()
+        };
+        let final_setup = SectionSetup {
+            header: vec![para("final section", None)],
+            ..SectionSetup::default()
+        };
+        let mut items = (0..5).map(|_| line()).collect::<Vec<_>>();
+        items.push(FlowItem::SectionBreak(first));
+
+        let pagination = paginate(items, geom, &final_setup);
+
+        assert_eq!(pagination.pages.len(), 3);
+        assert_eq!(
+            block_text(&pagination.page_sections[0].as_ref().unwrap().setup.header),
+            "first section"
+        );
+        assert_eq!(
+            block_text(&pagination.page_sections[1].as_ref().unwrap().setup.header),
+            "first section"
+        );
+        assert_eq!(
+            block_text(&pagination.page_sections[2].as_ref().unwrap().setup.header),
+            "final section"
+        );
+    }
+
+    #[test]
+    fn section_break_uses_ending_section_vertical_geometry() {
+        let first = SectionSetup {
+            page: PageSetup {
+                width_pt: 220.0,
+                height_pt: 100.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let final_setup = SectionSetup {
+            page: PageSetup {
+                width_pt: 220.0,
+                height_pt: 220.0,
+                margin_pt: 20.0,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let line = || {
+            FlowItem::Line(LineLayout {
+                height: 20.0,
+                baseline: 15.0,
+                clip_to_height: false,
+                x_indent: 0.0,
+                char_range: None,
+                background: None,
+                cell_spacing: Default::default(),
+                cell_paragraph: None,
+                cell_cant_split_group: None,
+                cell_visual: None,
+                leaders: Vec::new(),
+                runs: Vec::new(),
+            })
+        };
+        let mut items = (0..5).map(|_| line()).collect::<Vec<_>>();
+        items.push(FlowItem::SectionBreak(first));
+
+        let pagination = paginate(items, Geom::from_setup(&final_setup.page), &final_setup);
+
+        assert_eq!(pagination.pages.len(), 3);
+    }
+
+    #[test]
+    fn section_break_uses_ending_section_horizontal_geometry() {
+        let first = SectionSetup {
+            page: PageSetup {
+                width_pt: 140.0,
+                height_pt: 220.0,
+                margin_pt: 20.0,
+                margin_left_pt: Some(10.0),
+                margin_right_pt: Some(30.0),
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let final_setup = SectionSetup {
+            page: PageSetup {
+                width_pt: 300.0,
+                height_pt: 140.0,
+                margin_pt: 20.0,
+                margin_left_pt: Some(40.0),
+                margin_right_pt: Some(20.0),
+                landscape: true,
+                ..PageSetup::default()
+            },
+            ..SectionSetup::default()
+        };
+        let items = vec![
+            pagination_line(20.0),
+            FlowItem::SectionBreak(first),
+            pagination_line(20.0),
+        ];
+        let geometries =
+            super::section_geometries_by_item(&items, Geom::from_setup(&final_setup.page));
+
+        assert_close(geometries[0].page_w, 140.0);
+        assert_close(geometries[0].left, 10.0);
+        assert_close(geometries[0].right, 30.0);
+        assert_close(geometries[1].page_w, 140.0);
+        assert_close(geometries[2].page_w, 300.0);
+        assert_close(geometries[2].left, 40.0);
+        assert_close(geometries[2].right, 20.0);
+    }
+
+    #[test]
+    fn body_paragraphs_shape_to_their_section_page_width() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let narrow_page = PageSetup {
+            width_pt: 140.0,
+            height_pt: 220.0,
+            margin_pt: 20.0,
+            margin_left_pt: Some(10.0),
+            margin_right_pt: Some(30.0),
+            ..PageSetup::default()
+        };
+        let wide_page = PageSetup {
+            width_pt: 300.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            margin_left_pt: Some(40.0),
+            margin_right_pt: Some(20.0),
+            landscape: true,
+            ..PageSetup::default()
+        };
+        let text = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi";
+        let model = DocModel {
+            blocks: vec![
+                para(text, None),
+                Block::SectionBreak(SectionSetup {
+                    page: narrow_page,
+                    ..SectionSetup::default()
+                }),
+                para(text, None),
+            ],
+            setup: crate::model::DocSetup {
+                page: wide_page,
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let geom = Geom::from_setup(&wide_page);
+        let mut capture = LayoutCapture::default();
+        let items = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut capture,
+            super::SourceRenderHints::default(),
+            &[],
+            None,
+        );
+        let section_break = items
+            .iter()
+            .position(|item| matches!(item, FlowItem::SectionBreak(_)))
+            .expect("section break flow item");
+        let narrow_lines = items[..section_break]
+            .iter()
+            .filter(|item| matches!(item, FlowItem::Line(_)))
+            .count();
+        let wide_lines = items[section_break + 1..]
+            .iter()
+            .filter(|item| matches!(item, FlowItem::Line(_)))
+            .count();
+
+        assert!(
+            narrow_lines > wide_lines,
+            "narrow section should wrap more: narrow={narrow_lines}, wide={wide_lines}"
+        );
+    }
+
+    #[test]
+    fn body_paragraphs_shape_to_their_section_column_width() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let text = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi";
+        let mut model = DocModel {
+            blocks: vec![para(text, None)],
+            setup: crate::model::DocSetup {
+                page,
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let geom = Geom::from_setup(&page);
+        let mut capture = LayoutCapture::default();
+        let full_width = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut capture,
+            super::SourceRenderHints::default(),
+            &[],
+            None,
+        );
+        let full_width_lines = full_width
+            .iter()
+            .filter(|item| matches!(item, FlowItem::Line(_)))
+            .count();
+
+        model.setup.columns = Some(2);
+        let mut capture = LayoutCapture::default();
+        let columns = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut capture,
+            super::SourceRenderHints::default(),
+            &[],
+            None,
+        );
+        let column_lines = columns
+            .iter()
+            .filter(|item| matches!(item, FlowItem::Line(_)))
+            .count();
+        let setup = SectionSetup::from(&model.setup);
+        let pagination = paginate(columns, geom, &setup);
+
+        assert!(column_lines > full_width_lines);
+        assert!(pagination.pages[0]
+            .iter()
+            .any(|placed| matches!(&placed.item, FlowItem::Line(_)) && placed.x > 90.0));
+    }
+
+    #[test]
+    fn explicit_final_column_gap_shapes_to_the_placed_column_width() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let page = PageSetup {
+            width_pt: 220.0,
+            height_pt: 100.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        };
+        let model = DocModel {
+            blocks: vec![para(
+                "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi",
+                None,
+            )],
+            setup: crate::model::DocSetup {
+                page,
+                columns: Some(2),
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let geom = Geom::from_setup(&page);
+        let mut capture = LayoutCapture::default();
+        let default_items = super::collect_pdf_flow_items(
+            &model,
+            geom,
+            &mut tcx,
+            &mut capture,
+            super::SourceRenderHints::default(),
+            &[],
+            None,
+        );
+        let default_lines = default_items
+            .iter()
+            .filter(|item| matches!(item, FlowItem::Line(_)))
+            .count();
+
+        let hints = super::SourceRenderHints {
+            final_section_column_gap_pt: Some(40.0),
+            ..super::SourceRenderHints::default()
+        };
+        let mut capture = LayoutCapture::default();
+        let explicit_items =
+            super::collect_pdf_flow_items(&model, geom, &mut tcx, &mut capture, hints, &[], None);
+        let explicit_lines = explicit_items
+            .iter()
+            .filter(|item| matches!(item, FlowItem::Line(_)))
+            .count();
+        let setup = SectionSetup::from(&model.setup);
+        let pagination =
+            paginate_with_column_gap(explicit_items, geom, &setup, Some(40.0), None, false);
+
+        assert!(explicit_lines > default_lines);
+        assert!(pagination.pages[0].iter().any(|placed| {
+            matches!(&placed.item, FlowItem::Line(_))
+                && (placed.width - 70.0).abs() < 0.1
+                && (placed.x - 110.0).abs() < 0.1
+        }));
+    }
+
+    fn block_text(blocks: &[Block]) -> String {
+        blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::Paragraph(paragraph) => Some(paragraph.text()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn line_char_range(line: &super::LineLayout, text: &str) -> Option<(usize, usize)> {
+        let mut start = usize::MAX;
+        let mut end = 0usize;
+        for run in &line.runs {
+            for glyph in &run.glyphs {
+                start = start.min(glyph.text_range.start);
+                end = end.max(glyph.text_range.end);
+            }
+        }
+        (start != usize::MAX).then(|| (text[..start].chars().count(), text[..end].chars().count()))
+    }
+
+    fn para(text: &str, heading: Option<u8>) -> Block {
+        Block::Paragraph(Paragraph {
+            props: ParaProps {
+                heading_level: heading,
+                ..ParaProps::default()
+            },
+            runs: vec![Run {
+                text: text.to_string(),
+                ..Run::default()
+            }],
+        })
+    }
+
+    fn list_paragraph(text: &str, level: u8, ordered: bool, label: &str) -> Paragraph {
+        Paragraph {
+            props: ParaProps {
+                list: Some(ListInfo {
+                    level,
+                    ordered,
+                    label: label.to_string(),
+                }),
+                ..ParaProps::default()
+            },
+            runs: (!text.is_empty())
+                .then(|| Run {
+                    text: text.to_string(),
+                    ..Run::default()
+                })
+                .into_iter()
+                .collect(),
+        }
+    }
+
+    fn cell(text: &str) -> Cell {
+        Cell {
+            blocks: vec![para(text, None)],
+            ..Cell::default()
+        }
+    }
+
+    #[test]
+    fn renders_a_valid_pdf() {
+        let model = DocModel {
+            blocks: vec![
+                para("제목 하나", Some(1)),
+                para("본문 문단 with mixed English and 한글 text.", None),
+            ],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"), "output is not a PDF");
+        assert!(
+            pdf.len() > 500,
+            "PDF unexpectedly small: {} bytes",
+            pdf.len()
+        );
+    }
+
+    #[test]
+    fn opened_document_features_add_placeholder_content_to_pdf() {
+        let model = DocModel {
+            blocks: vec![para("body", None)],
+            ..DocModel::default()
+        };
+        let plain = super::to_pdf(&model);
+        let rendered = super::try_to_pdf_with_fonts_and_report(
+            &model,
+            &[],
+            FeatureInventory {
+                floating_shapes: 1,
+                ..FeatureInventory::default()
+            },
+        )
+        .expect("render with placeholders");
+
+        assert!(rendered.pdf.starts_with(b"%PDF"));
+        assert!(
+            rendered.pdf.len() > plain.len(),
+            "placeholder content should increase emitted PDF size"
+        );
+        assert_eq!(rendered.report.unsupported.floating_shapes, 1);
+    }
+
+    #[test]
+    fn renders_a_table_grid() {
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![cell("항목"), cell("내용")],
+                },
+                Row {
+                    cells: vec![cell("가격"), cell("1,000원")],
+                },
+            ],
+            header_rows: 1,
+            ..Default::default()
+        };
+        let model = DocModel {
+            blocks: vec![para("표 테스트", Some(2)), Block::Table(table)],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() > 800);
+    }
+
+    #[test]
+    fn modeled_table_border_paint_changes_deterministic_pdf_output() {
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![cell("border paint")],
+            }],
+            ..Table::default()
+        };
+        let default_model = DocModel {
+            blocks: vec![Block::Table(table.clone())],
+            ..DocModel::default()
+        };
+        let border_color = Color::rgb(0xC4, 0x21, 0x32);
+        let color_model = DocModel {
+            blocks: vec![Block::Table(Table {
+                border_color: Some(border_color),
+                ..table.clone()
+            })],
+            ..DocModel::default()
+        };
+        let width_model = DocModel {
+            blocks: vec![Block::Table(Table {
+                border_size_eighths: Some(24),
+                ..table.clone()
+            })],
+            ..DocModel::default()
+        };
+        let styled_model = DocModel {
+            blocks: vec![Block::Table(Table {
+                border_color: Some(border_color),
+                border_size_eighths: Some(24),
+                ..table
+            })],
+            ..DocModel::default()
+        };
+
+        let default_pdf = super::to_pdf(&default_model);
+        let color_pdf = super::to_pdf(&color_model);
+        let width_pdf = super::to_pdf(&width_model);
+        let styled_pdf = super::to_pdf(&styled_model);
+
+        assert!(
+            color_pdf != default_pdf,
+            "border color must affect PDF bytes"
+        );
+        assert!(
+            width_pdf != default_pdf,
+            "border width must affect PDF bytes"
+        );
+        assert!(
+            styled_pdf != default_pdf,
+            "modeled table border paint must affect PDF bytes"
+        );
+        assert_eq!(styled_pdf, super::to_pdf(&styled_model));
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        assert_eq!(
+            super::layout_pages_with_fonts(&styled_model, &fonts).expect("styled layout pages"),
+            super::layout_pages_with_fonts(&default_model, &fonts).expect("default layout pages")
+        );
+
+        let mut hostile_model = styled_model;
+        let Block::Table(table) = &mut hostile_model.blocks[0] else {
+            panic!("table block")
+        };
+        table.border_size_eighths = Some(u16::MAX);
+        let hostile_pdf = super::try_to_pdf(&hostile_model).expect("hostile width stays bounded");
+        assert!(hostile_pdf.starts_with(b"%PDF"));
+        assert!(hostile_pdf.len() < 5_000_000);
+        assert_eq!(hostile_pdf, super::to_pdf(&hostile_model));
+    }
+
+    #[test]
+    fn six_way_table_border_paint_changes_pdf_without_changing_layout() {
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![cell("A"), cell("B")],
+                },
+                Row {
+                    cells: vec![cell("C"), cell("D")],
+                },
+            ],
+            ..Table::default()
+        };
+        let baseline_model = DocModel {
+            blocks: vec![Block::Table(table.clone())],
+            ..DocModel::default()
+        };
+        let baseline_pdf = super::to_pdf(&baseline_model);
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let baseline_pages =
+            super::layout_pages_with_fonts(&baseline_model, &fonts).expect("baseline pages");
+
+        for (index, side) in [
+            TableBorderSide::Top,
+            TableBorderSide::Left,
+            TableBorderSide::Bottom,
+            TableBorderSide::Right,
+            TableBorderSide::InsideHorizontal,
+            TableBorderSide::InsideVertical,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let mut variant = table.clone();
+            variant
+                .border_colors
+                .set(side, Color::rgb(0x31 + index as u8, 0x72, 0xB4));
+            variant.border_sizes.set(side, 16 + index as u16);
+            let model = DocModel {
+                blocks: vec![Block::Table(variant)],
+                ..DocModel::default()
+            };
+            let pdf = super::to_pdf(&model);
+
+            assert_ne!(pdf, baseline_pdf, "side={side:?}");
+            assert_eq!(pdf, super::to_pdf(&model), "side={side:?}");
+            assert_eq!(
+                super::layout_pages_with_fonts(&model, &fonts).expect("variant pages"),
+                baseline_pages,
+                "side={side:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn renders_rich_runs_without_panicking() {
+        use crate::model::{CharProps, Color};
+        let model = DocModel {
+            blocks: vec![Block::Paragraph(Paragraph {
+                props: ParaProps::default(),
+                runs: vec![
+                    Run {
+                        text: "검정 ".to_string(),
+                        ..Run::default()
+                    },
+                    Run {
+                        text: "빨강 큰글씨".to_string(),
+                        props: CharProps {
+                            color: Some(Color {
+                                r: 0xC0,
+                                g: 0,
+                                b: 0,
+                            }),
+                            size_half_pt: Some(36),
+                            bold: true,
+                            font: Some("Malgun Gothic".to_string()),
+                            ..CharProps::default()
+                        },
+                        ..Run::default()
+                    },
+                ],
+            })],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() > 500);
+    }
+
+    #[test]
+    fn renders_rich_shaded_table_without_panicking() {
+        use crate::model::{CharProps, Color, VCell};
+        let navy = Color {
+            r: 0x1F,
+            g: 0x38,
+            b: 0x64,
+        };
+        let white = Color {
+            r: 0xFF,
+            g: 0xFF,
+            b: 0xFF,
+        };
+        let hdr = Cell {
+            blocks: vec![Block::Paragraph(Paragraph {
+                props: ParaProps::default(),
+                runs: vec![Run {
+                    text: "항목".to_string(),
+                    props: CharProps {
+                        bold: true,
+                        color: Some(white),
+                        ..CharProps::default()
+                    },
+                    ..Run::default()
+                }],
+            })],
+            shading: Some(navy),
+            valign: VCell::Center,
+            ..Cell::default()
+        };
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![hdr, cell("값")],
+                },
+                Row {
+                    cells: vec![cell("가격"), cell("1,000원")],
+                },
+            ],
+            header_rows: 1,
+            col_widths_pct: vec![0.3, 0.7],
+            ..Default::default()
+        };
+        let pdf = super::to_pdf(&DocModel {
+            blocks: vec![Block::Table(table)],
+            ..DocModel::default()
+        });
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() > 800);
+    }
+
+    #[test]
+    fn renders_embedded_image() {
+        use crate::model::Image;
+        // A 4×3 PNG (solid navy), generated and frozen as a fixture.
+        const TINY_PNG: &[u8] = &[
+            0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48,
+            0x44, 0x52, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x03, 0x08, 0x02, 0x00, 0x00,
+            0x00, 0x3B, 0x96, 0x39, 0x91, 0x00, 0x00, 0x00, 0x13, 0x49, 0x44, 0x41, 0x54, 0x78,
+            0x9C, 0x63, 0x94, 0xB7, 0x48, 0x61, 0x80, 0x01, 0x26, 0x38, 0x0B, 0x9D, 0x03, 0x00,
+            0x1B, 0x5E, 0x00, 0xC1, 0xBF, 0x92, 0xAB, 0x14, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+            0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
+        ];
+        // Both representations: a block image and an inline-run image (what the
+        // reader produces) must render.
+        let model = DocModel {
+            blocks: vec![
+                Block::Image(Image {
+                    bytes: Some(TINY_PNG.to_vec()),
+                    mime: Some("image/png".to_string()),
+                    ..Image::default()
+                }),
+                Block::Paragraph(Paragraph {
+                    props: ParaProps::default(),
+                    runs: vec![Run {
+                        image: Some(Image {
+                            bytes: Some(TINY_PNG.to_vec()),
+                            mime: None, // force magic-byte sniffing
+                            ..Image::default()
+                        }),
+                        ..Run::default()
+                    }],
+                }),
+            ],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() > 500);
+        // An undecodable blob must be skipped, not panic.
+        let bad = DocModel {
+            blocks: vec![Block::Image(Image {
+                bytes: Some(vec![1, 2, 3, 4]),
+                mime: Some("image/png".to_string()),
+                ..Image::default()
+            })],
+            ..DocModel::default()
+        };
+        assert!(super::to_pdf(&bad).starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn renders_rasters_and_authored_charts_inside_body_and_running_table_cells() {
+        let image = Image {
+            bytes: Some([0, 64, 128, 255].repeat(80 * 40)),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(80),
+            height_px: Some(40),
+            rotation_degrees: Some(90),
+            ..Image::default()
+        };
+        let chart = Chart {
+            categories: vec!["A".to_string(), "B".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![1.0, 3.0],
+                ..ChartSeries::default()
+            }],
+            width_px: Some(120),
+            height_px: Some(80),
+            ..Chart::default()
+        };
+        let table = |blocks| {
+            Block::Table(Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks,
+                        valign: VCell::Center,
+                        ..Cell::default()
+                    }],
+                }],
+                border_size_eighths: Some(8),
+                ..Table::default()
+            })
+        };
+        let body_model = |blocks| DocModel {
+            blocks: vec![table(blocks)],
+            ..DocModel::default()
+        };
+        let running_model = |blocks| DocModel {
+            setup: crate::model::DocSetup {
+                header: vec![table(blocks)],
+                ..crate::model::DocSetup::default()
+            },
+            ..DocModel::default()
+        };
+        let inline_image = vec![Block::Paragraph(Paragraph {
+            runs: vec![Run {
+                image: Some(image.clone()),
+                ..Run::default()
+            }],
+            ..Paragraph::default()
+        })];
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let render = |model: &DocModel| super::to_pdf_with_fonts(model, &fonts);
+
+        let body_baseline_model = body_model(Vec::new());
+        let body_image_model = body_model(vec![Block::Image(image.clone())]);
+        let body_inline_model = body_model(inline_image.clone());
+        let body_chart_model = body_model(vec![Block::Chart(chart.clone())]);
+        let body_baseline = render(&body_baseline_model);
+        let body_image = render(&body_image_model);
+        let body_inline = render(&body_inline_model);
+        let body_chart = render(&body_chart_model);
+        assert_ne!(body_image, body_baseline, "block cell raster was dropped");
+        assert_ne!(body_inline, body_baseline, "inline cell raster was dropped");
+        assert_ne!(body_chart, body_baseline, "cell chart was dropped");
+        assert_ne!(body_image, body_inline);
+        assert_ne!(body_image, body_chart);
+        assert_ne!(body_inline, body_chart);
+
+        let running_baseline_model = running_model(Vec::new());
+        let running_image_model = running_model(vec![Block::Image(image)]);
+        let running_inline_model = running_model(inline_image);
+        let running_chart_model = running_model(vec![Block::Chart(chart)]);
+        let running_baseline = render(&running_baseline_model);
+        let running_image = render(&running_image_model);
+        let running_inline = render(&running_inline_model);
+        let running_chart = render(&running_chart_model);
+        assert_ne!(
+            running_image, running_baseline,
+            "running cell raster was dropped"
+        );
+        assert_ne!(
+            running_inline, running_baseline,
+            "running inline cell raster was dropped"
+        );
+        assert_ne!(
+            running_chart, running_baseline,
+            "running cell chart was dropped"
+        );
+        assert_eq!(body_image, render(&body_image_model));
+        assert_eq!(body_inline, render(&body_inline_model));
+        assert_eq!(body_chart, render(&body_chart_model));
+        assert_eq!(running_image, render(&running_image_model));
+        assert_eq!(running_inline, render(&running_inline_model));
+        assert_eq!(running_chart, render(&running_chart_model));
+    }
+
+    #[test]
+    fn table_cell_media_preserve_source_order_bounds_and_atomic_row_splits() {
+        let image = Image {
+            bytes: Some([16, 64, 128, 255].repeat(200 * 100)),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(200),
+            height_px: Some(100),
+            rotation_degrees: Some(90),
+            ..Image::default()
+        };
+        let chart = Chart {
+            categories: vec!["A".to_string(), "B".to_string()],
+            series: vec![ChartSeries {
+                name: "Series".to_string(),
+                values: vec![2.0, 5.0],
+                ..ChartSeries::default()
+            }],
+            width_px: Some(300),
+            height_px: Some(200),
+            ..Chart::default()
+        };
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![
+                        para("before", None),
+                        Block::Image(image.clone()),
+                        Block::Chart(chart),
+                        Block::Paragraph(Paragraph {
+                            runs: vec![Run {
+                                text: "after".to_string(),
+                                image: Some(image),
+                                ..Run::default()
+                            }],
+                            ..Paragraph::default()
+                        }),
+                    ],
+                    margins: Some(CellMargins {
+                        top: 100,
+                        right: 100,
+                        bottom: 100,
+                        left: 100,
+                    }),
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+        let FlowItem::Table { mut rows, .. } = flow.remove(0) else {
+            panic!("table flow item")
+        };
+        let row = rows.remove(0);
+        let cell = &row.cells[0];
+
+        assert_eq!(cell.lines.len(), 5);
+        assert_eq!(shaped_line_text(&cell.lines[0]), "before");
+        assert!(matches!(
+            cell.lines[1].cell_visual,
+            Some(super::CellVisual::Picture { .. })
+        ));
+        assert!(matches!(
+            cell.lines[2].cell_visual,
+            Some(super::CellVisual::Chart { .. })
+        ));
+        assert_eq!(shaped_line_text(&cell.lines[3]), "after");
+        assert!(matches!(
+            cell.lines[4].cell_visual,
+            Some(super::CellVisual::Picture { .. })
+        ));
+
+        let inner_width = cell.width - cell.insets.left - cell.insets.right;
+        let max_visual_height = geom.bottom() - geom.top() - cell.insets.top - cell.insets.bottom;
+        let Some(super::CellVisual::Picture { layout, .. }) = &cell.lines[1].cell_visual else {
+            unreachable!()
+        };
+        assert_eq!(layout.rotation_degrees, 90);
+        assert!(layout.bounds_w <= inner_width);
+        assert_close(layout.bounds_h, max_visual_height);
+        let block_picture_height = layout.bounds_h;
+        let Some(super::CellVisual::Chart { layout, .. }) = &cell.lines[2].cell_visual else {
+            unreachable!()
+        };
+        assert!(layout.bounds_w <= inner_width);
+        assert_close(layout.bounds_h, max_visual_height);
+        let Some(super::CellVisual::Picture { layout, .. }) = &cell.lines[4].cell_visual else {
+            unreachable!()
+        };
+        assert!(layout.bounds_w <= inner_width);
+        assert_close(layout.bounds_h + super::PARA_GAP, max_visual_height);
+        assert_close(
+            row.height,
+            super::cell_lines_extent(&cell.lines) + cell.insets.top + cell.insets.bottom,
+        );
+
+        let first_budget = cell.insets.top
+            + cell.lines[0].cell_extent()
+            + block_picture_height * 0.5
+            + cell.insets.bottom;
+        let (first, rest) = split_row(row, first_budget);
+        assert_eq!(first.cells[0].lines.len(), 1);
+        let rest = rest.expect("media remains after the first split");
+        assert_eq!(rest.cells[0].lines.len(), 4);
+        let picture_budget = rest.cells[0].lines[0].cell_extent() + rest.cells[0].insets.bottom;
+        let (picture, rest) = split_row(rest, picture_budget);
+        assert_eq!(picture.cells[0].lines.len(), 1);
+        let Some(super::CellVisual::Picture { layout, .. }) =
+            &picture.cells[0].lines[0].cell_visual
+        else {
+            panic!("the second fragment must retain the complete picture")
+        };
+        assert_close(layout.bounds_h, block_picture_height);
+        assert_eq!(rest.expect("later records remain").cells[0].lines.len(), 3);
+    }
+
+    #[test]
+    fn repeated_header_refits_atomic_cell_media_to_the_remaining_page_box() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![cell("header image"), cell("header chart")],
+                },
+                Row {
+                    cells: vec![
+                        Cell {
+                            blocks: vec![Block::Image(Image {
+                                bytes: Some([16, 64, 128, 255].repeat(200 * 100)),
+                                mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+                                width_px: Some(200),
+                                height_px: Some(100),
+                                rotation_degrees: Some(90),
+                                ..Image::default()
+                            })],
+                            margins: Some(CellMargins {
+                                top: 100,
+                                right: 100,
+                                bottom: 100,
+                                left: 100,
+                            }),
+                            ..Cell::default()
+                        },
+                        Cell {
+                            blocks: vec![Block::Chart(Chart {
+                                categories: vec!["A".to_string(), "B".to_string()],
+                                series: vec![ChartSeries {
+                                    name: "Series".to_string(),
+                                    values: vec![1.0, 3.0],
+                                    ..ChartSeries::default()
+                                }],
+                                width_px: Some(80),
+                                height_px: Some(300),
+                                ..Chart::default()
+                            })],
+                            margins: Some(CellMargins {
+                                top: 100,
+                                right: 100,
+                                bottom: 100,
+                                left: 100,
+                            }),
+                            ..Cell::default()
+                        },
+                    ],
+                },
+            ],
+            header_rows: 1,
+            ..Table::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+        let pagination = paginate(flow, geom, &SectionSetup::default());
+
+        assert_eq!(pagination.pages.len(), 2);
+        let body = pagination.pages[1]
+            .iter()
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Row(row) => Some((placed.top, row)),
+                _ => None,
+            })
+            .next_back()
+            .expect("second page contains the body row after its repeated header");
+        let picture_line = &body.1.cells[0].lines[0];
+        let Some(super::CellVisual::Picture {
+            layout: picture_layout,
+            ..
+        }) = &picture_line.cell_visual
+        else {
+            panic!("body row retains its picture")
+        };
+        let picture_height =
+            body.1.height - body.1.cells[0].insets.top - body.1.cells[0].insets.bottom;
+        assert!(picture_layout.bounds_h <= picture_height);
+        let chart_line = &body.1.cells[1].lines[0];
+        let Some(super::CellVisual::Chart {
+            layout: chart_layout,
+            ..
+        }) = &chart_line.cell_visual
+        else {
+            panic!("body row retains its chart")
+        };
+        let chart_height =
+            body.1.height - body.1.cells[1].insets.top - body.1.cells[1].insets.bottom;
+        assert!(chart_layout.bounds_h <= chart_height);
+        assert!(body.0 + body.1.height <= geom.bottom());
+    }
+
+    #[test]
+    fn page_filling_table_header_is_not_repeated_ahead_of_body_rows() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 140.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![
+                Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Image(Image {
+                            bytes: Some([16, 64, 128, 255].repeat(200 * 100)),
+                            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+                            width_px: Some(200),
+                            height_px: Some(100),
+                            rotation_degrees: Some(90),
+                            ..Image::default()
+                        })],
+                        margins: Some(CellMargins {
+                            top: 100,
+                            right: 100,
+                            bottom: 100,
+                            left: 100,
+                        }),
+                        ..Cell::default()
+                    }],
+                },
+                Row {
+                    cells: vec![cell("body")],
+                },
+            ],
+            header_rows: 1,
+            ..Table::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        layout_table(&table, &mut flow, geom, &mut tcx, &mut capture);
+        let pagination = paginate(flow, geom, &SectionSetup::default());
+
+        assert_eq!(pagination.pages.len(), 2);
+        let second_page_rows = pagination.pages[1]
+            .iter()
+            .filter_map(|placed| match &placed.item {
+                FlowItem::Row(row) => Some((placed.top, row)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(second_page_rows.len(), 1);
+        let (top, body) = second_page_rows[0];
+        assert!(body.height > 0.0);
+        assert_eq!(shaped_line_text(&body.cells[0].lines[0]), "body");
+        assert!(top + body.height <= geom.bottom());
+    }
+
+    #[test]
+    fn table_cells_skip_missing_and_undecodable_media_and_empty_charts() {
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let mut capture = LayoutCapture::default();
+        let lines = shape_cell(
+            &Cell {
+                blocks: vec![
+                    Block::Image(Image::default()),
+                    Block::Image(Image {
+                        bytes: Some(vec![1, 2, 3]),
+                        mime: Some("image/png".to_string()),
+                        ..Image::default()
+                    }),
+                    Block::Image(Image {
+                        bytes: Some(vec![0, 0, 0, 255]),
+                        mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+                        width_px: Some(2),
+                        height_px: Some(2),
+                        ..Image::default()
+                    }),
+                    Block::Chart(Chart::default()),
+                ],
+                ..Cell::default()
+            },
+            160.0,
+            0,
+            &mut tcx,
+            &mut capture,
+        );
+
+        assert!(lines.is_empty());
+    }
+
+    #[test]
+    fn renders_block_and_inline_images_in_running_surface_bands() {
+        let image = Image {
+            bytes: Some([0, 64, 128, 255].repeat(16)),
+            mime: Some(crate::image::MIME_RAW_RGBA.to_string()),
+            width_px: Some(4),
+            height_px: Some(4),
+            ..Image::default()
+        };
+        let baseline = super::to_pdf(&DocModel::default());
+        let header_model = DocModel {
+            setup: crate::model::DocSetup {
+                header: vec![Block::Image(image.clone())],
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+        let footer_model = DocModel {
+            setup: crate::model::DocSetup {
+                footer: vec![Block::Paragraph(Paragraph {
+                    runs: vec![Run {
+                        image: Some(image),
+                        ..Run::default()
+                    }],
+                    ..Paragraph::default()
+                })],
+                ..Default::default()
+            },
+            ..DocModel::default()
+        };
+
+        let header = super::to_pdf(&header_model);
+        let footer = super::to_pdf(&footer_model);
+        assert_ne!(header, baseline);
+        assert_ne!(footer, baseline);
+        assert_ne!(header, footer);
+        assert_eq!(header, super::to_pdf(&header_model));
+        assert_eq!(footer, super::to_pdf(&footer_model));
+    }
+
+    #[test]
+    fn running_surface_table_rows_clip_without_paginating_body() {
+        let first_row = Row {
+            cells: vec![Cell {
+                blocks: vec![para("clipped header row", None)],
+                shading: Some(Color {
+                    r: 0xFF,
+                    g: 0xE6,
+                    b: 0x99,
+                }),
+                ..Cell::default()
+            }],
+        };
+        let table = |include_second_row| Table {
+            rows: if include_second_row {
+                vec![
+                    first_row.clone(),
+                    Row {
+                        cells: vec![cell("must remain outside the clipped band")],
+                    },
+                ]
+            } else {
+                vec![first_row.clone()]
+            },
+            border_color: Some(Color {
+                r: 0x80,
+                g: 0x40,
+                b: 0x00,
+            }),
+            border_size_eighths: Some(8),
+            ..Table::default()
+        };
+        let model = |header| DocModel {
+            blocks: vec![para("body stays on its original page", None)],
+            setup: crate::model::DocSetup {
+                page: PageSetup {
+                    width_pt: 200.0,
+                    height_pt: 160.0,
+                    margin_pt: 30.0,
+                    ..PageSetup::default()
+                },
+                header,
+                ..crate::model::DocSetup::default()
+            },
+            ..DocModel::default()
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let baseline = super::to_pdf_with_fonts_and_report(
+            &model(Vec::new()),
+            &fonts,
+            FeatureInventory::default(),
+        );
+        let clipped = model(vec![Block::Table(table(false))]);
+        let clipped_render =
+            super::to_pdf_with_fonts_and_report(&clipped, &fonts, FeatureInventory::default());
+        let extra_row_render = super::to_pdf_with_fonts_and_report(
+            &model(vec![Block::Table(table(true))]),
+            &fonts,
+            FeatureInventory::default(),
+        );
+
+        assert_eq!(baseline.report.pages, 1);
+        assert_eq!(clipped_render.report.pages, 1);
+        assert_eq!(extra_row_render.report.pages, 1);
+        assert_ne!(clipped_render.pdf, baseline.pdf);
+        assert_eq!(
+            clipped_render.pdf, extra_row_render.pdf,
+            "rows after an over-tall first row must not paint outside the header band"
+        );
+        assert_eq!(
+            clipped_render.pdf,
+            super::to_pdf_with_fonts_and_report(&clipped, &fonts, FeatureInventory::default()).pdf
+        );
+    }
+
+    #[test]
+    fn running_surface_paragraph_gaps_are_bounded_and_do_not_paginate_body() {
+        let running_paragraph = |text: &str, before_pt| {
+            let Block::Paragraph(mut paragraph) = para(text, None) else {
+                unreachable!()
+            };
+            paragraph.props.spacing = Spacing {
+                before_pt: Some(before_pt),
+                after_pt: Some(0.0),
+                ..Spacing::default()
+            };
+            Block::Paragraph(paragraph)
+        };
+        let model = |header, footer| DocModel {
+            blocks: vec![para("body stays on its original page", None)],
+            setup: crate::model::DocSetup {
+                page: PageSetup {
+                    width_pt: 200.0,
+                    height_pt: 200.0,
+                    margin_pt: 60.0,
+                    ..PageSetup::default()
+                },
+                header,
+                footer,
+                page_numbers: true,
+                ..crate::model::DocSetup::default()
+            },
+            ..DocModel::default()
+        };
+        let paired = |second_gap| {
+            vec![
+                running_paragraph("FIRST", 0.0),
+                running_paragraph("SECOND", second_gap),
+            ]
+        };
+        let fonts = vec![rwml_fonts::noto_sans_kr_subset().to_vec()];
+        let render = |model: &DocModel| {
+            super::to_pdf_with_fonts_and_report(model, &fonts, FeatureInventory::default())
+        };
+        let baseline = model(paired(0.0), paired(0.0));
+        let header_gap = model(paired(10.0), paired(0.0));
+        let footer_gap = model(paired(0.0), paired(10.0));
+        let overflow_first = model(vec![running_paragraph("HEADER", 0.0)], Vec::new());
+        let overflow_gap = model(
+            vec![
+                running_paragraph("HEADER", 0.0),
+                running_paragraph("HEADER", 100.0),
+            ],
+            Vec::new(),
+        );
+
+        let baseline_render = render(&baseline);
+        let header_render = render(&header_gap);
+        let footer_render = render(&footer_gap);
+        let overflow_first_render = render(&overflow_first);
+        let overflow_gap_render = render(&overflow_gap);
+        for rendered in [
+            &baseline_render,
+            &header_render,
+            &footer_render,
+            &overflow_first_render,
+            &overflow_gap_render,
+        ] {
+            assert_eq!(rendered.report.pages, 1);
+        }
+        assert_ne!(header_render.pdf, baseline_render.pdf);
+        assert_ne!(footer_render.pdf, baseline_render.pdf);
+        assert_ne!(header_render.pdf, footer_render.pdf);
+        assert_eq!(overflow_gap_render.pdf, overflow_first_render.pdf);
+        assert_eq!(header_render.pdf, render(&header_gap).pdf);
+        assert_eq!(footer_render.pdf, render(&footer_gap).pdf);
+    }
+
+    #[test]
+    fn list_state_numbers_and_resets_levels() {
+        use crate::model::ListInfo;
+        let mut s = super::ListState::default();
+        let ol = |level: u8| ListInfo {
+            level,
+            ordered: true,
+            label: String::new(),
+        };
+        let ul = |level: u8| ListInfo {
+            level,
+            ordered: false,
+            label: String::new(),
+        };
+        assert_eq!(s.marker(&ol(0)), "1.");
+        assert_eq!(s.marker(&ol(0)), "2.");
+        assert_eq!(s.marker(&ul(1)), "◦"); // nested bullet doesn't bump level 0
+        assert_eq!(s.marker(&ol(1)), "1."); // first ordered at level 1
+        assert_eq!(s.marker(&ol(0)), "3."); // level 0 resumes
+        assert_eq!(s.marker(&ol(1)), "1."); // level 1 was reset by the level-0 item
+                                            // A reader-captured label is preferred verbatim.
+        assert_eq!(
+            s.marker(&ListInfo {
+                level: 0,
+                ordered: true,
+                label: "가.".to_string()
+            }),
+            "가."
+        );
+    }
+
+    fn shaped_line_text(line: &LineLayout) -> String {
+        if let Some(super::CellVisual::NestedRow { row }) = &line.cell_visual {
+            let mut texts = Vec::new();
+            for cell in &row.cells {
+                for line in &cell.lines {
+                    let text = shaped_line_text(line);
+                    if !text.is_empty() {
+                        texts.push(text);
+                    }
+                }
+            }
+            return texts.join(" ");
+        }
+        line.runs
+            .first()
+            .map(|run| run.text.to_string())
+            .unwrap_or_default()
+    }
+
+    fn collected_block_line_texts(blocks: &[Block]) -> Vec<String> {
+        let fonts = vec![
+            rwml_fonts::noto_sans_kr_subset_with_hanja().to_vec(),
+            rwml_fonts::noto_sans_arabic_subset().to_vec(),
+            rwml_fonts::noto_sans_hebrew_subset().to_vec(),
+        ];
+        let mut font_cx = strict_font_context(&fonts);
+        let mut layout_cx: LayoutContext<rgb::Color> = LayoutContext::new();
+        let mut font_cache = HashMap::new();
+        let mut tcx = TextCx {
+            font_cx: &mut font_cx,
+            layout_cx: &mut layout_cx,
+            font_cache: &mut font_cache,
+        };
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 300.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let mut flow = Vec::new();
+        let mut capture = LayoutCapture::default();
+        super::collect_blocks(blocks, &mut flow, geom, &mut tcx, &mut capture);
+
+        let mut texts = Vec::new();
+        for item in flow {
+            match item {
+                FlowItem::Line(line) => texts.push(shaped_line_text(&line)),
+                FlowItem::Table { rows, .. } => {
+                    for row in rows {
+                        for cell in row.cells {
+                            texts.extend(cell.lines.iter().map(shaped_line_text));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        texts.retain(|text| !text.is_empty());
+        texts
+    }
+
+    #[test]
+    fn table_cell_list_markers_follow_story_order_through_nested_tables() {
+        let nested = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Paragraph(list_paragraph("nested", 0, true, ""))],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![
+                        Block::Paragraph(list_paragraph("direct", 0, true, "")),
+                        Block::Table(nested),
+                    ],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let blocks = vec![
+            Block::Paragraph(list_paragraph("body", 0, true, "")),
+            Block::Table(table),
+            Block::Paragraph(list_paragraph("tail", 0, true, "")),
+        ];
+
+        assert_eq!(
+            collected_block_line_texts(&blocks),
+            ["1. body", "2. direct", "3. nested", "4. tail"]
+        );
+    }
+
+    #[test]
+    fn table_cell_shaping_omits_unused_source_character_ranges() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let rows = laid_out_table_rows(
+            &Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![Block::Paragraph(list_paragraph(
+                            "source range sidecar",
+                            0,
+                            true,
+                            "",
+                        ))],
+                        ..Cell::default()
+                    }],
+                }],
+                ..Table::default()
+            },
+            geom,
+        );
+        let lines = &rows[0].cells[0].lines;
+
+        assert!(!lines.is_empty());
+        assert!(lines.iter().all(|line| line.char_range.is_none()));
+    }
+
+    #[test]
+    fn list_item_beyond_cell_depth_limit_does_not_consume_story_counter() {
+        let mut cell = Cell {
+            blocks: vec![Block::Paragraph(list_paragraph(
+                "beyond depth",
+                0,
+                true,
+                "",
+            ))],
+            ..Cell::default()
+        };
+        for _ in 0..=super::MAX_CELL_DEPTH {
+            cell = Cell {
+                blocks: vec![Block::Table(Table {
+                    rows: vec![Row { cells: vec![cell] }],
+                    ..Table::default()
+                })],
+                ..Cell::default()
+            };
+        }
+        let blocks = vec![
+            Block::Paragraph(list_paragraph("body", 0, true, "")),
+            Block::Table(Table {
+                rows: vec![Row { cells: vec![cell] }],
+                ..Table::default()
+            }),
+            Block::Paragraph(list_paragraph("tail", 0, true, "")),
+        ];
+
+        assert_eq!(collected_block_line_texts(&blocks), ["1. body", "2. tail"]);
+    }
+
+    #[test]
+    fn table_cell_lists_prefer_labels_and_render_marker_only_items() {
+        let mut heading = list_paragraph("heading", 0, true, "");
+        heading.props.heading_level = Some(2);
+        let hidden = Paragraph {
+            props: ParaProps {
+                list: Some(ListInfo {
+                    level: 1,
+                    ordered: false,
+                    label: String::new(),
+                }),
+                ..ParaProps::default()
+            },
+            runs: vec![Run {
+                text: "SECRET".to_string(),
+                props: CharProps {
+                    hidden: true,
+                    ..CharProps::default()
+                },
+                ..Run::default()
+            }],
+        };
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![
+                        Block::Paragraph(list_paragraph("captured", 0, true, " iv) ")),
+                        Block::Paragraph(heading),
+                        Block::Paragraph(list_paragraph("fallback", 0, true, "")),
+                        Block::Paragraph(hidden),
+                        Block::Paragraph(list_paragraph("", 0, true, "")),
+                    ],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+
+        assert_eq!(
+            collected_block_line_texts(&[Block::Table(table)]),
+            ["iv) captured", "heading", "2. fallback", "◦ ", "3. "]
+        );
+    }
+
+    #[test]
+    fn bidi_visual_cell_list_markers_keep_logical_numbering_order() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 220.0,
+            height_pt: 400.0,
+            margin_pt: 20.0,
+            ..PageSetup::default()
+        });
+        let cell = |text: &str| {
+            let mut paragraph = list_paragraph(text, 0, true, "");
+            paragraph.props.align = Align::Right;
+            paragraph.props.bidi = true;
+            Cell {
+                blocks: vec![Block::Paragraph(paragraph)],
+                ..Cell::default()
+            }
+        };
+        let rows = laid_out_table_rows(
+            &Table {
+                rows: vec![Row {
+                    cells: vec![cell("أول"), cell("שני")],
+                }],
+                col_widths_pct: vec![0.5, 0.5],
+                bidi_visual: true,
+                ..Table::default()
+            },
+            geom,
+        );
+        let cells = &rows[0].cells;
+
+        assert!(cells[0].x > cells[1].x);
+        assert!(shaped_line_text(&cells[0].lines[0]).starts_with("\u{200f}1. "));
+        assert!(shaped_line_text(&cells[1].lines[0]).starts_with("\u{200f}2. "));
+        assert!(cells[0].lines[0].runs[0].x > 10.0);
+        assert!(cells[1].lines[0].runs[0].x > 10.0);
+    }
+
+    fn drawn_line_text(line: &LineLayout) -> String {
+        line.runs
+            .iter()
+            .flat_map(|run| {
+                run.glyphs
+                    .iter()
+                    .filter_map(|glyph| super::glyph_text(&run.text, glyph))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn split_table_cell_list_item_injects_one_marker() {
+        let geom = Geom::from_setup(&PageSetup {
+            width_pt: 170.0,
+            height_pt: 180.0,
+            margin_pt: 10.0,
+            ..PageSetup::default()
+        });
+        let table = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Paragraph(list_paragraph(
+                        &"wrapped list content ".repeat(24),
+                        0,
+                        true,
+                        "",
+                    ))],
+                    ..Cell::default()
+                }],
+            }],
+            ..Table::default()
+        };
+        let mut rows = laid_out_table_rows(&table, geom);
+        let row = rows.remove(0);
+        assert!(row.cells[0].lines.len() >= 3);
+        let budget = row.cells[0].insets.top + row.cells[0].lines[0].height + f32::EPSILON;
+        let (head, tail) = split_row(row, budget);
+        let tail = tail.expect("wrapped row should split");
+        let drawn = head
+            .cells
+            .iter()
+            .chain(&tail.cells)
+            .flat_map(|cell| &cell.lines)
+            .map(drawn_line_text)
+            .collect::<String>();
+
+        assert_eq!(drawn.matches("1.").count(), 1, "{drawn:?}");
+    }
+
+    #[test]
+    fn renders_lists_and_indent_without_panicking() {
+        use crate::model::{Indent, ListInfo};
+        let item = |level: u8, ordered: bool, t: &str| {
+            Block::Paragraph(Paragraph {
+                props: ParaProps {
+                    list: Some(ListInfo {
+                        level,
+                        ordered,
+                        label: String::new(),
+                    }),
+                    ..ParaProps::default()
+                },
+                runs: vec![Run {
+                    text: t.to_string(),
+                    ..Run::default()
+                }],
+            })
+        };
+        let indented = Block::Paragraph(Paragraph {
+            props: ParaProps {
+                indent: Indent {
+                    left_pt: Some(36.0),
+                    ..Indent::default()
+                },
+                ..ParaProps::default()
+            },
+            runs: vec![Run {
+                text: "들여쓰기된 문단".to_string(),
+                ..Run::default()
+            }],
+        });
+        let model = DocModel {
+            blocks: vec![
+                item(0, true, "첫째"),
+                item(1, false, "하위 항목"),
+                item(0, true, "둘째"),
+                indented,
+            ],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() > 600);
+    }
+
+    #[test]
+    fn multi_page_table_and_oversized_row_terminate() {
+        // A table whose rows exceed a page (header repeat path) plus one row with a
+        // cell taller than several pages (the split path) must render to a bounded,
+        // valid multi-page PDF without hanging.
+        let hdr = Cell {
+            blocks: vec![para("머리글", None)],
+            is_header: true,
+            ..Cell::default()
+        };
+        let mut rows = vec![Row {
+            cells: vec![hdr, cell("값")],
+        }];
+        for i in 0..80 {
+            rows.push(Row {
+                cells: vec![cell(&format!("행 {i}")), cell("내용")],
+            });
+        }
+        // A single row with a very tall cell (300 paragraphs ⇒ 300+ lines).
+        let tall_blocks: Vec<Block> = (0..300).map(|n| para(&format!("줄 {n}"), None)).collect();
+        rows.push(Row {
+            cells: vec![
+                Cell {
+                    blocks: tall_blocks,
+                    ..Cell::default()
+                },
+                cell("끝"),
+            ],
+        });
+        let model = DocModel {
+            blocks: vec![Block::Table(Table {
+                rows,
+                header_rows: 1,
+                ..Default::default()
+            })],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() < 5_000_000, "unexpectedly large: {}", pdf.len());
+    }
+
+    #[test]
+    fn renders_hyperlink_without_panicking() {
+        use crate::model::FieldRole;
+        let model = DocModel {
+            blocks: vec![Block::Paragraph(Paragraph {
+                props: ParaProps::default(),
+                runs: vec![
+                    Run {
+                        text: "원문 ".to_string(),
+                        ..Run::default()
+                    },
+                    Run {
+                        text: "링크".to_string(),
+                        field: FieldRole::Hyperlink {
+                            url: "https://example.com".to_string(),
+                        },
+                        ..Run::default()
+                    },
+                ],
+            })],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        // The URI string is written into the annotation dictionary.
+        assert!(
+            pdf.windows(b"example.com".len())
+                .any(|w| w == b"example.com"),
+            "hyperlink URI missing from PDF"
+        );
+    }
+
+    #[test]
+    fn extra_fonts_register_and_garbage_is_ignored() {
+        let model = DocModel {
+            blocks: vec![para("등록 글꼴 테스트 with 한글", None)],
+            ..DocModel::default()
+        };
+        // Empty and undecodable font blobs must be skipped, not panic; rendering
+        // still succeeds via system fonts.
+        let pdf = super::to_pdf_with_fonts(&model, &[Vec::new(), vec![1, 2, 3, 4, 5]]);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(pdf.len() > 400);
+    }
+
+    #[test]
+    fn renders_nested_table_cell_text() {
+        // A document whose content lives in a table nested inside an outer table's
+        // cell must still render its text (not an empty page).
+        let inner = Table {
+            rows: vec![Row {
+                cells: vec![cell("속표 내용"), cell("값")],
+            }],
+            header_rows: 0,
+            ..Default::default()
+        };
+        let outer = Table {
+            rows: vec![Row {
+                cells: vec![Cell {
+                    blocks: vec![Block::Table(inner)],
+                    ..Cell::default()
+                }],
+            }],
+            header_rows: 0,
+            ..Default::default()
+        };
+        let pdf = super::to_pdf(&DocModel {
+            blocks: vec![Block::Table(outer)],
+            ..DocModel::default()
+        });
+        assert!(pdf.starts_with(b"%PDF"));
+        // The nested cell text must reach the PDF (a glyph-bearing page is larger
+        // than an empty one).
+        assert!(
+            pdf.len() > 1500,
+            "nested table text not rendered: {} bytes",
+            pdf.len()
+        );
+    }
+
+    #[test]
+    fn empty_model_renders_without_panicking() {
+        let pdf = super::to_pdf(&DocModel::default());
+        assert!(pdf.starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn giant_span_table_renders_bounded() {
+        // A hostile col_span must be clamped so the renderer can't amplify into
+        // millions of columns / panic.
+        let model = DocModel {
+            blocks: vec![Block::Table(Table {
+                rows: vec![Row {
+                    cells: vec![Cell {
+                        blocks: vec![para("x", None)],
+                        col_span: u16::MAX,
+                        row_span: 1,
+                        is_header: false,
+                        ..Default::default()
+                    }],
+                }],
+                header_rows: 0,
+                ..Default::default()
+            })],
+            ..DocModel::default()
+        };
+        let pdf = super::to_pdf(&model);
+        assert!(pdf.starts_with(b"%PDF"));
+        assert!(
+            pdf.len() < 3_000_000,
+            "giant span amplified PDF to {} bytes",
+            pdf.len()
+        );
+    }
+}

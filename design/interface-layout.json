@@ -1,0 +1,1765 @@
+[
+  {
+    "title": "File",
+    "groups": [
+      {
+        "title": "Document",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "file_new_button",
+              "style": "file-main",
+              "label": "New",
+              "tip": "New document",
+              "icon": "new"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "file_open_button",
+                  "style": "file-minor",
+                  "label": "Open",
+                  "tip": "Open document",
+                  "icon": "open"
+                },
+                {
+                  "kind": "button",
+                  "name": "file_save_button",
+                  "style": "file-minor",
+                  "label": "Save",
+                  "tip": "Save document",
+                  "icon": "save"
+                }
+              ]
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "save_as_button",
+                  "style": "file-minor",
+                  "label": "Save as",
+                  "tip": "Save document as",
+                  "icon": "save"
+                },
+                {
+                  "kind": "button",
+                  "name": "recover_button",
+                  "style": "file-minor",
+                  "label": "Recover",
+                  "tip": "Recover document",
+                  "icon": "refresh"
+                }
+              ]
+            },
+            {
+              "kind": "button",
+              "name": "recent_files_button",
+              "style": "file-menu",
+              "label": "Recent",
+              "tip": "Open a recent file",
+              "icon": "recent"
+            }
+          ]
+        }
+      },
+      {
+        "title": "Output",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "pdf_button",
+              "style": "file-main",
+              "label": "Export PDF",
+              "tip": "Export PDF",
+              "icon": "export"
+            },
+            {
+              "kind": "button",
+              "name": "import_pdf_button",
+              "style": "file-main",
+              "label": "Import PDF",
+              "tip": "Convert a PDF into an editable document, choosing pages and options",
+              "icon": "open"
+            },
+            {
+              "kind": "button",
+              "name": "print_button",
+              "style": "file-main",
+              "label": "Print",
+              "tip": "Print (Ctrl+P)",
+              "icon": "print"
+            },
+            {
+              "kind": "v",
+              "children": []
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "title": "Home",
+    "groups": [
+      {
+        "title": "Clipboard",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "paste_button",
+              "style": "big-button",
+              "label": "Paste",
+              "tip": "Paste (Ctrl+V)",
+              "icon": "paste"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "cut_button",
+                  "style": "tool-button",
+                  "label": "Cut",
+                  "tip": "Cut",
+                  "icon": "cut"
+                },
+                {
+                  "kind": "button",
+                  "name": "copy_button",
+                  "style": "tool-button",
+                  "label": "Copy",
+                  "tip": "Copy",
+                  "icon": "copy"
+                },
+                {
+                  "kind": "button",
+                  "name": "paste_plain_button",
+                  "style": "tool-button",
+                  "label": "Paste as text only",
+                  "tip": "Paste as text only",
+                  "icon": "paste-text"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Font",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "combo",
+                  "name": "font_family_combo",
+                  "items": [
+                    "Linux Libertine G",
+                    "Times New Roman",
+                    "Cambria",
+                    "Georgia"
+                  ],
+                  "value": "Linux Libertine G",
+                  "width": 150
+                },
+                {
+                  "kind": "h",
+                  "children": [
+                    {
+                      "kind": "button",
+                      "name": "bold_button",
+                      "style": "tool-button",
+                      "label": "Bold",
+                      "tip": "Bold",
+                      "icon": "bold"
+                    },
+                    {
+                      "kind": "button",
+                      "name": "italic_button",
+                      "style": "tool-button",
+                      "label": "Italic",
+                      "tip": "Italic",
+                      "icon": "italic"
+                    },
+                    {
+                      "kind": "button",
+                      "name": "underline_button",
+                      "style": "tool-button",
+                      "label": "Underline",
+                      "tip": "Underline",
+                      "icon": "underline"
+                    },
+                    {
+                      "kind": "button",
+                      "name": "grow_font_button",
+                      "style": "tool-button",
+                      "label": "Grow font",
+                      "tip": "Grow font",
+                      "icon": "grow"
+                    },
+                    {
+                      "kind": "button",
+                      "name": "shrink_font_button",
+                      "style": "tool-button",
+                      "label": "Shrink font",
+                      "tip": "Shrink font",
+                      "icon": "shrink"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "combo",
+                  "name": "font_size_combo",
+                  "items": [
+                    "11",
+                    "12",
+                    "14"
+                  ],
+                  "value": "11",
+                  "width": 60
+                },
+                {
+                  "kind": "h",
+                  "children": [
+                    {
+                      "kind": "button",
+                      "name": "font_color_button",
+                      "style": "tool-button",
+                      "label": "Font color",
+                      "tip": "Font color",
+                      "icon": "font-color"
+                    },
+                    {
+                      "kind": "button",
+                      "name": "highlight_button",
+                      "style": "tool-button",
+                      "label": "Highlight",
+                      "tip": "Highlight",
+                      "icon": "highlight"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Paragraph",
+        "layout": {
+          "kind": "v",
+          "children": [
+            {
+              "kind": "h",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "bullets_button",
+                  "style": "tool-button",
+                  "label": "Bullets",
+                  "tip": "Bullets",
+                  "icon": "bullets"
+                },
+                {
+                  "kind": "button",
+                  "name": "numbering_button",
+                  "style": "tool-button",
+                  "label": "Numbering",
+                  "tip": "Numbering",
+                  "icon": "numbering"
+                },
+                {
+                  "kind": "button",
+                  "name": "align_left_button",
+                  "style": "tool-button",
+                  "label": "Align left",
+                  "tip": "Align left",
+                  "icon": "align-left"
+                },
+                {
+                  "kind": "button",
+                  "name": "align_center_button",
+                  "style": "tool-button",
+                  "label": "Center",
+                  "tip": "Center",
+                  "icon": "align-center"
+                },
+                {
+                  "kind": "button",
+                  "name": "align_right_button",
+                  "style": "tool-button",
+                  "label": "Align right",
+                  "tip": "Align right",
+                  "icon": "align-right"
+                },
+                {
+                  "kind": "button",
+                  "name": "align_justify_button",
+                  "style": "tool-button",
+                  "label": "Justify",
+                  "tip": "Justify",
+                  "icon": "align-justify"
+                },
+                {
+                  "kind": "button",
+                  "name": "outdent_button",
+                  "style": "tool-button",
+                  "label": "Decrease indent",
+                  "tip": "Decrease indent",
+                  "icon": "outdent"
+                },
+                {
+                  "kind": "button",
+                  "name": "indent_button",
+                  "style": "tool-button",
+                  "label": "Increase indent",
+                  "tip": "Increase indent",
+                  "icon": "indent"
+                }
+              ]
+            },
+            {
+              "kind": "h",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "auto_direction_button",
+                  "style": "tool-button",
+                  "label": "Automatic text direction",
+                  "tip": "Automatic text direction",
+                  "icon": "dir-auto"
+                },
+                {
+                  "kind": "button",
+                  "name": "ltr_button",
+                  "style": "tool-button",
+                  "label": "Left-to-right",
+                  "tip": "Left-to-right",
+                  "icon": "ltr"
+                },
+                {
+                  "kind": "button",
+                  "name": "rtl_button",
+                  "style": "tool-button",
+                  "label": "Right-to-left",
+                  "tip": "Right-to-left",
+                  "icon": "rtl"
+                },
+                {
+                  "kind": "combo",
+                  "name": "line_spacing_combo",
+                  "items": [
+                    "1.2",
+                    "1.5",
+                    "2"
+                  ],
+                  "value": "1.2",
+                  "width": 96
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Styles",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "h",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "style_normal_button",
+                  "style": "style-choice",
+                  "label": "Normal",
+                  "tip": "AaBbC Normal",
+                  "icon": "help"
+                },
+                {
+                  "kind": "button",
+                  "name": "style_heading1_button",
+                  "style": "style-choice",
+                  "label": "Heading 1",
+                  "tip": "AaBb Heading 1",
+                  "icon": "help"
+                },
+                {
+                  "kind": "button",
+                  "name": "style_title_button",
+                  "style": "style-choice",
+                  "label": "Title",
+                  "tip": "Aa Title",
+                  "icon": "help"
+                }
+              ]
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "style_manager_button",
+                  "style": "small-button",
+                  "label": "Styles",
+                  "tip": "Open the styles manager (F11)",
+                  "icon": "styles"
+                },
+                {
+                  "kind": "button",
+                  "name": "clear_direct_button",
+                  "style": "small-button",
+                  "label": "Clear direct",
+                  "tip": "Clear direct formatting (Ctrl+M)",
+                  "icon": "clear"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Typography",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "typography_menu_button",
+                  "style": "small-button",
+                  "label": "Typography",
+                  "tip": "Choose kerning and ligatures",
+                  "icon": "kern"
+                },
+                {
+                  "kind": "button",
+                  "name": "hyphenation_button",
+                  "style": "small-button",
+                  "label": "Hyphenation",
+                  "tip": "Choose hyphenation for the selected paragraphs or the whole document",
+                  "icon": "hyph"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Objects",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "home_picture_button",
+              "style": "big-button",
+              "label": "Picture",
+              "tip": "Insert picture",
+              "icon": "picture"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "title": "Insert",
+    "groups": [
+      {
+        "title": "Pages",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "page_break_button",
+              "style": "big-button",
+              "label": "Page break",
+              "tip": "Page break (Ctrl+Enter)",
+              "icon": "page-break"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "section_break_button",
+                  "style": "small-button",
+                  "label": "Section break ▾",
+                  "tip": "Section break",
+                  "icon": "section-break"
+                },
+                {
+                  "kind": "button",
+                  "name": "column_break_button",
+                  "style": "small-button",
+                  "label": "Column break",
+                  "tip": "Column break (Ctrl+Shift+Enter)",
+                  "icon": "column-break"
+                },
+                {
+                  "kind": "button",
+                  "name": "blank_page_button",
+                  "style": "small-button",
+                  "label": "Blank page",
+                  "tip": "Blank page",
+                  "icon": "new"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Tables",
+        "layout": {
+          "kind": "button",
+          "name": "insert_table_button",
+          "style": "big-button",
+          "label": "Table",
+          "tip": "Insert table",
+          "icon": "table"
+        }
+      },
+      {
+        "title": "Illustrations",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "insert_picture_button",
+              "style": "big-button",
+              "label": "Picture",
+              "tip": "Insert picture",
+              "icon": "picture"
+            },
+            {
+              "kind": "button",
+              "name": "insert_figure_button",
+              "style": "big-button",
+              "label": "Figure",
+              "tip": "Insert figure with caption",
+              "icon": "figure"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "shapes_button",
+                  "style": "small-button",
+                  "label": "Shapes",
+                  "tip": "Shapes",
+                  "icon": "shapes"
+                },
+                {
+                  "kind": "button",
+                  "name": "chart_button",
+                  "style": "small-button",
+                  "label": "Chart",
+                  "tip": "Chart",
+                  "icon": "chart"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Links",
+        "layout": {
+          "kind": "v",
+          "children": [
+            {
+              "kind": "button",
+              "name": "link_button",
+              "style": "small-button",
+              "label": "Link",
+              "tip": "Insert link (Ctrl+K)",
+              "icon": "link"
+            },
+            {
+              "kind": "button",
+              "name": "bookmark_button",
+              "style": "small-button",
+              "label": "Bookmark",
+              "tip": "Bookmark",
+              "icon": "bookmark"
+            },
+            {
+              "kind": "button",
+              "name": "cross_reference_button",
+              "style": "small-button",
+              "label": "Cross-reference",
+              "tip": "Cross-reference",
+              "icon": "crossref"
+            }
+          ]
+        }
+      },
+      {
+        "title": "Header & Footer",
+        "layout": {
+          "kind": "v",
+          "children": [
+            {
+              "kind": "button",
+              "name": "header_button",
+              "style": "small-button",
+              "label": "Header",
+              "tip": "Header",
+              "icon": "header"
+            },
+            {
+              "kind": "button",
+              "name": "footer_button",
+              "style": "small-button",
+              "label": "Footer",
+              "tip": "Footer",
+              "icon": "footer"
+            },
+            {
+              "kind": "button",
+              "name": "page_number_button",
+              "style": "small-button",
+              "label": "Page number",
+              "tip": "Page number",
+              "icon": "page-number"
+            }
+          ]
+        }
+      },
+      {
+        "title": "Text",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "text_box_button",
+              "style": "big-button",
+              "label": "Text box",
+              "tip": "Insert text box",
+              "icon": "textbox"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "date_time_button",
+                  "style": "small-button",
+                  "label": "Date & time",
+                  "tip": "Date & time",
+                  "icon": "calendar"
+                },
+                {
+                  "kind": "button",
+                  "name": "field_button",
+                  "style": "small-button",
+                  "label": "Field",
+                  "tip": "Field",
+                  "icon": "field"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Equation",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "display_equation_button",
+              "style": "big-button",
+              "label": "Equation",
+              "tip": "Insert an equation with the equation editor (Ctrl+Shift+M)",
+              "icon": "equation"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "insert_inline_equation_button",
+                  "style": "small-button",
+                  "label": "Inline",
+                  "tip": "Insert inline equation (Ctrl+M)",
+                  "icon": "inline-eq"
+                },
+                {
+                  "kind": "button",
+                  "name": "symbol_button",
+                  "style": "small-button",
+                  "label": "Symbol",
+                  "tip": "Symbol",
+                  "icon": "symbol"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Code",
+        "layout": {
+          "kind": "button",
+          "name": "code_block_button",
+          "style": "big-button",
+          "label": "Code block",
+          "tip": "Insert raw code block",
+          "icon": "code-block"
+        }
+      }
+    ]
+  },
+  {
+    "title": "Layout",
+    "groups": [
+      {
+        "title": "Page setup",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "margins_button",
+              "style": "big-button",
+              "label": "Margins",
+              "tip": "Margins",
+              "icon": "margins"
+            },
+            {
+              "kind": "button",
+              "name": "orientation_button",
+              "style": "big-button",
+              "label": "Orientation",
+              "tip": "Orientation",
+              "icon": "orientation"
+            },
+            {
+              "kind": "button",
+              "name": "page_size_button",
+              "style": "big-button",
+              "label": "Size",
+              "tip": "Page size",
+              "icon": "size"
+            },
+            {
+              "kind": "button",
+              "name": "columns_button",
+              "style": "big-button",
+              "label": "Columns",
+              "tip": "Columns",
+              "icon": "columns"
+            },
+            {
+              "kind": "button",
+              "name": "breaks_button",
+              "style": "big-button",
+              "label": "Breaks ▾",
+              "tip": "Breaks",
+              "icon": "page-break"
+            }
+          ]
+        }
+      },
+      {
+        "title": "Page",
+        "layout": {
+          "kind": "v",
+          "children": [
+            {
+              "kind": "button",
+              "name": "line_numbers_button",
+              "style": "small-button",
+              "label": "Line numbers",
+              "tip": "Line numbers",
+              "icon": "line-numbers"
+            },
+            {
+              "kind": "button",
+              "name": "watermark_button",
+              "style": "small-button",
+              "label": "Watermark",
+              "tip": "Watermark",
+              "icon": "watermark"
+            },
+            {
+              "kind": "button",
+              "name": "page_color_button",
+              "style": "small-button",
+              "label": "Page color",
+              "tip": "Page color",
+              "icon": "page-color"
+            }
+          ]
+        }
+      },
+      {
+        "title": "Paragraph",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "spin",
+                  "name": "indent_left_spin",
+                  "value": "0",
+                  "width": 54
+                },
+                {
+                  "kind": "spin",
+                  "name": "indent_right_spin",
+                  "value": "0",
+                  "width": 54
+                }
+              ]
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "spin",
+                  "name": "spacing_before_spin",
+                  "value": "0",
+                  "width": 54
+                },
+                {
+                  "kind": "spin",
+                  "name": "spacing_after_spin",
+                  "value": "6",
+                  "width": 54
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Arrange",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "position_button",
+                  "style": "small-button",
+                  "label": "Position",
+                  "tip": "Position",
+                  "icon": "position"
+                },
+                {
+                  "kind": "button",
+                  "name": "wrap_text_button",
+                  "style": "small-button",
+                  "label": "Wrap text",
+                  "tip": "Wrap text",
+                  "icon": "wrap"
+                }
+              ]
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "bring_forward_button",
+                  "style": "small-button",
+                  "label": "Bring forward",
+                  "tip": "Bring forward",
+                  "icon": "forward"
+                },
+                {
+                  "kind": "button",
+                  "name": "send_backward_button",
+                  "style": "small-button",
+                  "label": "Send backward",
+                  "tip": "Send backward",
+                  "icon": "backward"
+                }
+              ]
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "align_objects_button",
+                  "style": "small-button",
+                  "label": "Align",
+                  "tip": "Align",
+                  "icon": "align-objects"
+                },
+                {
+                  "kind": "button",
+                  "name": "rotate_button",
+                  "style": "small-button",
+                  "label": "Rotate",
+                  "tip": "Rotate",
+                  "icon": "rotate"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "title": "References",
+    "groups": [
+      {
+        "title": "Table of contents",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "toc_button",
+              "style": "big-button",
+              "label": "Contents",
+              "tip": "Insert table of contents",
+              "icon": "toc"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "update_toc_button",
+                  "style": "small-button",
+                  "label": "Update table",
+                  "tip": "Update table",
+                  "icon": "refresh"
+                },
+                {
+                  "kind": "button",
+                  "name": "toc_add_text_button",
+                  "style": "small-button",
+                  "label": "Add text",
+                  "tip": "Add text",
+                  "icon": "plus-lines"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Footnotes",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "insert_footnote_button",
+              "style": "big-button",
+              "label": "Footnote",
+              "tip": "Insert footnote (Ctrl+Alt+F)",
+              "icon": "footnote"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "insert_endnote_button",
+                  "style": "small-button",
+                  "label": "Insert endnote",
+                  "tip": "Insert endnote",
+                  "icon": "endnote"
+                },
+                {
+                  "kind": "button",
+                  "name": "next_footnote_button",
+                  "style": "small-button",
+                  "label": "Next footnote",
+                  "tip": "Next footnote",
+                  "icon": "arrow-down"
+                },
+                {
+                  "kind": "button",
+                  "name": "show_notes_button",
+                  "style": "small-button",
+                  "label": "Show notes",
+                  "tip": "Show notes",
+                  "icon": "eye"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Citations & bibliography",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "insert_citation_button",
+              "style": "big-button",
+              "label": "Citation",
+              "tip": "Citation manager: insert citations, manage sources and styles (Ctrl+Shift+C)",
+              "icon": "cite"
+            },
+            {
+              "kind": "button",
+              "name": "bibliography_button",
+              "style": "big-button",
+              "label": "Bibliography",
+              "tip": "Insert bibliography",
+              "icon": "book"
+            }
+          ]
+        }
+      },
+      {
+        "title": "Captions",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "insert_caption_button",
+              "style": "big-button",
+              "label": "Caption",
+              "tip": "Insert caption",
+              "icon": "caption"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "table_of_figures_button",
+                  "style": "small-button",
+                  "label": "Table of figures",
+                  "tip": "Table of figures",
+                  "icon": "table-figures"
+                },
+                {
+                  "kind": "button",
+                  "name": "caption_cross_reference_button",
+                  "style": "small-button",
+                  "label": "Cross-reference",
+                  "tip": "Cross-reference",
+                  "icon": "crossref"
+                },
+                {
+                  "kind": "button",
+                  "name": "update_figures_button",
+                  "style": "small-button",
+                  "label": "Update table",
+                  "tip": "Update table",
+                  "icon": "refresh"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Index",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "mark_entry_button",
+              "style": "big-button",
+              "label": "Mark entry",
+              "tip": "Mark index entry (Alt+Shift+X)",
+              "icon": "mark"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "insert_index_button",
+                  "style": "small-button",
+                  "label": "Insert index",
+                  "tip": "Insert index",
+                  "icon": "index"
+                },
+                {
+                  "kind": "button",
+                  "name": "update_index_button",
+                  "style": "small-button",
+                  "label": "Update index",
+                  "tip": "Update index",
+                  "icon": "refresh"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "title": "Review",
+    "groups": [
+      {
+        "title": "Proofing",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "spelling_button",
+              "style": "big-button",
+              "label": "Spelling",
+              "tip": "Check spelling (F7)",
+              "icon": "spell"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "thesaurus_button",
+                  "style": "small-button",
+                  "label": "Thesaurus",
+                  "tip": "Thesaurus (Shift+F7)",
+                  "icon": "thesaurus"
+                },
+                {
+                  "kind": "button",
+                  "name": "word_count_button",
+                  "style": "small-button",
+                  "label": "Word count",
+                  "tip": "Word count",
+                  "icon": "word-count"
+                },
+                {
+                  "kind": "button",
+                  "name": "compatibility_button",
+                  "style": "small-button",
+                  "label": "Compatibility",
+                  "tip": "Review document format limitations",
+                  "icon": "review"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Comments",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "new_comment_button",
+              "style": "big-button",
+              "label": "Comment",
+              "tip": "New comment (Ctrl+Alt+C)",
+              "icon": "comment"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "delete_comment_button",
+                  "style": "small-button",
+                  "label": "Delete",
+                  "tip": "Delete",
+                  "icon": "comment-x"
+                },
+                {
+                  "kind": "button",
+                  "name": "resolve_comment_button",
+                  "style": "small-button",
+                  "label": "Resolve",
+                  "tip": "Resolve",
+                  "icon": "comment-check"
+                }
+              ]
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "previous_comment_button",
+                  "style": "small-button",
+                  "label": "Previous",
+                  "tip": "Previous",
+                  "icon": "arrow-up"
+                },
+                {
+                  "kind": "button",
+                  "name": "next_comment_button",
+                  "style": "small-button",
+                  "label": "Next",
+                  "tip": "Next",
+                  "icon": "arrow-down"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Tracking",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "track_changes_button",
+              "style": "big-button",
+              "label": "Track changes",
+              "tip": "Track changes (Ctrl+Shift+E)",
+              "icon": "track"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "combo",
+                  "name": "markup_mode_combo",
+                  "items": [
+                    "All markup",
+                    "Simple markup",
+                    "No markup",
+                    "Original"
+                  ],
+                  "value": "All markup",
+                  "width": 96
+                },
+                {
+                  "kind": "button",
+                  "name": "show_markup_button",
+                  "style": "small-button",
+                  "label": "Show markup",
+                  "tip": "Show markup",
+                  "icon": "markup"
+                },
+                {
+                  "kind": "button",
+                  "name": "reviewing_pane_button",
+                  "style": "small-button",
+                  "label": "Reviewing pane",
+                  "tip": "Reviewing pane",
+                  "icon": "pane-right"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Changes",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "accept_change_button",
+              "style": "big-button",
+              "label": "Accept",
+              "tip": "Accept change",
+              "icon": "accept"
+            },
+            {
+              "kind": "button",
+              "name": "reject_change_button",
+              "style": "big-button",
+              "label": "Reject",
+              "tip": "Reject change",
+              "icon": "reject"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "previous_change_button",
+                  "style": "small-button",
+                  "label": "Previous",
+                  "tip": "Previous",
+                  "icon": "arrow-up"
+                },
+                {
+                  "kind": "button",
+                  "name": "next_change_button",
+                  "style": "small-button",
+                  "label": "Next",
+                  "tip": "Next",
+                  "icon": "arrow-down"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Compare",
+        "layout": {
+          "kind": "button",
+          "name": "compare_button",
+          "style": "big-button",
+          "label": "Compare",
+          "tip": "Compare two versions",
+          "icon": "compare"
+        }
+      },
+      {
+        "title": "Protect",
+        "layout": {
+          "kind": "button",
+          "name": "restrict_editing_button",
+          "style": "big-button",
+          "label": "Restrict",
+          "tip": "Restrict editing",
+          "icon": "lock"
+        }
+      }
+    ]
+  },
+  {
+    "title": "View",
+    "groups": [
+      {
+        "title": "Views",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "print_layout_button",
+              "style": "big-button",
+              "label": "Print layout",
+              "tip": "Print layout",
+              "icon": "page"
+            },
+            {
+              "kind": "button",
+              "name": "web_layout_button",
+              "style": "big-button",
+              "label": "Web layout",
+              "tip": "Web layout",
+              "icon": "web"
+            },
+            {
+              "kind": "button",
+              "name": "outline_view_button",
+              "style": "big-button",
+              "label": "Outline",
+              "tip": "Outline",
+              "icon": "outline"
+            },
+            {
+              "kind": "button",
+              "name": "focus_mode_button",
+              "style": "big-button",
+              "label": "Focus",
+              "tip": "Focus mode (F11)",
+              "icon": "focus"
+            }
+          ]
+        }
+      },
+      {
+        "title": "Show",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "check",
+                  "name": "show_ruler_check",
+                  "label": "Ruler",
+                  "checked": true
+                },
+                {
+                  "kind": "check",
+                  "name": "show_gridlines_check",
+                  "label": "Gridlines",
+                  "checked": false
+                },
+                {
+                  "kind": "check",
+                  "name": "show_formatting_marks_check",
+                  "label": "Formatting marks",
+                  "checked": false
+                }
+              ]
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "check",
+                  "name": "show_navigation_check",
+                  "label": "Navigation pane",
+                  "checked": false
+                },
+                {
+                  "kind": "check",
+                  "name": "show_page_boundaries_check",
+                  "label": "Page boundaries",
+                  "checked": true
+                },
+                {
+                  "kind": "check",
+                  "name": "show_comments_check",
+                  "label": "Comments",
+                  "checked": true
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Zoom",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "zoom_dialog_button",
+              "style": "big-button",
+              "label": "Zoom",
+              "tip": "Zoom…",
+              "icon": "zoom-in"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "zoom_100_button",
+                  "style": "small-button",
+                  "label": "100%",
+                  "tip": "Zoom to 100%",
+                  "icon": "zoom-reset"
+                },
+                {
+                  "kind": "button",
+                  "name": "zoom_one_page_button",
+                  "style": "small-button",
+                  "label": "One page",
+                  "tip": "One page",
+                  "icon": "one-page"
+                },
+                {
+                  "kind": "button",
+                  "name": "zoom_page_width_button",
+                  "style": "small-button",
+                  "label": "Page width",
+                  "tip": "Page width",
+                  "icon": "page-width"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Window",
+        "layout": {
+          "kind": "v",
+          "children": [
+            {
+              "kind": "button",
+              "name": "new_window_button",
+              "style": "small-button",
+              "label": "New window",
+              "tip": "New window",
+              "icon": "new-window"
+            },
+            {
+              "kind": "button",
+              "name": "side_by_side_button",
+              "style": "small-button",
+              "label": "Side by side",
+              "tip": "Side by side",
+              "icon": "side-by-side"
+            },
+            {
+              "kind": "button",
+              "name": "split_window_button",
+              "style": "small-button",
+              "label": "Split",
+              "tip": "Split",
+              "icon": "split-h"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  {
+    "title": "Typst",
+    "groups": [
+      {
+        "title": "Compile",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "compile_button",
+              "style": "big-button",
+              "label": "Compile",
+              "tip": "Compile now (Ctrl+Shift+B)",
+              "icon": "compile"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "auto_compile_button",
+                  "style": "small-button",
+                  "label": "Auto-compile",
+                  "tip": "Auto-compile",
+                  "icon": "bolt"
+                },
+                {
+                  "kind": "button",
+                  "name": "clear_cache_button",
+                  "style": "small-button",
+                  "label": "Clear cache",
+                  "tip": "Clear cache",
+                  "icon": "refresh"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Source",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "typst_source_button",
+              "style": "big-button",
+              "label": "Source",
+              "tip": "Edit Typst source",
+              "icon": "code"
+            },
+            {
+              "kind": "button",
+              "name": "typst_split_button",
+              "style": "big-button",
+              "label": "Split",
+              "tip": "Source and preview side by side",
+              "icon": "split"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "format_source_button",
+                  "style": "small-button",
+                  "label": "Format",
+                  "tip": "Format document (Shift+Alt+F)",
+                  "icon": "format"
+                },
+                {
+                  "kind": "button",
+                  "name": "jump_to_source_button",
+                  "style": "small-button",
+                  "label": "Jump to source",
+                  "tip": "Jump between preview and source",
+                  "icon": "sync"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Scripting",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "package_browser_button",
+              "style": "big-button",
+              "label": "Packages",
+              "tip": "Browse and import packages",
+              "icon": "package"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "insert_set_rule_button",
+                  "style": "small-button",
+                  "label": "Set rule",
+                  "tip": "Set rule",
+                  "icon": "hash"
+                },
+                {
+                  "kind": "button",
+                  "name": "insert_show_rule_button",
+                  "style": "small-button",
+                  "label": "Show rule",
+                  "tip": "Show rule",
+                  "icon": "eye"
+                }
+              ]
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "insert_let_button",
+                  "style": "small-button",
+                  "label": "Let binding",
+                  "tip": "Let binding",
+                  "icon": "variable"
+                },
+                {
+                  "kind": "button",
+                  "name": "insert_function_button",
+                  "style": "small-button",
+                  "label": "Function",
+                  "tip": "Function",
+                  "icon": "function"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "title": "Template",
+        "layout": {
+          "kind": "button",
+          "name": "template_button",
+          "style": "big-button",
+          "label": "Template",
+          "tip": "Apply a template",
+          "icon": "template"
+        }
+      },
+      {
+        "title": "Diagnostics",
+        "layout": {
+          "kind": "v",
+          "children": [
+            {
+              "kind": "button",
+              "name": "errors_button",
+              "style": "small-button",
+              "label": "0 errors",
+              "tip": "Show errors",
+              "icon": "error"
+            },
+            {
+              "kind": "button",
+              "name": "warnings_button",
+              "style": "small-button",
+              "label": "1 warning",
+              "tip": "Show warnings",
+              "icon": "warning"
+            },
+            {
+              "kind": "button",
+              "name": "problems_pane_button",
+              "style": "small-button",
+              "label": "Problems",
+              "tip": "Problems",
+              "icon": "pane-right"
+            }
+          ]
+        }
+      },
+      {
+        "title": "Export",
+        "layout": {
+          "kind": "h",
+          "children": [
+            {
+              "kind": "button",
+              "name": "export_pdf_button",
+              "style": "big-button",
+              "label": "PDF",
+              "tip": "Export as PDF (Ctrl+Shift+E)",
+              "icon": "export"
+            },
+            {
+              "kind": "v",
+              "children": [
+                {
+                  "kind": "button",
+                  "name": "export_png_button",
+                  "style": "small-button",
+                  "label": "PNG",
+                  "tip": "PNG",
+                  "icon": "picture"
+                },
+                {
+                  "kind": "button",
+                  "name": "export_svg_button",
+                  "style": "small-button",
+                  "label": "SVG",
+                  "tip": "SVG",
+                  "icon": "vector"
+                },
+                {
+                  "kind": "button",
+                  "name": "export_html_button",
+                  "style": "small-button",
+                  "label": "HTML",
+                  "tip": "HTML",
+                  "icon": "code"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    ]
+  }
+]

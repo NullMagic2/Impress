@@ -1,0 +1,334 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resource>
+  <object class="wxDialog" name="note_dialog">
+    <title>Footnotes and Endnotes</title>
+    <style>wxDEFAULT_DIALOG_STYLE</style>
+    <bg>#e8ecf2</bg>
+    <object class="wxBoxSizer">
+      <orient>wxVERTICAL</orient>
+      <object class="sizeritem">
+        <option>1</option>
+        <flag>wxEXPAND|wxLEFT|wxRIGHT|wxTOP</flag>
+        <border>12</border>
+        <object class="wxPanel" name="note_card">
+          <bg>#ffffff</bg>
+          <object class="wxBoxSizer">
+            <orient>wxVERTICAL</orient>
+            <object class="sizeritem">
+              <option>1</option>
+              <flag>wxEXPAND|wxALL</flag>
+              <border>16</border>
+              <object class="wxBoxSizer">
+                <orient>wxVERTICAL</orient>
+                <object class="sizeritem">
+                  <option>1</option>
+                  <flag>wxEXPAND</flag>
+                  <border>0</border>
+                  <object class="wxBoxSizer">
+                    <orient>wxHORIZONTAL</orient>
+                    <object class="sizeritem">
+                      <option>1</option>
+                      <flag>wxEXPAND|wxRIGHT</flag>
+                      <border>24</border>
+                      <object class="wxBoxSizer">
+                        <orient>wxVERTICAL</orient>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND</flag>
+                          <border>0</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                              <border>10</border>
+                              <object class="wxStaticText" name="i18n_control_2">
+                                <label>In this document</label>
+                                <fg>#1d3d78</fg>
+                                <font>
+                                  <weight>bold</weight>
+                                </font>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxPanel">
+                                <size>-1,1</size>
+                                <bg>#dfe4ec</bg>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>1</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>10</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="spacer">
+                              <size>12,1</size>
+                              <option>0</option>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxEXPAND</flag>
+                              <border>0</border>
+                              <object class="wxBoxSizer">
+                                <orient>wxVERTICAL</orient>
+                                <object class="sizeritem">
+                                  <option>1</option>
+                                  <flag>wxEXPAND|wxBOTTOM</flag>
+                                  <border>10</border>
+                                  <object class="wxListBox" name="note_list">
+                                    <size>330,250</size>
+                                    <style>wxLB_SINGLE</style>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>8</border>
+                                  <object class="wxStaticText" name="note_empty">
+                                    <label>No footnotes or endnotes yet.</label>
+                                    <fg>#6b778a</fg>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxEXPAND</flag>
+                                  <border>0</border>
+                                  <object class="wxBoxSizer">
+                                    <orient>wxHORIZONTAL</orient>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag />
+                                      <border>0</border>
+                                      <object class="wxButton" name="note_goto">
+                                        <label>Go to reference</label>
+                                        <size>120,28</size>
+                                        <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                      </object>
+                                    </object>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxLEFT</flag>
+                                      <border>6</border>
+                                      <object class="wxButton" name="note_edit">
+                                        <label>Edit on page</label>
+                                        <size>108,28</size>
+                                        <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                      </object>
+                                    </object>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxLEFT</flag>
+                                      <border>6</border>
+                                      <object class="wxButton" name="note_delete">
+                                        <label>Delete</label>
+                                        <size>80,28</size>
+                                        <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxEXPAND</flag>
+                      <border>0</border>
+                      <object class="wxBoxSizer">
+                        <orient>wxVERTICAL</orient>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND</flag>
+                          <border>0</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                              <border>10</border>
+                              <object class="wxStaticText" name="i18n_control_7">
+                                <label>Selected note</label>
+                                <fg>#1d3d78</fg>
+                                <font>
+                                  <weight>bold</weight>
+                                </font>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxPanel">
+                                <size>-1,1</size>
+                                <bg>#dfe4ec</bg>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>10</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="spacer">
+                              <size>12,1</size>
+                              <option>0</option>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxEXPAND</flag>
+                              <border>0</border>
+                              <object class="wxBoxSizer">
+                                <orient>wxVERTICAL</orient>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxEXPAND</flag>
+                                  <border>0</border>
+                                  <object class="wxTextCtrl" name="note_preview">
+                                    <size>300,96</size>
+                                    <style>wxTE_MULTILINE|wxTE_WORDWRAP|wxTE_READONLY</style>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>24</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                              <border>10</border>
+                              <object class="wxStaticText" name="i18n_control_8">
+                                <label>Insert at the caret</label>
+                                <fg>#1d3d78</fg>
+                                <font>
+                                  <weight>bold</weight>
+                                </font>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxPanel">
+                                <size>-1,1</size>
+                                <bg>#dfe4ec</bg>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>10</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="spacer">
+                              <size>12,1</size>
+                              <option>0</option>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxEXPAND</flag>
+                              <border>0</border>
+                              <object class="wxBoxSizer">
+                                <orient>wxVERTICAL</orient>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>6</border>
+                                  <object class="wxRadioButton" name="note_kind_footnote">
+                                    <label>Footnote, at the bottom of the page</label>
+                                    <style>wxRB_GROUP</style>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>12</border>
+                                  <object class="wxRadioButton" name="note_kind_endnote">
+                                    <label>Endnote, at the end of the document</label>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>6</border>
+                                  <object class="wxStaticText" name="note_text_caption">
+                                    <label>Note text</label>
+                                    <fg>#6b778a</fg>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxEXPAND</flag>
+                                  <border>0</border>
+                                  <object class="wxTextCtrl" name="note_text">
+                                    <size>300,84</size>
+                                    <style>wxTE_MULTILINE|wxTE_WORDWRAP</style>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+              </object>
+            </object>
+          </object>
+        </object>
+      </object>
+      <object class="sizeritem">
+        <option>0</option>
+        <flag>wxEXPAND|wxALL</flag>
+        <border>12</border>
+        <object class="wxBoxSizer">
+          <orient>wxHORIZONTAL</orient>
+          <object class="spacer">
+            <size>1,1</size>
+            <option>1</option>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL</flag>
+            <border>0</border>
+            <object class="wxButton" name="note_ok">
+              <label>Insert</label>
+              <size>88,28</size>
+              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+              <default>1</default>
+            </object>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+            <border>8</border>
+            <object class="wxButton" name="note_cancel">
+              <label>Close</label>
+              <size>88,28</size>
+              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+            </object>
+          </object>
+        </object>
+      </object>
+    </object>
+  </object>
+</resource>

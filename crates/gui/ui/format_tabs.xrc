@@ -1,0 +1,501 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resource>
+  <object class="wxDialog" name="tab_dialog">
+    <title>Tabs</title>
+    <style>wxDEFAULT_DIALOG_STYLE</style>
+    <bg>#e8ecf2</bg>
+    <object class="wxBoxSizer">
+      <orient>wxVERTICAL</orient>
+      <object class="sizeritem">
+        <option>1</option>
+        <flag>wxEXPAND|wxLEFT|wxRIGHT|wxTOP</flag>
+        <border>12</border>
+        <object class="wxPanel" name="tab_card">
+          <bg>#ffffff</bg>
+          <object class="wxBoxSizer">
+            <orient>wxVERTICAL</orient>
+            <object class="sizeritem">
+              <option>1</option>
+              <flag>wxEXPAND|wxALL</flag>
+              <border>16</border>
+              <object class="wxBoxSizer">
+                <orient>wxVERTICAL</orient>
+                <object class="sizeritem">
+                  <option>0</option>
+                  <flag>wxEXPAND</flag>
+                  <border>0</border>
+                  <object class="wxBoxSizer">
+                    <orient>wxHORIZONTAL</orient>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                      <border>10</border>
+                      <object class="wxStaticText" name="i18n_control_2">
+                        <label>Tab stops</label>
+                        <fg>#1d3d78</fg>
+                        <font>
+                          <weight>bold</weight>
+                        </font>
+                      </object>
+                    </object>
+                    <object class="sizeritem">
+                      <option>1</option>
+                      <flag>wxALIGN_CENTER_VERTICAL</flag>
+                      <border>0</border>
+                      <object class="wxPanel">
+                        <size>-1,1</size>
+                        <bg>#dfe4ec</bg>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <option>0</option>
+                  <flag>wxEXPAND|wxTOP</flag>
+                  <border>10</border>
+                  <object class="wxBoxSizer">
+                    <orient>wxHORIZONTAL</orient>
+                    <object class="spacer">
+                      <size>12,1</size>
+                      <option>0</option>
+                    </object>
+                    <object class="sizeritem">
+                      <option>1</option>
+                      <flag>wxEXPAND</flag>
+                      <border>0</border>
+                      <object class="wxBoxSizer">
+                        <orient>wxVERTICAL</orient>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND</flag>
+                          <border>0</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxEXPAND</flag>
+                              <border>0</border>
+                              <object class="wxBoxSizer">
+                                <orient>wxVERTICAL</orient>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>4</border>
+                                  <object class="wxStaticText" name="i18n_control_3">
+                                    <label>Tab stop position:</label>
+                                    <fg>#243042</fg>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxEXPAND</flag>
+                                  <border>0</border>
+                                  <object class="wxBoxSizer">
+                                    <orient>wxHORIZONTAL</orient>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                      <border>0</border>
+                                      <object class="wxTextCtrl" name="tab_position">
+                                        <size>150,28</size>
+                                        <style>wxTE_PROCESS_ENTER</style>
+                                      </object>
+                                    </object>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                      <border>6</border>
+                                      <object class="wxStaticText" name="i18n_control_4">
+                                        <label>mm</label>
+                                        <fg>#6b778a</fg>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxTOP</flag>
+                                  <border>4</border>
+                                  <object class="wxListBox" name="tab_list">
+                                    <size>150,110</size>
+                                    <style>wxLB_SINGLE</style>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxLEFT</flag>
+                              <border>32</border>
+                              <object class="wxBoxSizer">
+                                <orient>wxVERTICAL</orient>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>4</border>
+                                  <object class="wxStaticText" name="i18n_control_5">
+                                    <label>Default tab stops:</label>
+                                    <fg>#243042</fg>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxEXPAND</flag>
+                                  <border>0</border>
+                                  <object class="wxBoxSizer">
+                                    <orient>wxHORIZONTAL</orient>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                      <border>0</border>
+                                      <object class="wxSpinCtrlDouble" name="tab_default">
+                                        <size>90,28</size>
+                                        <min>1</min>
+                                        <max>600</max>
+                                        <inc>0.5</inc>
+                                        <digits>1</digits>
+                                        <value>12.7</value>
+                                      </object>
+                                    </object>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                      <border>6</border>
+                                      <object class="wxStaticText" name="i18n_control_6">
+                                        <label>mm</label>
+                                        <fg>#6b778a</fg>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxTOP</flag>
+                                  <border>14</border>
+                                  <object class="wxStaticText" name="i18n_control_7">
+                                    <label>Tab stops to be cleared:</label>
+                                    <fg>#243042</fg>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxTOP</flag>
+                                  <border>4</border>
+                                  <object class="wxStaticText" name="tab_cleared">
+                                    <label>—</label>
+                                    <size>170,-1</size>
+                                    <fg>#6b778a</fg>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <option>0</option>
+                  <flag>wxEXPAND|wxTOP</flag>
+                  <border>24</border>
+                  <object class="wxBoxSizer">
+                    <orient>wxHORIZONTAL</orient>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                      <border>10</border>
+                      <object class="wxStaticText" name="i18n_control_9">
+                        <label>Alignment</label>
+                        <fg>#1d3d78</fg>
+                        <font>
+                          <weight>bold</weight>
+                        </font>
+                      </object>
+                    </object>
+                    <object class="sizeritem">
+                      <option>1</option>
+                      <flag>wxALIGN_CENTER_VERTICAL</flag>
+                      <border>0</border>
+                      <object class="wxPanel">
+                        <size>-1,1</size>
+                        <bg>#dfe4ec</bg>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <option>0</option>
+                  <flag>wxEXPAND|wxTOP</flag>
+                  <border>10</border>
+                  <object class="wxBoxSizer">
+                    <orient>wxHORIZONTAL</orient>
+                    <object class="spacer">
+                      <size>12,1</size>
+                      <option>0</option>
+                    </object>
+                    <object class="sizeritem">
+                      <option>1</option>
+                      <flag>wxEXPAND</flag>
+                      <border>0</border>
+                      <object class="wxBoxSizer">
+                        <orient>wxVERTICAL</orient>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND</flag>
+                          <border>0</border>
+                          <object class="wxFlexGridSizer">
+                            <rows>0</rows>
+                            <cols>3</cols>
+                            <vgap>8</vgap>
+                            <hgap>32</hgap>
+                            <growablecols />
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxRadioButton" name="tab_align_left">
+                                <label>Left</label>
+                                <style>wxRB_GROUP</style>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxRadioButton" name="tab_align_center">
+                                <label>Center</label>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxRadioButton" name="tab_align_right">
+                                <label>Right</label>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxRadioButton" name="tab_align_decimal">
+                                <label>Decimal</label>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxRadioButton" name="tab_align_bar">
+                                <label>Bar</label>
+                              </object>
+                            </object>
+                            <object class="spacer">
+                              <size>1,1</size>
+                              <option>0</option>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <option>0</option>
+                  <flag>wxEXPAND|wxTOP</flag>
+                  <border>24</border>
+                  <object class="wxBoxSizer">
+                    <orient>wxHORIZONTAL</orient>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                      <border>10</border>
+                      <object class="wxStaticText" name="i18n_control_15">
+                        <label>Leader</label>
+                        <fg>#1d3d78</fg>
+                        <font>
+                          <weight>bold</weight>
+                        </font>
+                      </object>
+                    </object>
+                    <object class="sizeritem">
+                      <option>1</option>
+                      <flag>wxALIGN_CENTER_VERTICAL</flag>
+                      <border>0</border>
+                      <object class="wxPanel">
+                        <size>-1,1</size>
+                        <bg>#dfe4ec</bg>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <option>0</option>
+                  <flag>wxEXPAND|wxTOP</flag>
+                  <border>10</border>
+                  <object class="wxBoxSizer">
+                    <orient>wxHORIZONTAL</orient>
+                    <object class="spacer">
+                      <size>12,1</size>
+                      <option>0</option>
+                    </object>
+                    <object class="sizeritem">
+                      <option>1</option>
+                      <flag>wxEXPAND</flag>
+                      <border>0</border>
+                      <object class="wxBoxSizer">
+                        <orient>wxVERTICAL</orient>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND</flag>
+                          <border>0</border>
+                          <object class="wxFlexGridSizer">
+                            <rows>0</rows>
+                            <cols>2</cols>
+                            <vgap>8</vgap>
+                            <hgap>32</hgap>
+                            <growablecols />
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxRadioButton" name="tab_leader_none">
+                                <label>1 None</label>
+                                <style>wxRB_GROUP</style>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxRadioButton" name="tab_leader_dots">
+                                <label>2 .......</label>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxRadioButton" name="tab_leader_dashes">
+                                <label>3 -------</label>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxRadioButton" name="tab_leader_line">
+                                <label>4 _______</label>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxRadioButton" name="tab_leader_heavy">
+                                <label>5 Heavy line</label>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxRadioButton" name="tab_leader_middle">
+                                <label>6 Middle dots</label>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <option>0</option>
+                  <flag>wxTOP</flag>
+                  <border>24</border>
+                  <object class="wxBoxSizer">
+                    <orient>wxHORIZONTAL</orient>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxEXPAND</flag>
+                      <border>0</border>
+                      <object class="wxButton" name="tab_set">
+                        <label>Set</label>
+                        <size>88,28</size>
+                        <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                      </object>
+                    </object>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxLEFT</flag>
+                      <border>8</border>
+                      <object class="wxButton" name="tab_clear">
+                        <label>Clear</label>
+                        <size>88,28</size>
+                        <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                      </object>
+                    </object>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxLEFT</flag>
+                      <border>8</border>
+                      <object class="wxButton" name="tab_clear_all">
+                        <label>Clear All</label>
+                        <size>88,28</size>
+                        <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+                <object class="sizeritem">
+                  <option>0</option>
+                  <flag>wxTOP</flag>
+                  <border>8</border>
+                  <object class="wxStaticText" name="tab_status">
+                    <label> </label>
+                    <fg>#6b778a</fg>
+                  </object>
+                </object>
+              </object>
+            </object>
+          </object>
+        </object>
+      </object>
+      <object class="sizeritem">
+        <option>0</option>
+        <flag>wxEXPAND|wxALL</flag>
+        <border>12</border>
+        <object class="wxBoxSizer">
+          <orient>wxHORIZONTAL</orient>
+          <object class="spacer">
+            <size>1,1</size>
+            <option>1</option>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL</flag>
+            <border>0</border>
+            <object class="wxButton" name="tab_ok">
+              <label>OK</label>
+              <size>88,28</size>
+              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+              <default>1</default>
+            </object>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+            <border>8</border>
+            <object class="wxButton" name="tab_cancel">
+              <label>Cancel</label>
+              <size>88,28</size>
+              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+            </object>
+          </object>
+        </object>
+      </object>
+    </object>
+  </object>
+</resource>

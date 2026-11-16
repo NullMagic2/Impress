@@ -1,0 +1,11 @@
+[package]
+name = "format"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+model = { package = "core", path = "../core" }
+thiserror.workspace = true
+zip.workspace = true

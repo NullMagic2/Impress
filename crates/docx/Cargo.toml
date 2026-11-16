@@ -1,0 +1,19 @@
+[package]
+name = "docx"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+typography = { path = "../typography" }
+model = { package = "core", path = "../core" }
+format = { path = "../format" }
+quick-xml.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+typst-assets = { version = "0.15.1", features = ["fonts"] }
+editor = { path = "../editor" }
+format-native = { path = "../format-native" }
+serde_json.workspace = true

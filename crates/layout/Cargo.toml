@@ -1,0 +1,23 @@
+[package]
+name = "layout"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+model = { package = "core", path = "../core" }
+render = { path = "../render" }
+typography = { path = "../typography" }
+thiserror.workspace = true
+typst-engine = { path = "../typst-engine" }
+rayon.workspace = true
+unicode-segmentation.workspace = true
+
+image.workspace = true
+
+[dev-dependencies]
+typst-assets = { version = "0.15.1", features = ["fonts"] }
+output = { path = "../output" }

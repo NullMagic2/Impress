@@ -1,0 +1,12 @@
+[package]
+name = "format-typst"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+model = { package = "core", path = "../core" }
+format = { path = "../format" }
+typst-syntax = "0.15.1"
+codex = "0.3.0"

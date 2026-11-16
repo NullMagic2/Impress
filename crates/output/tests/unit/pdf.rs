@@ -1,0 +1,3 @@
+use super::*;
+ #[test]fn pdf_has_real_cross_reference_and_no_review_furniture(){let mut p=VectorPage::new(Size::new(200.0,300.0));p.commands.push(DrawCommand::FillRect{rect:Rect::new(5.0,5.0,12.0,20.0),paint:Paint::Solid(Color::BLACK)});let doc=VectorDocument{pages:vec![p], ..Default::default()};let mut bytes=vec![];write_pdf(&doc,&[0],"Ελληνικά",&[],&AtomicBool::new(false),&mut bytes).unwrap();let s=String::from_utf8_lossy(&bytes);assert!(s.starts_with("%PDF-1.7"));assert!(s.contains("/MediaBox [0 0 200.00000 300.00000]"));let off=s.split("startxref\n").nth(1).unwrap().lines().next().unwrap().parse::<usize>().unwrap();assert_eq!(&bytes[off..off+4],b"xref");}
+ #[test]fn unicode_is_utf16_not_lossy_ascii(){assert_eq!(unicode("α😀",false),"03B1D83DDE00");}

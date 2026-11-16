@@ -1,0 +1,287 @@
+{
+  "arc": {
+    "command": "arc"
+  },
+  "bentArrow": {
+    "command": "arrowshapes.corner-right-arrow"
+  },
+  "bevel": {
+    "command": "symbolshapes.quad-bevel"
+  },
+  "blockArc": {
+    "command": "basicshapes.block-arc"
+  },
+  "bracePair": {
+    "command": "symbolshapes.brace-pair"
+  },
+  "bracketPair": {
+    "command": "symbolshapes.bracket-pair"
+  },
+  "can": {
+    "command": "basicshapes.can"
+  },
+  "chevron": {
+    "command": "arrowshapes.chevron"
+  },
+  "circularArrow": {
+    "command": "arrowshapes.circular-arrow"
+  },
+  "cloud": {
+    "command": "symbolshapes.cloud"
+  },
+  "cloudCallout": {
+    "command": "calloutshapes.cloud-callout"
+  },
+  "cube": {
+    "command": "basicshapes.cube"
+  },
+  "diamond": {
+    "command": "basicshapes.diamond"
+  },
+  "donut": {
+    "command": "basicshapes.ring"
+  },
+  "downArrow": {
+    "command": "arrowshapes.down-arrow"
+  },
+  "downArrowCallout": {
+    "command": "arrowshapes.down-arrow-callout"
+  },
+  "ellipse": {
+    "command": "basicshapes.ellipse"
+  },
+  "flowChartAlternateProcess": {
+    "command": "flowchartshapes.flowchart-alternate-process"
+  },
+  "flowChartCollate": {
+    "command": "flowchartshapes.flowchart-collate"
+  },
+  "flowChartConnector": {
+    "command": "flowchartshapes.flowchart-connector"
+  },
+  "flowChartDecision": {
+    "command": "flowchartshapes.flowchart-decision"
+  },
+  "flowChartDelay": {
+    "command": "flowchartshapes.flowchart-delay"
+  },
+  "flowChartDisplay": {
+    "command": "flowchartshapes.flowchart-display"
+  },
+  "flowChartDocument": {
+    "command": "flowchartshapes.flowchart-document"
+  },
+  "flowChartExtract": {
+    "command": "flowchartshapes.flowchart-extract"
+  },
+  "flowChartInputOutput": {
+    "command": "flowchartshapes.flowchart-data"
+  },
+  "flowChartInternalStorage": {
+    "command": "flowchartshapes.flowchart-internal-storage"
+  },
+  "flowChartMagneticDisk": {
+    "command": "flowchartshapes.flowchart-magnetic-disk"
+  },
+  "flowChartMagneticDrum": {
+    "command": "flowchartshapes.flowchart-direct-access-storage"
+  },
+  "flowChartMagneticTape": {
+    "command": "flowchartshapes.flowchart-sequential-access"
+  },
+  "flowChartManualInput": {
+    "command": "flowchartshapes.flowchart-manual-input"
+  },
+  "flowChartManualOperation": {
+    "command": "flowchartshapes.flowchart-manual-operation"
+  },
+  "flowChartMerge": {
+    "command": "flowchartshapes.flowchart-merge"
+  },
+  "flowChartMultidocument": {
+    "command": "flowchartshapes.flowchart-multidocument"
+  },
+  "flowChartOffpageConnector": {
+    "command": "flowchartshapes.flowchart-off-page-connector"
+  },
+  "flowChartOnlineStorage": {
+    "command": "flowchartshapes.flowchart-stored-data"
+  },
+  "flowChartOr": {
+    "command": "flowchartshapes.flowchart-or"
+  },
+  "flowChartPredefinedProcess": {
+    "command": "flowchartshapes.flowchart-predefined-process"
+  },
+  "flowChartPreparation": {
+    "command": "flowchartshapes.flowchart-preparation"
+  },
+  "flowChartProcess": {
+    "command": "flowchartshapes.flowchart-process"
+  },
+  "flowChartPunchedCard": {
+    "command": "flowchartshapes.flowchart-card"
+  },
+  "flowChartPunchedTape": {
+    "command": "flowchartshapes.flowchart-punched-tape"
+  },
+  "flowChartSort": {
+    "command": "flowchartshapes.flowchart-sort"
+  },
+  "flowChartSummingJunction": {
+    "command": "flowchartshapes.flowchart-summing-junction"
+  },
+  "flowChartTerminator": {
+    "command": "flowchartshapes.flowchart-terminator"
+  },
+  "foldedCorner": {
+    "command": "basicshapes.paper"
+  },
+  "frame": {
+    "command": "basicshapes.frame"
+  },
+  "heart": {
+    "command": "symbolshapes.heart"
+  },
+  "hexagon": {
+    "command": "basicshapes.hexagon"
+  },
+  "homePlate": {
+    "command": "arrowshapes.pentagon-right"
+  },
+  "horizontalScroll": {
+    "command": "starshapes.horizontal-scroll"
+  },
+  "leftArrow": {
+    "command": "arrowshapes.left-arrow"
+  },
+  "leftArrowCallout": {
+    "command": "arrowshapes.left-arrow-callout"
+  },
+  "leftBrace": {
+    "command": "symbolshapes.left-brace"
+  },
+  "leftBracket": {
+    "command": "symbolshapes.left-bracket"
+  },
+  "leftRightArrow": {
+    "command": "arrowshapes.left-right-arrow"
+  },
+  "leftRightArrowCallout": {
+    "command": "arrowshapes.left-right-arrow-callout"
+  },
+  "lightningBolt": {
+    "command": "symbolshapes.lightning"
+  },
+  "moon": {
+    "command": "symbolshapes.moon"
+  },
+  "noSmoking": {
+    "command": "symbolshapes.forbidden"
+  },
+  "notchedRightArrow": {
+    "command": "arrowshapes.notched-right-arrow"
+  },
+  "octagon": {
+    "command": "basicshapes.octagon"
+  },
+  "parallelogram": {
+    "command": "basicshapes.parallelogram"
+  },
+  "pentagon": {
+    "command": "basicshapes.pentagon"
+  },
+  "pie": {
+    "command": "basicshapes.circle-pie"
+  },
+  "plaque": {
+    "command": "starshapes.doorplate"
+  },
+  "plus": {
+    "command": "basicshapes.cross"
+  },
+  "quadArrow": {
+    "command": "arrowshapes.quad-arrow"
+  },
+  "quadArrowCallout": {
+    "command": "arrowshapes.quad-arrow-callout"
+  },
+  "rect": {
+    "command": "basicshapes.rectangle"
+  },
+  "rightArrow": {
+    "command": "arrowshapes.right-arrow"
+  },
+  "rightArrowCallout": {
+    "command": "arrowshapes.right-arrow-callout"
+  },
+  "rightBrace": {
+    "command": "symbolshapes.right-brace"
+  },
+  "rightBracket": {
+    "command": "symbolshapes.right-bracket"
+  },
+  "roundRect": {
+    "command": "basicshapes.round-rectangle"
+  },
+  "rtTriangle": {
+    "command": "basicshapes.right-triangle"
+  },
+  "smileyFace": {
+    "command": "symbolshapes.smiley"
+  },
+  "star12": {
+    "command": "starshapes.star12"
+  },
+  "star24": {
+    "command": "starshapes.star24"
+  },
+  "star4": {
+    "command": "starshapes.star4"
+  },
+  "star5": {
+    "command": "starshapes.star5"
+  },
+  "star6": {
+    "command": "starshapes.star6"
+  },
+  "star8": {
+    "command": "starshapes.star8"
+  },
+  "stripedRightArrow": {
+    "command": "arrowshapes.striped-right-arrow"
+  },
+  "sun": {
+    "command": "symbolshapes.sun"
+  },
+  "trapezoid": {
+    "command": "basicshapes.trapezoid"
+  },
+  "triangle": {
+    "command": "basicshapes.isosceles-triangle"
+  },
+  "upArrowCallout": {
+    "command": "arrowshapes.up-arrow-callout"
+  },
+  "upDownArrow": {
+    "command": "arrowshapes.up-down-arrow"
+  },
+  "upArrow": {
+    "command": "arrowshapes.up-arrow"
+  },
+  "upDownArrowCallout": {
+    "command": "arrowshapes.up-down-arrow-callout"
+  },
+  "verticalScroll": {
+    "command": "starshapes.vertical-scroll"
+  },
+  "wedgeEllipseCallout": {
+    "command": "calloutshapes.round-callout"
+  },
+  "wedgeRectCallout": {
+    "command": "calloutshapes.rectangular-callout"
+  },
+  "wedgeRoundRectCallout": {
+    "command": "calloutshapes.round-rectangular-callout"
+  }
+}

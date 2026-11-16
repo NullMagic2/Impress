@@ -1,0 +1,16 @@
+[package]
+name = "typst-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+model = { package = "core", path = "../core" }
+format-typst = { path = "../format-typst" }
+thiserror.workspace = true
+typst.workspace = true
+typst-layout.workspace = true
+typst-as-lib.workspace = true
+typst-svg.workspace = true
+render = { path = "../render" }

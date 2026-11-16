@@ -1,0 +1,459 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resource>
+  <object class="wxDialog" name="pdf_import_dialog">
+    <title>Import PDF</title>
+    <style>wxDEFAULT_DIALOG_STYLE</style>
+    <bg>#e8ecf2</bg>
+    <object class="wxBoxSizer">
+      <orient>wxVERTICAL</orient>
+      <object class="sizeritem">
+        <option>1</option>
+        <flag>wxEXPAND|wxLEFT|wxRIGHT|wxTOP</flag>
+        <border>12</border>
+        <object class="wxPanel" name="pdf_import_card">
+          <bg>#ffffff</bg>
+          <object class="wxBoxSizer">
+            <orient>wxVERTICAL</orient>
+            <object class="sizeritem">
+              <option>1</option>
+              <flag>wxEXPAND|wxALL</flag>
+              <border>16</border>
+              <object class="wxBoxSizer">
+                <orient>wxVERTICAL</orient>
+                <object class="sizeritem">
+                  <option>1</option>
+                  <flag>wxEXPAND</flag>
+                  <border>0</border>
+                  <object class="wxBoxSizer">
+                    <orient>wxHORIZONTAL</orient>
+                    <object class="sizeritem">
+                      <option>0</option>
+                      <flag>wxEXPAND|wxRIGHT</flag>
+                      <border>20</border>
+                      <object class="wxBoxSizer">
+                        <orient>wxVERTICAL</orient>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxBOTTOM</flag>
+                          <border>6</border>
+                          <object class="wxStaticText" name="pdf_import_preview_caption">
+                            <label>Result preview</label>
+                            <fg>#6b778a</fg>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>1</option>
+                          <flag>wxEXPAND</flag>
+                          <border>0</border>
+                          <object class="wxPanel" name="pdf_import_preview">
+                            <bg>#eef2f7</bg>
+                            <size>250,340</size>
+                            <style>wxWANTS_CHARS|wxFULL_REPAINT_ON_RESIZE</style>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                    <object class="sizeritem">
+                      <option>1</option>
+                      <flag>wxEXPAND</flag>
+                      <border>0</border>
+                      <object class="wxBoxSizer">
+                        <orient>wxVERTICAL</orient>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND</flag>
+                          <border>0</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                              <border>10</border>
+                              <object class="wxStaticText" name="i18n_control_3">
+                                <label>File</label>
+                                <fg>#1d3d78</fg>
+                                <font>
+                                  <weight>bold</weight>
+                                </font>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxPanel">
+                                <size>-1,1</size>
+                                <bg>#dfe4ec</bg>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>10</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="spacer">
+                              <size>12,1</size>
+                              <option>0</option>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxEXPAND</flag>
+                              <border>0</border>
+                              <object class="wxBoxSizer">
+                                <orient>wxVERTICAL</orient>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxEXPAND</flag>
+                                  <border>0</border>
+                                  <object class="wxBoxSizer">
+                                    <orient>wxHORIZONTAL</orient>
+                                    <object class="sizeritem">
+                                      <option>1</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                      <border>0</border>
+                                      <object class="wxBoxSizer">
+                                        <orient>wxVERTICAL</orient>
+                                        <object class="sizeritem">
+                                          <option>0</option>
+                                          <flag>wxBOTTOM</flag>
+                                          <border>2</border>
+                                          <object class="wxStaticText" name="pdf_import_file">
+                                            <label>document.pdf</label>
+                                            <fg>#243042</fg>
+                                            <font>
+                                              <weight>bold</weight>
+                                            </font>
+                                          </object>
+                                        </object>
+                                        <object class="sizeritem">
+                                          <option>0</option>
+                                          <flag>wxEXPAND</flag>
+                                          <border>0</border>
+                                          <object class="wxStaticText" name="pdf_import_info">
+                                            <label />
+                                            <fg>#6b778a</fg>
+                                          </object>
+                                        </object>
+                                      </object>
+                                    </object>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+                                      <border>8</border>
+                                      <object class="wxButton" name="pdf_import_browse">
+                                        <label>Choose…</label>
+                                        <size>92,28</size>
+                                        <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>24</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                              <border>10</border>
+                              <object class="wxStaticText" name="i18n_control_6">
+                                <label>Pages</label>
+                                <fg>#1d3d78</fg>
+                                <font>
+                                  <weight>bold</weight>
+                                </font>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxPanel">
+                                <size>-1,1</size>
+                                <bg>#dfe4ec</bg>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>10</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="spacer">
+                              <size>12,1</size>
+                              <option>0</option>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxEXPAND</flag>
+                              <border>0</border>
+                              <object class="wxBoxSizer">
+                                <orient>wxVERTICAL</orient>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>6</border>
+                                  <object class="wxRadioButton" name="pdf_import_all">
+                                    <label>All pages</label>
+                                    <style>wxRB_GROUP</style>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxEXPAND</flag>
+                                  <border>0</border>
+                                  <object class="wxBoxSizer">
+                                    <orient>wxHORIZONTAL</orient>
+                                    <object class="sizeritem">
+                                      <option>0</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                                      <border>10</border>
+                                      <object class="wxRadioButton" name="pdf_import_range">
+                                        <label>Pages</label>
+                                      </object>
+                                    </object>
+                                    <object class="sizeritem">
+                                      <option>1</option>
+                                      <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                      <border>0</border>
+                                      <object class="wxTextCtrl" name="pdf_import_pages">
+                                        <size>150,28</size>
+                                        <tooltip>Page numbers and ranges, for example 1, 3-5</tooltip>
+                                        <hint>e.g. 1, 3-5</hint>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxTOP</flag>
+                                  <border>8</border>
+                                  <object class="wxStaticText" name="pdf_import_summary">
+                                    <label>All 1 page</label>
+                                    <fg>#6b778a</fg>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>24</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                              <border>10</border>
+                              <object class="wxStaticText" name="i18n_control_11">
+                                <label>Text</label>
+                                <fg>#1d3d78</fg>
+                                <font>
+                                  <weight>bold</weight>
+                                </font>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxPanel">
+                                <size>-1,1</size>
+                                <bg>#dfe4ec</bg>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>10</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="spacer">
+                              <size>12,1</size>
+                              <option>0</option>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxEXPAND</flag>
+                              <border>0</border>
+                              <object class="wxBoxSizer">
+                                <orient>wxVERTICAL</orient>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>6</border>
+                                  <object class="wxRadioButton" name="pdf_import_reflow">
+                                    <label>Join lines into flowing paragraphs</label>
+                                    <style>wxRB_GROUP</style>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxEXPAND</flag>
+                                  <border>0</border>
+                                  <object class="wxRadioButton" name="pdf_import_keep">
+                                    <label>Keep the PDF's line breaks</label>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxTOP</flag>
+                                  <border>8</border>
+                                  <object class="wxCheckBox" name="pdf_import_columns">
+                                    <label>Keep page columns</label>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>24</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="sizeritem">
+                              <option>0</option>
+                              <flag>wxALIGN_CENTER_VERTICAL|wxRIGHT</flag>
+                              <border>10</border>
+                              <object class="wxStaticText" name="i18n_control_15">
+                                <label>Clean-up</label>
+                                <fg>#1d3d78</fg>
+                                <font>
+                                  <weight>bold</weight>
+                                </font>
+                              </object>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                              <border>0</border>
+                              <object class="wxPanel">
+                                <size>-1,1</size>
+                                <bg>#dfe4ec</bg>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND|wxTOP</flag>
+                          <border>10</border>
+                          <object class="wxBoxSizer">
+                            <orient>wxHORIZONTAL</orient>
+                            <object class="spacer">
+                              <size>12,1</size>
+                              <option>0</option>
+                            </object>
+                            <object class="sizeritem">
+                              <option>1</option>
+                              <flag>wxEXPAND</flag>
+                              <border>0</border>
+                              <object class="wxBoxSizer">
+                                <orient>wxVERTICAL</orient>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>6</border>
+                                  <object class="wxCheckBox" name="pdf_import_headings">
+                                    <label>Turn larger text into headings</label>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>6</border>
+                                  <object class="wxCheckBox" name="pdf_import_running">
+                                    <label>Move page numbers and running headers into the header and footer</label>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>6</border>
+                                  <object class="wxCheckBox" name="pdf_import_hyphens">
+                                    <label>Rejoin words hyphenated at line ends</label>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>6</border>
+                                  <object class="wxCheckBox" name="pdf_import_breaks">
+                                    <label>Start each PDF page on a new page</label>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxTOP</flag>
+                          <border>10</border>
+                          <object class="wxStaticText" name="pdf_import_note">
+                            <label>Fonts, lists, tables, columns and pictures are kept; the layout may differ from the PDF.</label>
+                            <fg>#6b778a</fg>
+                          </object>
+                        </object>
+                      </object>
+                    </object>
+                  </object>
+                </object>
+              </object>
+            </object>
+          </object>
+        </object>
+      </object>
+      <object class="sizeritem">
+        <option>0</option>
+        <flag>wxEXPAND|wxALL</flag>
+        <border>12</border>
+        <object class="wxBoxSizer">
+          <orient>wxHORIZONTAL</orient>
+          <object class="spacer">
+            <size>1,1</size>
+            <option>1</option>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL</flag>
+            <border>0</border>
+            <object class="wxButton" name="pdf_import_ok">
+              <label>Import</label>
+              <size>88,28</size>
+              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+              <default>1</default>
+            </object>
+          </object>
+          <object class="sizeritem">
+            <option>0</option>
+            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
+            <border>8</border>
+            <object class="wxButton" name="pdf_import_cancel">
+              <label>Cancel</label>
+              <size>88,28</size>
+              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+            </object>
+          </object>
+        </object>
+      </object>
+    </object>
+  </object>
+</resource>

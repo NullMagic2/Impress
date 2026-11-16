@@ -1,0 +1,22 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resource>
+  <object class="wxDialog" name="style_color_palette_dialog">
+    <title>Font color</title>
+    <style>wxBORDER_SIMPLE|wxSTAY_ON_TOP</style>
+    <bg>#ffffff</bg>
+    <object class="wxBoxSizer">
+      <orient>wxVERTICAL</orient>
+      <object class="sizeritem">
+        <option>1</option>
+        <flag>wxEXPAND</flag>
+        <object class="wxPanel" name="style_color_palette_surface">
+          <bg>#ffffff</bg>
+          <style>wxWANTS_CHARS</style>
+          <size>196,150</size>
+          <minsize>196,150</minsize>
+          <tooltip>Choose a font color, or press Escape to cancel</tooltip>
+        </object>
+      </object>
+    </object>
+  </object>
+</resource>

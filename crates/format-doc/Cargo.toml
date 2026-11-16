@@ -1,0 +1,15 @@
+[package]
+name = "format-doc"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+image.workspace = true
+model = { package = "core", path = "../core" }
+format = { path = "../format" }
+docx = { path = "../docx" }
+cfb = "0.14.0"
+rwml = { path = "../../vendor/rwml" }
+format-native = { path = "../format-native" }

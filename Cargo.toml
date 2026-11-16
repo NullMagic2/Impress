@@ -1,0 +1,116 @@
+[workspace]
+members = [
+    "crates/core",
+    "crates/format",
+    "crates/format-native",
+    "crates/format-typst",
+    "crates/docx",
+    "crates/format-doc",
+    "crates/format-rtf",
+    "crates/format-pdf",
+    "crates/typst-engine",
+    "crates/typography",
+    "crates/layout",
+    "crates/render",
+    "crates/editor",
+    "crates/gui",
+    "crates/output",
+]
+exclude = ["vendor/impress-hunspell", "vendor/rwml"]
+resolver = "2"
+
+[workspace.package]
+version = "0.8.6"
+edition = "2024"
+license = "MIT"
+authors = ["Impress contributors"]
+rust-version = "1.92"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+uuid = { version = "1.18", features = ["serde", "v7"] }
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
+quick-xml = "0.42"
+wxdragon = { version = "=0.9.22", features = ["xrc"] }
+embed-manifest = "1.4"
+typst = "0.15.1"
+typst-layout = "0.15.1"
+typst-as-lib = { version = "0.16.0", features = ["typst-kit-fonts", "typst-kit-embed-fonts"] }
+typst-svg = "0.15.1"
+rustybuzz = "0.20.1"
+fontdb = "0.24.0"
+ttf-parser = "0.25.1"
+rayon = "1.11"
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_LibraryLoader"] }
+unicode-segmentation = "1.12"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "bmp"] }
+unicode-bidi = "0.3.18"
+unicode-script = "0.5.8"
+hypher = "0.1.7"
+
+# Text shaping and font table parsing run thousands of times while a document
+# is laid out. Optimizing these hot crates keeps normal development builds
+# responsive without turning on optimization for the whole dependency tree.
+[profile.dev.package.rustybuzz]
+opt-level = 2
+
+[profile.dev.package.ttf-parser]
+opt-level = 2
+
+[profile.dev.package.typography]
+opt-level = 2
+
+[profile.dev.package.layout]
+opt-level = 2
+
+# Ship optimized code without the extra size from the development build.
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
+
+# OCR and page rendering are number crunching: optimised for speed, not size,
+# they read a scanned page about twice as fast.
+[profile.release.package.ocrs]
+opt-level = 3
+[profile.release.package.rten]
+opt-level = 3
+[profile.release.package.rten-base]
+opt-level = 3
+[profile.release.package.rten-gemm]
+opt-level = 3
+[profile.release.package.rten-imageproc]
+opt-level = 3
+[profile.release.package.rten-simd]
+opt-level = 3
+[profile.release.package.rten-tensor]
+opt-level = 3
+[profile.release.package.rten-vecmath]
+opt-level = 3
+[profile.release.package.hayro]
+opt-level = 3
+[profile.release.package.hayro-interpret]
+opt-level = 3
+[profile.release.package.hayro-syntax]
+opt-level = 3
+[profile.release.package.hayro-ccitt]
+opt-level = 3
+[profile.release.package.vello_common]
+opt-level = 3
+[profile.release.package.vello_cpu]
+opt-level = 3
+
+# tiny-skia fills and composes every page frame, a pixel loop that runs on
+# every resize and scroll; on a HiDPI screen a frame is tens of megabytes.
+[profile.release.package.tiny-skia]
+opt-level = 3
+[profile.release.package.tiny-skia-path]
+opt-level = 3
+
+# Impress: wxdragon-sys with a fix to wxWidgets' Wayland code (see
+# vendor/wxdragon-sys/IMPRESS_CHANGES.md).
+[patch.crates-io]
+wxdragon-sys = { path = "vendor/wxdragon-sys" }

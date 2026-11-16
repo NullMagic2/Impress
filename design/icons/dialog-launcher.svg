@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16">
+  <!-- Ribbon group dialog launcher: a square with a diagonal arrow pointing
+       into its bottom-right corner, traced from a highway-sign arrow and
+       mirrored. Painted in code by crates/gui/src/ribbon/group_relief.rs. -->
+  <rect x="1.5" y="1.5" width="13" height="13" rx="2" fill="none" stroke="currentColor" stroke-width="1"/>
+  <path fill="currentColor" d="M5.18 4.4 L4 5.73 L8.66 9.82 L7.68 10.51 Q7.5 10.95 7.86 11.03 L12 11.5 L10.98 7.47 Q10.66 7.2 10.34 7.43 L9.86 8.45 Z"/>
+</svg>

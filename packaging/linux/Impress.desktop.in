@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Impress
+GenericName=Word Processor
+Comment=Write and format documents; opens DOCX, RTF, PDF and Typst
+Exec=@EXEC@ %f
+TryExec=@EXEC@
+Icon=Impress
+Terminal=false
+Categories=Office;WordProcessor;
+MimeType=application/vnd.openxmlformats-officedocument.wordprocessingml.document;application/rtf;text/rtf;
+Keywords=document;text;writer;docx;rtf;typst;
+StartupNotify=true
+StartupWMClass=Impress

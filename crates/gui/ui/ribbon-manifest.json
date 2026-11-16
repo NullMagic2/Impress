@@ -1,0 +1,4666 @@
+{
+  "buttons": [
+    {
+      "name": "app_logo_button",
+      "label": "",
+      "icon": "logo",
+      "action": "Brand",
+      "kind": "logo",
+      "tip": "Impress",
+      "disabled": false,
+      "width_dip": 26,
+      "height_dip": 28,
+      "art_width_dip": 20,
+      "art_height_dip": 20,
+      "segment": "single"
+    },
+    {
+      "name": "new_button",
+      "label": "",
+      "icon": "new",
+      "action": "New",
+      "kind": "quick",
+      "tip": "New document",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "open_button",
+      "label": "",
+      "icon": "open",
+      "action": "Open",
+      "kind": "quick",
+      "tip": "Open document",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "save_button",
+      "label": "",
+      "icon": "save",
+      "action": "Save",
+      "kind": "quick",
+      "tip": "Save document",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "undo_button",
+      "label": "",
+      "icon": "undo",
+      "action": "Editor(AppCommand::Undo)",
+      "kind": "quick",
+      "tip": "Undo",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "redo_button",
+      "label": "",
+      "icon": "redo",
+      "action": "Editor(AppCommand::Redo)",
+      "kind": "quick",
+      "tip": "Redo",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "interface_language_button",
+      "label": "",
+      "icon": "interface-language",
+      "action": "InterfaceLanguage",
+      "kind": "quick",
+      "tip": "Interface language",
+      "disabled": false,
+      "width_dip": 36,
+      "height_dip": 28,
+      "art_width_dip": 24,
+      "art_height_dip": 24,
+      "segment": "single"
+    },
+    {
+      "name": "collapse_ribbon_button",
+      "label": "",
+      "icon": "chevron-up",
+      "action": "ToggleRibbon",
+      "kind": "quick",
+      "tip": "Show or hide the Ribbon command area",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "help_button",
+      "label": "",
+      "icon": "help",
+      "action": "Help",
+      "kind": "quick",
+      "tip": "About this development build",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "file_new_button",
+      "label": "New",
+      "icon": "new",
+      "action": "New",
+      "kind": "file-main",
+      "tip": "New document",
+      "disabled": false,
+      "width_dip": 78,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "file_open_button",
+      "label": "Open",
+      "icon": "open",
+      "action": "Open",
+      "kind": "file-minor",
+      "tip": "Open document",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 36,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "file_save_button",
+      "label": "Save",
+      "icon": "save",
+      "action": "Save",
+      "kind": "file-minor",
+      "tip": "Save document",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 36,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "save_as_button",
+      "label": "Save as",
+      "icon": "save",
+      "action": "SaveAs",
+      "kind": "file-minor",
+      "tip": "Save document as",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 36,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "recover_button",
+      "label": "Recover",
+      "icon": "refresh",
+      "action": "Recovery",
+      "kind": "file-minor",
+      "tip": "Recover document",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 36,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "recent_files_button",
+      "label": "Recent",
+      "icon": "recent",
+      "action": "RecentFiles",
+      "kind": "file-menu",
+      "tip": "Open a recent file",
+      "disabled": false,
+      "width_dip": 78,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "pdf_button",
+      "label": "Export PDF",
+      "icon": "export",
+      "action": "Pdf",
+      "kind": "file-main",
+      "tip": "Export PDF",
+      "disabled": false,
+      "width_dip": 78,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "import_pdf_button",
+      "label": "Import PDF",
+      "icon": "open",
+      "action": "ImportPdf",
+      "kind": "file-main",
+      "tip": "Convert a PDF into an editable document, choosing pages and options",
+      "disabled": false,
+      "width_dip": 78,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "print_button",
+      "label": "Print",
+      "icon": "print",
+      "action": "Print",
+      "kind": "file-main",
+      "tip": "Print (Ctrl+P)",
+      "disabled": false,
+      "width_dip": 78,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "paste_button",
+      "label": "Paste",
+      "icon": "paste",
+      "action": "Editor(AppCommand::Paste)",
+      "kind": "large",
+      "tip": "Paste (Ctrl+V)",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "cut_button",
+      "label": "",
+      "icon": "cut",
+      "action": "Editor(AppCommand::Cut)",
+      "kind": "icon",
+      "tip": "Cut",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "copy_button",
+      "label": "",
+      "icon": "copy",
+      "action": "Editor(AppCommand::Copy)",
+      "kind": "icon",
+      "tip": "Copy",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "paste_plain_button",
+      "label": "",
+      "icon": "paste-text",
+      "action": "Editor(AppCommand::PastePlain)",
+      "kind": "icon",
+      "tip": "Paste as text only",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "bold_button",
+      "label": "",
+      "icon": "bold",
+      "action": "Editor(AppCommand::Bold)",
+      "kind": "icon",
+      "tip": "Bold",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "italic_button",
+      "label": "",
+      "icon": "italic",
+      "action": "Editor(AppCommand::Italic)",
+      "kind": "icon",
+      "tip": "Italic",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "underline_button",
+      "label": "",
+      "icon": "underline",
+      "action": "Editor(AppCommand::Underline)",
+      "kind": "icon",
+      "tip": "Underline",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "grow_font_button",
+      "label": "",
+      "icon": "grow",
+      "action": "GrowFont",
+      "kind": "icon",
+      "tip": "Grow font",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "shrink_font_button",
+      "label": "",
+      "icon": "shrink",
+      "action": "ShrinkFont",
+      "kind": "icon",
+      "tip": "Shrink font",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "font_color_button",
+      "label": "",
+      "icon": "font-color",
+      "action": "FontColor",
+      "kind": "icon",
+      "tip": "Font color",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "highlight_button",
+      "label": "",
+      "icon": "highlight",
+      "action": "Highlight",
+      "kind": "icon",
+      "tip": "Highlight",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "bullets_button",
+      "label": "",
+      "icon": "bullets",
+      "action": "Bullets",
+      "kind": "icon",
+      "tip": "Bullets",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "numbering_button",
+      "label": "",
+      "icon": "numbering",
+      "action": "Numbering",
+      "kind": "icon",
+      "tip": "Numbering",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "align_left_button",
+      "label": "",
+      "icon": "align-left",
+      "action": "Align(ParagraphAlignment::Left)",
+      "kind": "icon",
+      "tip": "Align left",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "align_center_button",
+      "label": "",
+      "icon": "align-center",
+      "action": "Align(ParagraphAlignment::Center)",
+      "kind": "icon",
+      "tip": "Center",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "align_right_button",
+      "label": "",
+      "icon": "align-right",
+      "action": "Align(ParagraphAlignment::Right)",
+      "kind": "icon",
+      "tip": "Align right",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "align_justify_button",
+      "label": "",
+      "icon": "align-justify",
+      "action": "Align(ParagraphAlignment::Justify)",
+      "kind": "icon",
+      "tip": "Justify",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "outdent_button",
+      "label": "",
+      "icon": "outdent",
+      "action": "Indent(-5.0)",
+      "kind": "icon",
+      "tip": "Decrease indent",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "indent_button",
+      "label": "",
+      "icon": "indent",
+      "action": "Indent(5.0)",
+      "kind": "icon",
+      "tip": "Increase indent",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "auto_direction_button",
+      "label": "",
+      "icon": "dir-auto",
+      "action": "Direction(ParagraphDirection::Auto)",
+      "kind": "icon",
+      "tip": "Automatic text direction",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "ltr_button",
+      "label": "",
+      "icon": "ltr",
+      "action": "Direction(ParagraphDirection::LeftToRight)",
+      "kind": "icon",
+      "tip": "Left-to-right",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "rtl_button",
+      "label": "",
+      "icon": "rtl",
+      "action": "Direction(ParagraphDirection::RightToLeft)",
+      "kind": "icon",
+      "tip": "Right-to-left",
+      "disabled": false,
+      "width_dip": 30,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "style_normal_button",
+      "label": "Normal",
+      "icon": "style_normal",
+      "action": "Editor(AppCommand::StyleNormal)",
+      "kind": "small",
+      "tip": "Normal paragraph style",
+      "disabled": false,
+      "width_dip": 76,
+      "height_dip": 26,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "style_heading1_button",
+      "label": "Heading 1",
+      "icon": "style_heading1",
+      "action": "Editor(AppCommand::StyleHeading1)",
+      "kind": "small",
+      "tip": "Heading 1 paragraph style",
+      "disabled": false,
+      "width_dip": 76,
+      "height_dip": 26,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "style_title_button",
+      "label": "Title",
+      "icon": "style_title",
+      "action": "Editor(AppCommand::StyleTitle)",
+      "kind": "small",
+      "tip": "Title paragraph style",
+      "disabled": false,
+      "width_dip": 76,
+      "height_dip": 26,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "style_gallery_more_button",
+      "label": "",
+      "icon": "styles",
+      "action": "StyleGalleryMore",
+      "kind": "gallery-more",
+      "tip": "More styles",
+      "disabled": false,
+      "width_dip": 18,
+      "height_dip": 24,
+      "art_width_dip": 0,
+      "art_height_dip": 0,
+      "segment": "single"
+    },
+    {
+      "name": "style_manager_button",
+      "label": "Styles",
+      "icon": "styles",
+      "action": "StyleManager",
+      "kind": "small",
+      "tip": "Open the styles manager (F11)",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "clear_direct_button",
+      "label": "Clear direct",
+      "icon": "clear",
+      "action": "ClearDirect",
+      "kind": "small",
+      "tip": "Clear direct formatting (Ctrl+M)",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "typography_menu_button",
+      "label": "Typography",
+      "icon": "kern",
+      "action": "Typography",
+      "kind": "typography-menu",
+      "tip": "Choose kerning and ligatures",
+      "disabled": false,
+      "width_dip": 132,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "hyphenation_button",
+      "label": "Hyphenation",
+      "icon": "hyph",
+      "action": "Hyphenation",
+      "kind": "typography-menu",
+      "tip": "Choose hyphenation for the selected paragraphs or the whole document",
+      "disabled": false,
+      "width_dip": 132,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "home_table_button",
+      "label": "Table",
+      "icon": "table",
+      "action": "InsertTable",
+      "kind": "large",
+      "tip": "Insert a semantic table",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "home_picture_button",
+      "label": "Picture",
+      "icon": "picture",
+      "action": "InsertImage",
+      "kind": "large",
+      "tip": "Insert picture",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "inline_equation_button",
+      "label": "Equation",
+      "icon": "equation",
+      "action": "Editor(AppCommand::InsertEquation)",
+      "kind": "large",
+      "tip": "Insert an equation with the equation editor (Ctrl+Shift+M)",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "insert_equation_button",
+      "label": "Equation",
+      "icon": "equation",
+      "action": "Editor(AppCommand::InsertEquation)",
+      "kind": "large",
+      "tip": "Equation",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "symbol_button",
+      "label": "Symbol",
+      "icon": "symbol",
+      "action": "Symbol",
+      "kind": "small",
+      "tip": "Symbol",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "page_break_button",
+      "label": "Page break",
+      "icon": "page-break",
+      "action": "PageBreak",
+      "kind": "large",
+      "tip": "Page break (Ctrl+Enter)",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "column_break_button",
+      "label": "Column break",
+      "icon": "column-break",
+      "action": "ColumnBreak",
+      "kind": "small",
+      "tip": "Column break (Ctrl+Shift+Enter)",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "section_break_button",
+      "label": "Section break ▾",
+      "icon": "section-break",
+      "action": "SectionBreak",
+      "kind": "small",
+      "tip": "Section break",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "insert_table_button",
+      "label": "Table",
+      "icon": "table",
+      "action": "InsertTable",
+      "kind": "large",
+      "tip": "Insert table",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "insert_image_button",
+      "label": "Picture",
+      "icon": "image",
+      "action": "InsertImage",
+      "kind": "large",
+      "tip": "Insert a resource-backed inline picture",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "header_button",
+      "label": "Header",
+      "icon": "header",
+      "action": "HeaderFooter(true)",
+      "kind": "small",
+      "tip": "Header",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "footer_button",
+      "label": "Footer",
+      "icon": "footer",
+      "action": "HeaderFooter(false)",
+      "kind": "small",
+      "tip": "Footer",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "page_number_button",
+      "label": "Page number",
+      "icon": "page-number",
+      "action": "PageNumber",
+      "kind": "small",
+      "tip": "Page number",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "portrait_button",
+      "label": "Portrait",
+      "icon": "portrait",
+      "action": "Landscape(false)",
+      "kind": "large",
+      "tip": "Portrait",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "landscape_button",
+      "label": "Landscape",
+      "icon": "landscape",
+      "action": "Landscape(true)",
+      "kind": "large",
+      "tip": "Landscape",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "columns_button",
+      "label": "Columns",
+      "icon": "columns",
+      "action": "Columns",
+      "kind": "large",
+      "tip": "Columns",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "outline_button",
+      "label": "Headings",
+      "icon": "navigation",
+      "action": "ShowNavigation",
+      "kind": "wide",
+      "tip": "Show the heading navigation pane",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "toc_button",
+      "label": "Contents",
+      "icon": "toc",
+      "action": "Contents",
+      "kind": "large",
+      "tip": "Insert table of contents",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "footnote_button",
+      "label": "Footnotes",
+      "icon": "references",
+      "action": "Footnotes",
+      "kind": "wide",
+      "tip": "Footnotes",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "bookmark_button",
+      "label": "Bookmark",
+      "icon": "bookmark",
+      "action": "Bookmarks",
+      "kind": "small",
+      "tip": "Bookmark",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "compatibility_button",
+      "label": "Compatibility",
+      "icon": "review",
+      "action": "Compatibility",
+      "kind": "small",
+      "tip": "Review document format limitations",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "find_button",
+      "label": "Find…",
+      "icon": "search",
+      "action": "Find",
+      "kind": "large",
+      "tip": "Find…",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "word_count_button",
+      "label": "Word count",
+      "icon": "word-count",
+      "action": "WordCount",
+      "kind": "small",
+      "tip": "Word count",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "spelling_button",
+      "label": "Spelling",
+      "icon": "spell",
+      "action": "Spelling",
+      "kind": "large",
+      "tip": "Check spelling (F7)",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "comment_button",
+      "label": "Comments",
+      "icon": "comment",
+      "action": "Comments",
+      "kind": "wide",
+      "tip": "Comments",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "changes_button",
+      "label": "Text changes",
+      "icon": "review",
+      "action": "TextTracking",
+      "kind": "wide",
+      "tip": "Text changes",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "view_graphical_button",
+      "label": "Graphical",
+      "icon": "portrait",
+      "action": "View(ViewMode::Graphical)",
+      "kind": "wide",
+      "tip": "Graphical",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "view_typst_button",
+      "label": "Typst source",
+      "icon": "typst",
+      "action": "View(ViewMode::Typst)",
+      "kind": "wide",
+      "tip": "Typst source",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "view_split_button",
+      "label": "Split",
+      "icon": "split",
+      "action": "View(ViewMode::Split)",
+      "kind": "wide",
+      "tip": "Split",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "view_fit_button",
+      "label": "Page width",
+      "icon": "fit",
+      "action": "FitWidth",
+      "kind": "wide",
+      "tip": "Page width",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "view_page_button",
+      "label": "Whole page",
+      "icon": "portrait",
+      "action": "FitPage",
+      "kind": "wide",
+      "tip": "Whole page",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "view_100_button",
+      "label": "100%",
+      "icon": "search",
+      "action": "Zoom100",
+      "kind": "large",
+      "tip": "100%",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "navigation_button",
+      "label": "Navigation",
+      "icon": "navigation",
+      "action": "ToggleNavigation",
+      "kind": "wide",
+      "tip": "Navigation",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "source_button",
+      "label": "Show source",
+      "icon": "typst",
+      "action": "View(ViewMode::Typst)",
+      "kind": "wide",
+      "tip": "Show source",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "source_split_button",
+      "label": "Split view",
+      "icon": "split",
+      "action": "View(ViewMode::Split)",
+      "kind": "wide",
+      "tip": "Split view",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "source_refresh_button",
+      "label": "Refresh",
+      "icon": "redo",
+      "action": "RefreshSource",
+      "kind": "wide",
+      "tip": "Refresh",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "source_copy_button",
+      "label": "Copy source",
+      "icon": "copy",
+      "action": "CopySource",
+      "kind": "wide",
+      "tip": "Copy source",
+      "disabled": false,
+      "width_dip": 98,
+      "height_dip": 66,
+      "art_width_dip": 30,
+      "art_height_dip": 30,
+      "segment": "single"
+    },
+    {
+      "name": "navigation_go_button",
+      "label": "",
+      "icon": "search",
+      "action": "SearchNavigation",
+      "kind": "quick",
+      "tip": "Search with the current options; empty query shows headings",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "search_previous_button",
+      "label": "Previous",
+      "icon": "undo",
+      "action": "SearchStep(false)",
+      "kind": "small",
+      "tip": "Previous",
+      "disabled": false,
+      "width_dip": 76,
+      "height_dip": 26,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "search_next_button",
+      "label": "Next",
+      "icon": "redo",
+      "action": "SearchStep(true)",
+      "kind": "small",
+      "tip": "Next",
+      "disabled": false,
+      "width_dip": 76,
+      "height_dip": 26,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "search_options_button",
+      "label": "Options",
+      "icon": "references",
+      "action": "SearchOptions",
+      "kind": "small",
+      "tip": "Options",
+      "disabled": false,
+      "width_dip": 76,
+      "height_dip": 26,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "replace_one_button",
+      "label": "Replace",
+      "icon": "search",
+      "action": "ReplaceOne",
+      "kind": "mode",
+      "tip": "Replace",
+      "disabled": false,
+      "width_dip": 94,
+      "height_dip": 26,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "replace_all_button",
+      "label": "Replace all",
+      "icon": "search",
+      "action": "ReplaceAll",
+      "kind": "mode",
+      "tip": "Replace all",
+      "disabled": false,
+      "width_dip": 94,
+      "height_dip": 26,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "header_go_header_button",
+      "label": "Go to Header",
+      "icon": "header",
+      "action": "HeaderFooterGo(true)",
+      "kind": "small",
+      "tip": "Move to the header of this page style",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "header_go_footer_button",
+      "label": "Go to Footer",
+      "icon": "footer",
+      "action": "HeaderFooterGo(false)",
+      "kind": "small",
+      "tip": "Move to the footer of this page style",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "header_default_button",
+      "label": "All pages",
+      "icon": "header-footer",
+      "action": "HeaderVariant(0)",
+      "kind": "small",
+      "tip": "Edit the header or footer used on most pages",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "header_first_button",
+      "label": "Different first page",
+      "icon": "header-first",
+      "action": "HeaderVariant(1)",
+      "kind": "small",
+      "tip": "Give the first page its own header and footer",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "header_even_button",
+      "label": "Different odd & even",
+      "icon": "header-even",
+      "action": "HeaderVariant(2)",
+      "kind": "small",
+      "tip": "Give even pages their own header and footer",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "header_page_number_field_button",
+      "label": "Page number",
+      "icon": "page-number",
+      "action": "InsertField(0)",
+      "kind": "small",
+      "tip": "Insert the page number",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "header_page_count_field_button",
+      "label": "Page count",
+      "icon": "page-count",
+      "action": "InsertField(1)",
+      "kind": "small",
+      "tip": "Insert the number of pages",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "header_date_field_button",
+      "label": "Date",
+      "icon": "calendar",
+      "action": "InsertField(2)",
+      "kind": "small",
+      "tip": "Insert today's date",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "header_remove_button",
+      "label": "Remove",
+      "icon": "trash",
+      "action": "RemoveHeaderFooter",
+      "kind": "large",
+      "tip": "Delete this header or footer",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "header_exit_button",
+      "label": "Close",
+      "icon": "x",
+      "action": "ExitHeaderFooter",
+      "kind": "large",
+      "tip": "Close Header and Footer (Esc)",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "source_close_button",
+      "label": "",
+      "icon": "x",
+      "action": "View(ViewMode::Graphical)",
+      "kind": "icon",
+      "tip": "Close Typst source",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 20,
+      "art_height_dip": 20,
+      "segment": "single"
+    },
+    {
+      "name": "styles_close_button",
+      "label": "",
+      "icon": "x",
+      "action": "StylesClose",
+      "kind": "icon",
+      "tip": "Close Styles",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 20,
+      "art_height_dip": 20,
+      "segment": "single"
+    },
+    {
+      "name": "styles_apply_button",
+      "label": "Apply style",
+      "icon": "accept",
+      "action": "StyleApply",
+      "kind": "pane-default",
+      "tip": "Apply style",
+      "disabled": false,
+      "width_dip": 120,
+      "height_dip": 28,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "styles_new_button",
+      "label": "New…",
+      "icon": "new",
+      "action": "StyleNew",
+      "kind": "pane",
+      "tip": "New…",
+      "disabled": false,
+      "width_dip": 76,
+      "height_dip": 28,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "styles_modify_button",
+      "label": "Modify…",
+      "icon": "format",
+      "action": "StyleModify",
+      "kind": "pane",
+      "tip": "Modify…",
+      "disabled": false,
+      "width_dip": 76,
+      "height_dip": 28,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "styles_inspect_button",
+      "label": "Inspect…",
+      "icon": "search",
+      "action": "StyleInspect",
+      "kind": "pane",
+      "tip": "Inspect…",
+      "disabled": false,
+      "width_dip": 76,
+      "height_dip": 28,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "styles_delete_button",
+      "label": "Delete…",
+      "icon": "trash",
+      "action": "StyleDelete",
+      "kind": "pane",
+      "tip": "Delete…",
+      "disabled": false,
+      "width_dip": 76,
+      "height_dip": 28,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "styles_manage_button",
+      "label": "Manage Styles…",
+      "icon": "",
+      "action": "ManageStyles",
+      "kind": "pane",
+      "tip": "Manage Styles…",
+      "disabled": false,
+      "width_dip": 220,
+      "height_dip": 28,
+      "art_width_dip": 0,
+      "art_height_dip": 0,
+      "segment": "single"
+    },
+    {
+      "name": "graphical_mode_button",
+      "label": "Graphical",
+      "icon": "portrait",
+      "action": "View(ViewMode::Graphical)",
+      "kind": "mode",
+      "tip": "Graphical",
+      "disabled": false,
+      "width_dip": 94,
+      "height_dip": 26,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "typst_mode_button",
+      "label": "Typst",
+      "icon": "typst",
+      "action": "View(ViewMode::Typst)",
+      "kind": "mode",
+      "tip": "Typst",
+      "disabled": false,
+      "width_dip": 94,
+      "height_dip": 26,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "split_mode_button",
+      "label": "Split",
+      "icon": "split",
+      "action": "View(ViewMode::Split)",
+      "kind": "mode",
+      "tip": "Split",
+      "disabled": false,
+      "width_dip": 94,
+      "height_dip": 26,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "text_language_button",
+      "label": "Spelling",
+      "icon": "spell",
+      "action": "TextLanguage",
+      "kind": "status-menu",
+      "tip": "Spelling options and installed languages",
+      "disabled": false,
+      "width_dip": 112,
+      "height_dip": 26,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "status_navigation_button",
+      "label": "",
+      "icon": "sidebar",
+      "action": "ToggleNavigation",
+      "kind": "status-quick",
+      "tip": "Show navigation pane",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "zoom_out_button",
+      "label": "",
+      "icon": "zoom_out",
+      "action": "ZoomStep(-0.1)",
+      "kind": "status-quick",
+      "tip": "Zoom out",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "zoom_in_button",
+      "label": "",
+      "icon": "zoom_in",
+      "action": "ZoomStep(0.1)",
+      "kind": "status-quick",
+      "tip": "Zoom in",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "fit_width_button",
+      "label": "",
+      "icon": "fit",
+      "action": "FitWidth",
+      "kind": "quick",
+      "tip": "Fit page width",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 18,
+      "art_height_dip": 18,
+      "segment": "single"
+    },
+    {
+      "name": "ribbon_file_tab",
+      "label": "File",
+      "icon": "help",
+      "action": "SelectRibbonTab(0)",
+      "kind": "tab",
+      "tip": "File ribbon",
+      "disabled": false,
+      "width_dip": 56,
+      "height_dip": 36,
+      "art_width_dip": 1,
+      "art_height_dip": 1,
+      "segment": "single"
+    },
+    {
+      "name": "ribbon_home_tab",
+      "label": "Home",
+      "icon": "help",
+      "action": "SelectRibbonTab(1)",
+      "kind": "tab",
+      "tip": "Home ribbon",
+      "disabled": false,
+      "width_dip": 72,
+      "height_dip": 36,
+      "art_width_dip": 1,
+      "art_height_dip": 1,
+      "segment": "single"
+    },
+    {
+      "name": "ribbon_insert_tab",
+      "label": "Insert",
+      "icon": "help",
+      "action": "SelectRibbonTab(2)",
+      "kind": "tab",
+      "tip": "Insert ribbon",
+      "disabled": false,
+      "width_dip": 72,
+      "height_dip": 36,
+      "art_width_dip": 1,
+      "art_height_dip": 1,
+      "segment": "single"
+    },
+    {
+      "name": "ribbon_layout_tab",
+      "label": "Layout",
+      "icon": "help",
+      "action": "SelectRibbonTab(3)",
+      "kind": "tab",
+      "tip": "Layout ribbon",
+      "disabled": false,
+      "width_dip": 78,
+      "height_dip": 36,
+      "art_width_dip": 1,
+      "art_height_dip": 1,
+      "segment": "single"
+    },
+    {
+      "name": "ribbon_references_tab",
+      "label": "References",
+      "icon": "help",
+      "action": "SelectRibbonTab(4)",
+      "kind": "tab",
+      "tip": "References ribbon",
+      "disabled": false,
+      "width_dip": 106,
+      "height_dip": 36,
+      "art_width_dip": 1,
+      "art_height_dip": 1,
+      "segment": "single"
+    },
+    {
+      "name": "ribbon_review_tab",
+      "label": "Review",
+      "icon": "help",
+      "action": "SelectRibbonTab(5)",
+      "kind": "tab",
+      "tip": "Review ribbon",
+      "disabled": false,
+      "width_dip": 78,
+      "height_dip": 36,
+      "art_width_dip": 1,
+      "art_height_dip": 1,
+      "segment": "single"
+    },
+    {
+      "name": "ribbon_view_tab",
+      "label": "View",
+      "icon": "help",
+      "action": "SelectRibbonTab(6)",
+      "kind": "tab",
+      "tip": "View ribbon",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 36,
+      "art_width_dip": 1,
+      "art_height_dip": 1,
+      "segment": "single"
+    },
+    {
+      "name": "ribbon_typst_tab",
+      "label": "Typst",
+      "icon": "help",
+      "action": "SelectRibbonTab(7)",
+      "kind": "tab",
+      "tip": "Typst ribbon",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 36,
+      "art_width_dip": 1,
+      "art_height_dip": 1,
+      "segment": "single"
+    },
+    {
+      "name": "blank_page_button",
+      "label": "Blank page",
+      "icon": "new",
+      "action": "PageBreak",
+      "kind": "small",
+      "tip": "Blank page",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "insert_picture_button",
+      "label": "Picture",
+      "icon": "picture",
+      "action": "InsertImage",
+      "kind": "large",
+      "tip": "Insert picture",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "insert_figure_button",
+      "label": "Figure",
+      "icon": "figure",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Insert figure with caption — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "shapes_button",
+      "label": "Shapes",
+      "icon": "shapes",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Shapes — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "chart_button",
+      "label": "Chart",
+      "icon": "chart",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Chart — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "link_button",
+      "label": "Link",
+      "icon": "link",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Insert link (Ctrl+K) — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "cross_reference_button",
+      "label": "Cross-reference",
+      "icon": "crossref",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Cross-reference — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "text_box_button",
+      "label": "Text box",
+      "icon": "textbox",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Insert text box — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "date_time_button",
+      "label": "Date & time",
+      "icon": "calendar",
+      "action": "InsertField(2)",
+      "kind": "small",
+      "tip": "Date & time",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "field_button",
+      "label": "Field",
+      "icon": "field",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Field — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "display_equation_button",
+      "label": "Equation",
+      "icon": "equation",
+      "action": "Editor(AppCommand::InsertEquation)",
+      "kind": "large",
+      "tip": "Insert an equation with the equation editor (Ctrl+Shift+M)",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "insert_inline_equation_button",
+      "label": "Inline",
+      "icon": "inline-eq",
+      "action": "Editor(AppCommand::InsertInlineEquation)",
+      "kind": "small",
+      "tip": "Insert inline equation (Ctrl+M)",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "code_block_button",
+      "label": "Code block",
+      "icon": "code-block",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Insert raw code block — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "margins_button",
+      "label": "Margins",
+      "icon": "margins",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Margins — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "orientation_button",
+      "label": "Orientation",
+      "icon": "orientation",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Orientation — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "page_size_button",
+      "label": "Size",
+      "icon": "size",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Page size — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "breaks_button",
+      "label": "Breaks ▾",
+      "icon": "page-break",
+      "action": "SectionBreak",
+      "kind": "large",
+      "tip": "Breaks",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "line_numbers_button",
+      "label": "Line numbers",
+      "icon": "line-numbers",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Line numbers — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "watermark_button",
+      "label": "Watermark",
+      "icon": "watermark",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Watermark — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "page_color_button",
+      "label": "Page color",
+      "icon": "page-color",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Page color — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "position_button",
+      "label": "Position",
+      "icon": "position",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Position — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "wrap_text_button",
+      "label": "Wrap text",
+      "icon": "wrap",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Wrap text — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "bring_forward_button",
+      "label": "Bring forward",
+      "icon": "forward",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Bring forward — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "send_backward_button",
+      "label": "Send backward",
+      "icon": "backward",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Send backward — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "align_objects_button",
+      "label": "Align",
+      "icon": "align-objects",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Align — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "rotate_button",
+      "label": "Rotate",
+      "icon": "rotate",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Rotate — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "update_toc_button",
+      "label": "Update table",
+      "icon": "refresh",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Update table — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "toc_add_text_button",
+      "label": "Add text",
+      "icon": "plus-lines",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Add text — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "insert_footnote_button",
+      "label": "Footnote",
+      "icon": "footnote",
+      "action": "InsertNote(false)",
+      "kind": "large",
+      "tip": "Insert footnote (Ctrl+Alt+F)",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "insert_endnote_button",
+      "label": "Insert endnote",
+      "icon": "endnote",
+      "action": "InsertNote(true)",
+      "kind": "small",
+      "tip": "Insert endnote",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "next_footnote_button",
+      "label": "Next footnote",
+      "icon": "arrow-down",
+      "action": "NextFootnote(true)",
+      "kind": "small",
+      "tip": "Next footnote",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "show_notes_button",
+      "label": "Show notes",
+      "icon": "eye",
+      "action": "ShowNotes",
+      "kind": "small",
+      "tip": "Show notes",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "insert_citation_button",
+      "label": "Citation",
+      "icon": "cite",
+      "action": "CitationManager",
+      "kind": "large",
+      "tip": "Citation manager: insert citations, manage sources and styles (Ctrl+Shift+C)",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "bibliography_button",
+      "label": "Bibliography",
+      "icon": "book",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Insert bibliography — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "insert_caption_button",
+      "label": "Caption",
+      "icon": "caption",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Insert caption — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "table_of_figures_button",
+      "label": "Table of figures",
+      "icon": "table-figures",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Table of figures — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "caption_cross_reference_button",
+      "label": "Cross-reference",
+      "icon": "crossref",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Cross-reference — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "update_figures_button",
+      "label": "Update table",
+      "icon": "refresh",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Update table — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "mark_entry_button",
+      "label": "Mark entry",
+      "icon": "mark",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Mark index entry (Alt+Shift+X) — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "insert_index_button",
+      "label": "Insert index",
+      "icon": "index",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Insert index — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "update_index_button",
+      "label": "Update index",
+      "icon": "refresh",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Update index — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "thesaurus_button",
+      "label": "Thesaurus",
+      "icon": "thesaurus",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Thesaurus (Shift+F7) — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "new_comment_button",
+      "label": "Comment",
+      "icon": "comment",
+      "action": "CommentNew",
+      "kind": "large",
+      "tip": "New comment (Ctrl+Alt+C)",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "delete_comment_button",
+      "label": "Delete",
+      "icon": "comment-x",
+      "action": "CommentDelete",
+      "kind": "small",
+      "tip": "Delete",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "resolve_comment_button",
+      "label": "Resolve",
+      "icon": "comment-check",
+      "action": "CommentResolve",
+      "kind": "small",
+      "tip": "Resolve",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "previous_comment_button",
+      "label": "Previous",
+      "icon": "arrow-up",
+      "action": "CommentStep(false)",
+      "kind": "small",
+      "tip": "Previous",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "next_comment_button",
+      "label": "Next",
+      "icon": "arrow-down",
+      "action": "CommentStep(true)",
+      "kind": "small",
+      "tip": "Next",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "track_changes_button",
+      "label": "Track changes",
+      "icon": "track",
+      "action": "TextTracking",
+      "kind": "large",
+      "tip": "Track changes (Ctrl+Shift+E)",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "show_markup_button",
+      "label": "Show markup",
+      "icon": "markup",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Show markup — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "reviewing_pane_button",
+      "label": "Reviewing pane",
+      "icon": "pane-right",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Reviewing pane — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "accept_change_button",
+      "label": "Accept",
+      "icon": "accept",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Accept change — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "reject_change_button",
+      "label": "Reject",
+      "icon": "reject",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Reject change — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "previous_change_button",
+      "label": "Previous",
+      "icon": "arrow-up",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Previous — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "next_change_button",
+      "label": "Next",
+      "icon": "arrow-down",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Next — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "compare_button",
+      "label": "Compare",
+      "icon": "compare",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Compare two versions — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "restrict_editing_button",
+      "label": "Restrict",
+      "icon": "lock",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Restrict editing — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "print_layout_button",
+      "label": "Print layout",
+      "icon": "page",
+      "action": "View(ViewMode::Graphical)",
+      "kind": "large",
+      "tip": "Print layout",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "web_layout_button",
+      "label": "Web layout",
+      "icon": "web",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Web layout — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "outline_view_button",
+      "label": "Outline",
+      "icon": "outline",
+      "action": "ToggleNavigation",
+      "kind": "large",
+      "tip": "Outline",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "focus_mode_button",
+      "label": "Focus",
+      "icon": "focus",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Focus mode (F11) — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "zoom_dialog_button",
+      "label": "Zoom",
+      "icon": "zoom-in",
+      "action": "ZoomDialog",
+      "kind": "large",
+      "tip": "Zoom…",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "zoom_100_button",
+      "label": "100%",
+      "icon": "zoom-reset",
+      "action": "Zoom100",
+      "kind": "small",
+      "tip": "Zoom to 100%",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "zoom_one_page_button",
+      "label": "One page",
+      "icon": "one-page",
+      "action": "FitPage",
+      "kind": "small",
+      "tip": "One page",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "zoom_page_width_button",
+      "label": "Page width",
+      "icon": "page-width",
+      "action": "FitWidth",
+      "kind": "small",
+      "tip": "Page width",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "new_window_button",
+      "label": "New window",
+      "icon": "new-window",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "New window — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "side_by_side_button",
+      "label": "Side by side",
+      "icon": "side-by-side",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Side by side — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "split_window_button",
+      "label": "Split",
+      "icon": "split-h",
+      "action": "View(ViewMode::Split)",
+      "kind": "small",
+      "tip": "Split",
+      "disabled": false,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "compile_button",
+      "label": "Compile",
+      "icon": "compile",
+      "action": "RefreshSource",
+      "kind": "large",
+      "tip": "Compile now (Ctrl+Shift+B)",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "auto_compile_button",
+      "label": "Auto-compile",
+      "icon": "bolt",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Auto-compile — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "clear_cache_button",
+      "label": "Clear cache",
+      "icon": "refresh",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Clear cache — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "typst_source_button",
+      "label": "Source",
+      "icon": "code",
+      "action": "View(ViewMode::Typst)",
+      "kind": "large",
+      "tip": "Edit Typst source",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "typst_split_button",
+      "label": "Split",
+      "icon": "split",
+      "action": "View(ViewMode::Split)",
+      "kind": "large",
+      "tip": "Source and preview side by side",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "format_source_button",
+      "label": "Format",
+      "icon": "format",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Format document (Shift+Alt+F) — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "jump_to_source_button",
+      "label": "Jump to source",
+      "icon": "sync",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Jump between preview and source — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "package_browser_button",
+      "label": "Packages",
+      "icon": "package",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Browse and import packages — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "insert_set_rule_button",
+      "label": "Set rule",
+      "icon": "hash",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Set rule — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "insert_show_rule_button",
+      "label": "Show rule",
+      "icon": "eye",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Show rule — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "insert_let_button",
+      "label": "Let binding",
+      "icon": "variable",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Let binding — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "insert_function_button",
+      "label": "Function",
+      "icon": "function",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Function — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "template_button",
+      "label": "Template",
+      "icon": "template",
+      "action": "Unavailable",
+      "kind": "large",
+      "tip": "Apply a template — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "errors_button",
+      "label": "0 errors",
+      "icon": "error",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Show errors — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "warnings_button",
+      "label": "1 warning",
+      "icon": "warning",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Show warnings — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "problems_pane_button",
+      "label": "Problems",
+      "icon": "pane-right",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "Problems — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "export_pdf_button",
+      "label": "PDF",
+      "icon": "export",
+      "action": "Pdf",
+      "kind": "large",
+      "tip": "Export as PDF (Ctrl+Shift+E)",
+      "disabled": false,
+      "width_dip": 62,
+      "height_dip": 78,
+      "art_width_dip": 32,
+      "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "export_png_button",
+      "label": "PNG",
+      "icon": "picture",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "PNG — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "export_svg_button",
+      "label": "SVG",
+      "icon": "vector",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "SVG — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    },
+    {
+      "name": "export_html_button",
+      "label": "HTML",
+      "icon": "code",
+      "action": "Unavailable",
+      "kind": "small",
+      "tip": "HTML — Not available in this alpha",
+      "disabled": true,
+      "width_dip": 68,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
+      "segment": "single"
+    }
+  ],
+  "sizes": [
+    [
+      "title_strip",
+      -1,
+      38
+    ],
+    [
+      "app_logo_button",
+      26,
+      28
+    ],
+    [
+      "new_button",
+      28,
+      28
+    ],
+    [
+      "open_button",
+      28,
+      28
+    ],
+    [
+      "save_button",
+      28,
+      28
+    ],
+    [
+      "undo_button",
+      28,
+      28
+    ],
+    [
+      "redo_button",
+      28,
+      28
+    ],
+    [
+      "interface_language_button",
+      36,
+      28
+    ],
+    [
+      "collapse_ribbon_button",
+      28,
+      28
+    ],
+    [
+      "help_button",
+      28,
+      28
+    ],
+    [
+      "ribbon_notebook",
+      1,
+      154
+    ],
+    [
+      "ribbon_file",
+      1,
+      118
+    ],
+    [
+      "file_new_button",
+      78,
+      78
+    ],
+    [
+      "file_open_button",
+      98,
+      36
+    ],
+    [
+      "file_save_button",
+      98,
+      36
+    ],
+    [
+      "save_as_button",
+      98,
+      36
+    ],
+    [
+      "recover_button",
+      98,
+      36
+    ],
+    [
+      "recent_files_button",
+      78,
+      78
+    ],
+    [
+      "pdf_button",
+      78,
+      78
+    ],
+    [
+      "import_pdf_button",
+      78,
+      78
+    ],
+    [
+      "print_button",
+      78,
+      78
+    ],
+    [
+      "ribbon_home",
+      1,
+      118
+    ],
+    [
+      "paste_button",
+      62,
+      78
+    ],
+    [
+      "cut_button",
+      30,
+      28
+    ],
+    [
+      "copy_button",
+      30,
+      28
+    ],
+    [
+      "paste_plain_button",
+      30,
+      28
+    ],
+    [
+      "font_family_combo",
+      150,
+      28
+    ],
+    [
+      "font_size_combo",
+      86,
+      28
+    ],
+    [
+      "bold_button",
+      30,
+      28
+    ],
+    [
+      "italic_button",
+      30,
+      28
+    ],
+    [
+      "underline_button",
+      30,
+      28
+    ],
+    [
+      "grow_font_button",
+      30,
+      28
+    ],
+    [
+      "shrink_font_button",
+      30,
+      28
+    ],
+    [
+      "font_color_button",
+      30,
+      28
+    ],
+    [
+      "highlight_button",
+      30,
+      28
+    ],
+    [
+      "bullets_button",
+      30,
+      28
+    ],
+    [
+      "numbering_button",
+      30,
+      28
+    ],
+    [
+      "align_left_button",
+      30,
+      28
+    ],
+    [
+      "align_center_button",
+      30,
+      28
+    ],
+    [
+      "align_right_button",
+      30,
+      28
+    ],
+    [
+      "align_justify_button",
+      30,
+      28
+    ],
+    [
+      "outdent_button",
+      30,
+      28
+    ],
+    [
+      "indent_button",
+      30,
+      28
+    ],
+    [
+      "auto_direction_button",
+      30,
+      28
+    ],
+    [
+      "ltr_button",
+      30,
+      28
+    ],
+    [
+      "rtl_button",
+      30,
+      28
+    ],
+    [
+      "line_spacing_combo",
+      96,
+      28
+    ],
+    [
+      "style_normal_button",
+      76,
+      26
+    ],
+    [
+      "style_heading1_button",
+      76,
+      26
+    ],
+    [
+      "style_title_button",
+      76,
+      26
+    ],
+    [
+      "style_gallery_more_button",
+      18,
+      24
+    ],
+    [
+      "style_manager_button",
+      68,
+      24
+    ],
+    [
+      "clear_direct_button",
+      68,
+      24
+    ],
+    [
+      "typography_menu_button",
+      132,
+      24
+    ],
+    [
+      "hyphenation_button",
+      132,
+      24
+    ],
+    [
+      "home_table_button",
+      68,
+      66
+    ],
+    [
+      "home_picture_button",
+      62,
+      78
+    ],
+    [
+      "inline_equation_button",
+      68,
+      66
+    ],
+    [
+      "ribbon_insert",
+      1,
+      118
+    ],
+    [
+      "insert_equation_button",
+      68,
+      66
+    ],
+    [
+      "symbol_button",
+      68,
+      24
+    ],
+    [
+      "page_break_button",
+      62,
+      78
+    ],
+    [
+      "column_break_button",
+      68,
+      24
+    ],
+    [
+      "section_break_button",
+      68,
+      24
+    ],
+    [
+      "insert_table_button",
+      62,
+      78
+    ],
+    [
+      "insert_image_button",
+      68,
+      66
+    ],
+    [
+      "header_button",
+      68,
+      24
+    ],
+    [
+      "footer_button",
+      68,
+      24
+    ],
+    [
+      "page_number_button",
+      68,
+      24
+    ],
+    [
+      "ribbon_layout",
+      1,
+      118
+    ],
+    [
+      "portrait_button",
+      68,
+      66
+    ],
+    [
+      "landscape_button",
+      68,
+      66
+    ],
+    [
+      "paper_size_combo",
+      132,
+      26
+    ],
+    [
+      "margins_combo",
+      132,
+      26
+    ],
+    [
+      "space_before_combo",
+      84,
+      26
+    ],
+    [
+      "space_after_combo",
+      84,
+      26
+    ],
+    [
+      "columns_button",
+      62,
+      78
+    ],
+    [
+      "ribbon_references",
+      1,
+      118
+    ],
+    [
+      "outline_button",
+      98,
+      66
+    ],
+    [
+      "toc_button",
+      62,
+      78
+    ],
+    [
+      "footnote_button",
+      98,
+      66
+    ],
+    [
+      "bookmark_button",
+      68,
+      24
+    ],
+    [
+      "compatibility_button",
+      68,
+      24
+    ],
+    [
+      "ribbon_review",
+      1,
+      118
+    ],
+    [
+      "find_button",
+      68,
+      66
+    ],
+    [
+      "word_count_button",
+      68,
+      24
+    ],
+    [
+      "spelling_button",
+      62,
+      78
+    ],
+    [
+      "comment_button",
+      98,
+      66
+    ],
+    [
+      "changes_button",
+      98,
+      66
+    ],
+    [
+      "ribbon_view",
+      1,
+      118
+    ],
+    [
+      "view_graphical_button",
+      98,
+      66
+    ],
+    [
+      "view_typst_button",
+      98,
+      66
+    ],
+    [
+      "view_split_button",
+      98,
+      66
+    ],
+    [
+      "view_fit_button",
+      98,
+      66
+    ],
+    [
+      "view_page_button",
+      98,
+      66
+    ],
+    [
+      "view_100_button",
+      68,
+      66
+    ],
+    [
+      "navigation_button",
+      98,
+      66
+    ],
+    [
+      "ribbon_typst",
+      1,
+      118
+    ],
+    [
+      "source_button",
+      98,
+      66
+    ],
+    [
+      "source_split_button",
+      98,
+      66
+    ],
+    [
+      "source_refresh_button",
+      98,
+      66
+    ],
+    [
+      "source_copy_button",
+      98,
+      66
+    ],
+    [
+      "ribbon_rule",
+      -1,
+      1
+    ],
+    [
+      "navigator_panel",
+      250,
+      -1
+    ],
+    [
+      "navigation_go_button",
+      28,
+      28
+    ],
+    [
+      "search_previous_button",
+      76,
+      26
+    ],
+    [
+      "search_next_button",
+      76,
+      26
+    ],
+    [
+      "search_options_button",
+      76,
+      26
+    ],
+    [
+      "replace_one_button",
+      94,
+      26
+    ],
+    [
+      "replace_all_button",
+      94,
+      26
+    ],
+    [
+      "canvas_context_bar",
+      -1,
+      32
+    ],
+    [
+      "header_context_tools",
+      1,
+      118
+    ],
+    [
+      "header_go_header_button",
+      68,
+      24
+    ],
+    [
+      "header_go_footer_button",
+      68,
+      24
+    ],
+    [
+      "header_default_button",
+      68,
+      24
+    ],
+    [
+      "header_first_button",
+      68,
+      24
+    ],
+    [
+      "header_even_button",
+      68,
+      24
+    ],
+    [
+      "header_page_number_field_button",
+      68,
+      24
+    ],
+    [
+      "header_page_count_field_button",
+      68,
+      24
+    ],
+    [
+      "header_date_field_button",
+      68,
+      24
+    ],
+    [
+      "header_remove_button",
+      62,
+      78
+    ],
+    [
+      "header_exit_button",
+      62,
+      78
+    ],
+    [
+      "tab_ruler",
+      -1,
+      34
+    ],
+    [
+      "vertical_ruler",
+      34,
+      -1
+    ],
+    [
+      "split_handle",
+      6,
+      -1
+    ],
+    [
+      "source_close_button",
+      28,
+      28
+    ],
+    [
+      "equation_panel",
+      340,
+      -1
+    ],
+    [
+      "equation_input",
+      -1,
+      84
+    ],
+    [
+      "comments_panel",
+      320,
+      -1
+    ],
+    [
+      "comments_input",
+      -1,
+      72
+    ],
+    [
+      "styles_resize_handle",
+      6,
+      -1
+    ],
+    [
+      "styles_panel",
+      280,
+      -1
+    ],
+    [
+      "styles_close_button",
+      28,
+      28
+    ],
+    [
+      "styles_filter",
+      0,
+      28
+    ],
+    [
+      "styles_list",
+      230,
+      160
+    ],
+    [
+      "styles_apply_button",
+      120,
+      28
+    ],
+    [
+      "styles_new_button",
+      76,
+      28
+    ],
+    [
+      "styles_modify_button",
+      76,
+      28
+    ],
+    [
+      "styles_inspect_button",
+      76,
+      28
+    ],
+    [
+      "styles_delete_button",
+      76,
+      28
+    ],
+    [
+      "styles_manage_button",
+      220,
+      28
+    ],
+    [
+      "status_panel",
+      -1,
+      32
+    ],
+    [
+      "graphical_mode_button",
+      94,
+      26
+    ],
+    [
+      "typst_mode_button",
+      94,
+      26
+    ],
+    [
+      "split_mode_button",
+      94,
+      26
+    ],
+    [
+      "text_language_button",
+      112,
+      26
+    ],
+    [
+      "status_label",
+      1,
+      -1
+    ],
+    [
+      "status_navigation_button",
+      28,
+      28
+    ],
+    [
+      "zoom_out_button",
+      28,
+      28
+    ],
+    [
+      "zoom_slider",
+      140,
+      26
+    ],
+    [
+      "zoom_in_button",
+      28,
+      28
+    ],
+    [
+      "fit_width_button",
+      28,
+      28
+    ],
+    [
+      "ribbon_tab_strip",
+      -1,
+      36
+    ],
+    [
+      "ribbon_file_tab",
+      56,
+      36
+    ],
+    [
+      "ribbon_home_tab",
+      72,
+      36
+    ],
+    [
+      "ribbon_insert_tab",
+      72,
+      36
+    ],
+    [
+      "ribbon_layout_tab",
+      78,
+      36
+    ],
+    [
+      "ribbon_references_tab",
+      106,
+      36
+    ],
+    [
+      "ribbon_review_tab",
+      78,
+      36
+    ],
+    [
+      "ribbon_view_tab",
+      62,
+      36
+    ],
+    [
+      "ribbon_typst_tab",
+      68,
+      36
+    ],
+    [
+      "file_document_0_group_caption",
+      -1,
+      18
+    ],
+    [
+      "file_output_1_group_caption",
+      -1,
+      18
+    ],
+    [
+      "home_clipboard_0_group_caption",
+      -1,
+      18
+    ],
+    [
+      "home_font_1_group_caption",
+      -1,
+      18
+    ],
+    [
+      "home_paragraph_2_group_caption",
+      -1,
+      18
+    ],
+    [
+      "home_styles_3_group_caption",
+      -1,
+      18
+    ],
+    [
+      "style_gallery",
+      239,
+      70
+    ],
+    [
+      "home_typography_4_group_caption",
+      -1,
+      18
+    ],
+    [
+      "home_objects_5_group_caption",
+      -1,
+      18
+    ],
+    [
+      "insert_pages_0_group_caption",
+      -1,
+      18
+    ],
+    [
+      "blank_page_button",
+      68,
+      24
+    ],
+    [
+      "insert_tables_1_group_caption",
+      -1,
+      18
+    ],
+    [
+      "insert_illustrations_2_group_caption",
+      -1,
+      18
+    ],
+    [
+      "insert_picture_button",
+      62,
+      78
+    ],
+    [
+      "insert_figure_button",
+      62,
+      78
+    ],
+    [
+      "shapes_button",
+      68,
+      24
+    ],
+    [
+      "chart_button",
+      68,
+      24
+    ],
+    [
+      "insert_links_3_group_caption",
+      -1,
+      18
+    ],
+    [
+      "link_button",
+      68,
+      24
+    ],
+    [
+      "cross_reference_button",
+      68,
+      24
+    ],
+    [
+      "insert_header___footer_4_group_caption",
+      -1,
+      18
+    ],
+    [
+      "insert_text_5_group_caption",
+      -1,
+      18
+    ],
+    [
+      "text_box_button",
+      62,
+      78
+    ],
+    [
+      "date_time_button",
+      68,
+      24
+    ],
+    [
+      "field_button",
+      68,
+      24
+    ],
+    [
+      "insert_equation_6_group_caption",
+      -1,
+      18
+    ],
+    [
+      "display_equation_button",
+      62,
+      78
+    ],
+    [
+      "insert_inline_equation_button",
+      68,
+      24
+    ],
+    [
+      "insert_code_7_group_caption",
+      -1,
+      18
+    ],
+    [
+      "code_block_button",
+      62,
+      78
+    ],
+    [
+      "layout_page_setup_0_group_caption",
+      -1,
+      18
+    ],
+    [
+      "margins_button",
+      62,
+      78
+    ],
+    [
+      "orientation_button",
+      62,
+      78
+    ],
+    [
+      "page_size_button",
+      62,
+      78
+    ],
+    [
+      "breaks_button",
+      62,
+      78
+    ],
+    [
+      "layout_page_1_group_caption",
+      -1,
+      18
+    ],
+    [
+      "line_numbers_button",
+      68,
+      24
+    ],
+    [
+      "watermark_button",
+      68,
+      24
+    ],
+    [
+      "page_color_button",
+      68,
+      24
+    ],
+    [
+      "layout_paragraph_2_group_caption",
+      -1,
+      18
+    ],
+    [
+      "indent_left_spin",
+      54,
+      24
+    ],
+    [
+      "indent_right_spin",
+      54,
+      24
+    ],
+    [
+      "spacing_before_spin",
+      54,
+      24
+    ],
+    [
+      "spacing_after_spin",
+      54,
+      24
+    ],
+    [
+      "layout_arrange_3_group_caption",
+      -1,
+      18
+    ],
+    [
+      "position_button",
+      68,
+      24
+    ],
+    [
+      "wrap_text_button",
+      68,
+      24
+    ],
+    [
+      "bring_forward_button",
+      68,
+      24
+    ],
+    [
+      "send_backward_button",
+      68,
+      24
+    ],
+    [
+      "align_objects_button",
+      68,
+      24
+    ],
+    [
+      "rotate_button",
+      68,
+      24
+    ],
+    [
+      "references_table_of_contents_0_group_caption",
+      -1,
+      18
+    ],
+    [
+      "update_toc_button",
+      68,
+      24
+    ],
+    [
+      "toc_add_text_button",
+      68,
+      24
+    ],
+    [
+      "references_footnotes_1_group_caption",
+      -1,
+      18
+    ],
+    [
+      "insert_footnote_button",
+      62,
+      78
+    ],
+    [
+      "insert_endnote_button",
+      68,
+      24
+    ],
+    [
+      "next_footnote_button",
+      68,
+      24
+    ],
+    [
+      "show_notes_button",
+      68,
+      24
+    ],
+    [
+      "references_citations___bibliography_2_group_caption",
+      -1,
+      18
+    ],
+    [
+      "insert_citation_button",
+      62,
+      78
+    ],
+    [
+      "bibliography_button",
+      62,
+      78
+    ],
+    [
+      "references_captions_3_group_caption",
+      -1,
+      18
+    ],
+    [
+      "insert_caption_button",
+      62,
+      78
+    ],
+    [
+      "table_of_figures_button",
+      68,
+      24
+    ],
+    [
+      "caption_cross_reference_button",
+      68,
+      24
+    ],
+    [
+      "update_figures_button",
+      68,
+      24
+    ],
+    [
+      "references_index_4_group_caption",
+      -1,
+      18
+    ],
+    [
+      "mark_entry_button",
+      62,
+      78
+    ],
+    [
+      "insert_index_button",
+      68,
+      24
+    ],
+    [
+      "update_index_button",
+      68,
+      24
+    ],
+    [
+      "review_proofing_0_group_caption",
+      -1,
+      18
+    ],
+    [
+      "thesaurus_button",
+      68,
+      24
+    ],
+    [
+      "review_comments_1_group_caption",
+      -1,
+      18
+    ],
+    [
+      "new_comment_button",
+      62,
+      78
+    ],
+    [
+      "delete_comment_button",
+      68,
+      24
+    ],
+    [
+      "resolve_comment_button",
+      68,
+      24
+    ],
+    [
+      "previous_comment_button",
+      68,
+      24
+    ],
+    [
+      "next_comment_button",
+      68,
+      24
+    ],
+    [
+      "review_tracking_2_group_caption",
+      -1,
+      18
+    ],
+    [
+      "track_changes_button",
+      62,
+      78
+    ],
+    [
+      "markup_mode_combo",
+      154,
+      28
+    ],
+    [
+      "show_markup_button",
+      68,
+      24
+    ],
+    [
+      "reviewing_pane_button",
+      68,
+      24
+    ],
+    [
+      "review_changes_3_group_caption",
+      -1,
+      18
+    ],
+    [
+      "accept_change_button",
+      62,
+      78
+    ],
+    [
+      "reject_change_button",
+      62,
+      78
+    ],
+    [
+      "previous_change_button",
+      68,
+      24
+    ],
+    [
+      "next_change_button",
+      68,
+      24
+    ],
+    [
+      "review_compare_4_group_caption",
+      -1,
+      18
+    ],
+    [
+      "compare_button",
+      62,
+      78
+    ],
+    [
+      "review_protect_5_group_caption",
+      -1,
+      18
+    ],
+    [
+      "restrict_editing_button",
+      62,
+      78
+    ],
+    [
+      "view_views_0_group_caption",
+      -1,
+      18
+    ],
+    [
+      "print_layout_button",
+      62,
+      78
+    ],
+    [
+      "web_layout_button",
+      62,
+      78
+    ],
+    [
+      "outline_view_button",
+      62,
+      78
+    ],
+    [
+      "focus_mode_button",
+      62,
+      78
+    ],
+    [
+      "view_show_1_group_caption",
+      -1,
+      18
+    ],
+    [
+      "show_ruler_check",
+      -1,
+      24
+    ],
+    [
+      "show_gridlines_check",
+      -1,
+      24
+    ],
+    [
+      "show_formatting_marks_check",
+      -1,
+      24
+    ],
+    [
+      "show_navigation_check",
+      -1,
+      24
+    ],
+    [
+      "show_page_boundaries_check",
+      -1,
+      24
+    ],
+    [
+      "show_comments_check",
+      -1,
+      24
+    ],
+    [
+      "view_zoom_2_group_caption",
+      -1,
+      18
+    ],
+    [
+      "zoom_dialog_button",
+      62,
+      78
+    ],
+    [
+      "zoom_100_button",
+      68,
+      24
+    ],
+    [
+      "zoom_one_page_button",
+      68,
+      24
+    ],
+    [
+      "zoom_page_width_button",
+      68,
+      24
+    ],
+    [
+      "view_window_3_group_caption",
+      -1,
+      18
+    ],
+    [
+      "new_window_button",
+      68,
+      24
+    ],
+    [
+      "side_by_side_button",
+      68,
+      24
+    ],
+    [
+      "split_window_button",
+      68,
+      24
+    ],
+    [
+      "typst_compile_0_group_caption",
+      -1,
+      18
+    ],
+    [
+      "compile_button",
+      62,
+      78
+    ],
+    [
+      "auto_compile_button",
+      68,
+      24
+    ],
+    [
+      "clear_cache_button",
+      68,
+      24
+    ],
+    [
+      "typst_source_1_group_caption",
+      -1,
+      18
+    ],
+    [
+      "typst_source_button",
+      62,
+      78
+    ],
+    [
+      "typst_split_button",
+      62,
+      78
+    ],
+    [
+      "format_source_button",
+      68,
+      24
+    ],
+    [
+      "jump_to_source_button",
+      68,
+      24
+    ],
+    [
+      "typst_scripting_2_group_caption",
+      -1,
+      18
+    ],
+    [
+      "package_browser_button",
+      62,
+      78
+    ],
+    [
+      "insert_set_rule_button",
+      68,
+      24
+    ],
+    [
+      "insert_show_rule_button",
+      68,
+      24
+    ],
+    [
+      "insert_let_button",
+      68,
+      24
+    ],
+    [
+      "insert_function_button",
+      68,
+      24
+    ],
+    [
+      "typst_template_3_group_caption",
+      -1,
+      18
+    ],
+    [
+      "template_button",
+      62,
+      78
+    ],
+    [
+      "typst_diagnostics_4_group_caption",
+      -1,
+      18
+    ],
+    [
+      "errors_button",
+      68,
+      24
+    ],
+    [
+      "warnings_button",
+      68,
+      24
+    ],
+    [
+      "problems_pane_button",
+      68,
+      24
+    ],
+    [
+      "typst_export_5_group_caption",
+      -1,
+      18
+    ],
+    [
+      "export_pdf_button",
+      62,
+      78
+    ],
+    [
+      "export_png_button",
+      68,
+      24
+    ],
+    [
+      "export_svg_button",
+      68,
+      24
+    ],
+    [
+      "export_html_button",
+      68,
+      24
+    ],
+    [
+      "table_context_tools",
+      1,
+      118
+    ],
+    [
+      "header_tools_navigation_0_group_caption",
+      -1,
+      18
+    ],
+    [
+      "header_tools_options_1_group_caption",
+      -1,
+      18
+    ],
+    [
+      "header_tools_insert_2_group_caption",
+      -1,
+      18
+    ],
+    [
+      "header_tools_edit_3_group_caption",
+      -1,
+      18
+    ],
+    [
+      "header_tools_close_4_group_caption",
+      -1,
+      18
+    ],
+    [
+      "picture_context_tools",
+      1,
+      118
+    ]
+  ],
+  "groups": [
+    "file_document_0_group",
+    "file_output_1_group",
+    "home_clipboard_0_group",
+    "home_font_1_group",
+    "home_paragraph_2_group",
+    "home_styles_3_group",
+    "home_typography_4_group",
+    "home_objects_5_group",
+    "insert_pages_0_group",
+    "insert_tables_1_group",
+    "insert_illustrations_2_group",
+    "insert_links_3_group",
+    "insert_header___footer_4_group",
+    "insert_text_5_group",
+    "insert_equation_6_group",
+    "insert_code_7_group",
+    "layout_page_setup_0_group",
+    "layout_page_1_group",
+    "layout_paragraph_2_group",
+    "layout_arrange_3_group",
+    "references_table_of_contents_0_group",
+    "references_footnotes_1_group",
+    "references_citations___bibliography_2_group",
+    "references_captions_3_group",
+    "references_index_4_group",
+    "review_proofing_0_group",
+    "review_comments_1_group",
+    "review_tracking_2_group",
+    "review_changes_3_group",
+    "review_compare_4_group",
+    "review_protect_5_group",
+    "view_views_0_group",
+    "view_show_1_group",
+    "view_zoom_2_group",
+    "view_window_3_group",
+    "typst_compile_0_group",
+    "typst_source_1_group",
+    "typst_scripting_2_group",
+    "typst_template_3_group",
+    "typst_diagnostics_4_group",
+    "typst_export_5_group",
+    "header_tools_navigation_0_group",
+    "header_tools_options_1_group",
+    "header_tools_insert_2_group",
+    "header_tools_edit_3_group",
+    "header_tools_close_4_group"
+  ],
+  "combos": [
+    "font_size_combo",
+    "line_spacing_combo",
+    "paper_size_combo",
+    "margins_combo",
+    "space_before_combo",
+    "space_after_combo",
+    "styles_filter",
+    "markup_mode_combo"
+  ],
+  "button_metrics": {
+    "large": [
+      68,
+      66,
+      30,
+      30
+    ],
+    "file-main": [
+      78,
+      78,
+      32,
+      32
+    ],
+    "file-menu": [
+      78,
+      78,
+      32,
+      32
+    ],
+    "file-minor": [
+      98,
+      36,
+      18,
+      18
+    ],
+    "hero": [
+      74,
+      72,
+      40,
+      40
+    ],
+    "wide": [
+      98,
+      66,
+      30,
+      30
+    ],
+    "small": [
+      76,
+      26,
+      16,
+      16
+    ],
+    "icon": [
+      26,
+      26,
+      16,
+      16
+    ],
+    "quick": [
+      28,
+      28,
+      18,
+      18
+    ],
+    "logo": [
+      26,
+      28,
+      20,
+      20
+    ],
+    "gallery": [
+      112,
+      66,
+      94,
+      30
+    ],
+    "gallery-more": [
+      18,
+      24,
+      0,
+      0
+    ],
+    "mode": [
+      94,
+      26,
+      16,
+      16
+    ],
+    "pane": [
+      76,
+      28,
+      16,
+      16
+    ],
+    "pane-default": [
+      120,
+      28,
+      16,
+      16
+    ]
+  },
+  "ribbon_height": 150,
+  "page_height": 118
+}

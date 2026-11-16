@@ -1,0 +1,50 @@
+[package]
+name = "gui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "Impress"
+path = "src/main.rs"
+
+[dependencies]
+output = { path = "../output" }
+format-rtf = { path = "../format-rtf" }
+format-doc = { path = "../format-doc" }
+format-pdf = { path = "../format-pdf" }
+model = { package = "core", path = "../core" }
+editor = { path = "../editor" }
+format = { path = "../format" }
+format-native = { path = "../format-native" }
+format-typst = { path = "../format-typst" }
+docx = { path = "../docx" }
+typst-engine = { path = "../typst-engine" }
+typography = { path = "../typography" }
+layout = { path = "../layout" }
+render = { path = "../render" }
+wxdragon.workspace = true
+tiny-skia = "0.11.4"
+image.workspace = true
+rayon.workspace = true
+ttf-parser.workspace = true
+typst-assets = { version = "0.15.1", features = ["fonts"] }
+serde.workspace = true
+serde_json.workspace = true
+unicode-segmentation.workspace = true
+unicode-script.workspace = true
+impress-hunspell = { path = "../../vendor/impress-hunspell" }
+sha2 = "0.10.9"
+regex = "1.13.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libloading = "0.8.9"
+
+[target.'cfg(windows)'.build-dependencies]
+embed-manifest.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = ["Win32_Graphics_Gdi", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_UI_HiDpi", "Win32_System_DataExchange", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_System_Registry", "Win32_System_Memory", "Win32_UI_Input_Ime", "Win32_UI_Input_KeyboardAndMouse"] }
+
+windows = { version = "0.62.2", features = ["Win32_Foundation", "Win32_Globalization", "Win32_System_Com"] }

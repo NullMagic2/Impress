@@ -1,0 +1,15 @@
+{
+  "root": "#eceff4",
+  "title": "#e8ecf2",
+  "ribbon": "#ffffff",
+  "group": "#ffffff",
+  "caption": "#ffffff",
+  "line": "#dfe4ec",
+  "group_divider": "#e5eaf1",
+  "workspace": "#e3e7ed",
+  "canvas": "#e3e7ed",
+  "context": "#f7f9fb",
+  "status": "#e8ecf2",
+  "source": "#f7f9fb",
+  "source_editor": "#ffffff"
+}

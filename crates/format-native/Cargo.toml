@@ -1,0 +1,17 @@
+[package]
+name = "format-native"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+model = { package = "core", path = "../core" }
+format = { path = "../format" }
+serde.workspace = true
+serde_json.workspace = true
+zip.workspace = true
+
+[dev-dependencies]
+typography = { path = "../typography" }
+typst-assets = { version = "0.15.1", features = ["fonts"] }
