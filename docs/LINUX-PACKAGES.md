@@ -49,3 +49,6 @@ and a startup screenshot accompany the packages.
 These checks establish package installation and basic operation in the named
 container environments; they do not cover every display server, desktop or
 hardware configuration.
+
+Packages depend on Noto core fonts to provide a predictable fallback when a
+document requests a font that is not installed.
