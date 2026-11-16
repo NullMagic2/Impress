@@ -4,7 +4,7 @@ Impress packages are built separately for these amd64 targets:
 
 | Package target | Build environment | Intended systems |
 | --- | --- | --- |
-| `mint22` | Linux Mint 22.3 | Ubuntu-based Mint 22.x |
+| `mint22` | Mint 22.3 development image, Ubuntu 24.04 base | Ubuntu-based Mint 22.x |
 | `ubuntu24.04` | Ubuntu 24.04 | Ubuntu 24.04 LTS |
 | `ubuntu26.04` | Ubuntu 26.04 | Ubuntu 26.04 LTS |
 | `debian13` | Debian 13 | Debian 13 (Trixie) |
@@ -14,6 +14,11 @@ Ubuntu-based releases and LMDE. They have different package bases. The Mint
 22.x package is for the Ubuntu-based edition; the Debian 13 package is the
 appropriate ABI base for LMDE 7, although the workflow does not test an LMDE
 image. Older Mint or Debian versions are not implied by these package names.
+
+The [Mint development image](https://hub.docker.com/r/linuxmintd/mint22.3-amd64)
+uses Ubuntu 24.04 as its base and retains Ubuntu's `/etc/os-release` identity.
+The packager checks the pinned Mint image and its Zena package repository,
+and records the actual base identity and image digest in build metadata.
 
 Use the package matching your distribution. Install a downloaded package with
 `sudo apt install ./impress_*.deb` so the package manager resolves dependencies.

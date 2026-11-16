@@ -51,6 +51,7 @@ jobs:
       LC_ALL: C.UTF-8
       APP_VERSION: ${{ inputs.version }}
       REUSE_RUN: ${{ inputs.validated_run }}
+      IMPRESS_BUILD_IMAGE: ${{ matrix.image }}
     steps:
       - name: Install distribution build and test dependencies
         run: |

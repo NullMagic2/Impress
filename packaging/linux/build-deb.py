@@ -25,7 +25,19 @@ def main():
     label, os_id, os_version, suite = TARGETS[args.target]
     release = dict(line.strip().split('=', 1) for line in Path('/etc/os-release').read_text().splitlines() if '=' in line)
     release = {key: value.strip('"') for key, value in release.items()}
-    assert release.get('ID') == os_id and (release.get('VERSION_ID') == os_version or (os_id=='linuxmint' and release.get('VERSION_ID','').startswith('22.'))), release
+    host_matches=release.get('ID')==os_id and (release.get('VERSION_ID')==os_version or (os_id=='linuxmint' and release.get('VERSION_ID','').startswith('22.')))
+    build_image=os.environ.get('IMPRESS_BUILD_IMAGE','')
+    build_environment=release.get('PRETTY_NAME',label)
+    if args.target=='mint22' and not host_matches:
+        # Mint's own CI image retains Ubuntu's os-release. Accept that exact
+        # image only with its Mint Zena repository, and preserve the real OS ID.
+        mint_image='linuxmintd/mint22.3-amd64@sha256:304bbf7ec2a61252962c5210467d231a141661490e8962f52fd4df7688370369'
+        sources=[Path('/etc/apt/sources.list'),*Path('/etc/apt/sources.list.d').glob('*.list'),*Path('/etc/apt/sources.list.d').glob('*.sources')]
+        mint_sources='\n'.join(p.read_text() for p in sources if p.is_file())
+        host_matches=(release.get('ID')=='ubuntu' and release.get('VERSION_ID')=='24.04' and
+            build_image==mint_image and 'packages.linuxmint.com' in mint_sources and 'zena' in mint_sources)
+        build_environment='Linux Mint 22.3 development image (Ubuntu 24.04 base)'
+    assert host_matches,release
     assert run(['dpkg','--print-architecture']) == 'amd64'
     args.output.mkdir(parents=True, exist_ok=True)
     version = args.version+'+'+args.target
@@ -91,6 +103,7 @@ exit 0
         write('usr/share/doc/impress/copyright',(ROOT/'LICENSE').read_text() if (ROOT/'LICENSE').exists() else (ROOT/'LICENSE.md').read_text())
         source_commit=os.environ.get('GITHUB_SHA') or run(['git','rev-parse','HEAD'],cwd=ROOT)
         info={'application_version':args.version,'package_version':version,'target':label,'architecture':'amd64','build_os':release,'source_commit':source_commit,'binary_source_commit':os.environ.get('IMPRESS_BINARY_SOURCE_SHA',source_commit),'rust':run(['rustc','--version']),'dependencies':dependency,'binaries':{name:digest(args.binaries/name) for name in ['Impress','impress-convert']}}
+        info.update(build_environment=build_environment,build_image=build_image)
         provenance=args.output/'BINARY-PROVENANCE.json'
         if provenance.exists(): info['validation_provenance']=json.loads(provenance.read_text())
         info_path=args.output/f'BUILD-INFO-{args.target}.json';info_path.write_text(json.dumps(info,indent=2)+'\n');install(info_path,'usr/share/doc/impress/BUILD-INFO.json')
