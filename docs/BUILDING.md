@@ -7,10 +7,10 @@ Rust 1.93.1. Build output belongs in `target/` and is not checked into Git.
 ## Linux
 
 Install a C/C++ toolchain, CMake, Clang/libclang, pkg-config and the GTK 3,
-PNG, JPEG, TIFF, Expat, OpenGL and GLU development packages. On Ubuntu,
+PNG, JPEG, TIFF, Expat, OpenSSL, OpenGL and GLU development packages. On Ubuntu,
 these include `build-essential`, `cmake`, `clang`, `libclang-dev`, `pkg-config`,
 `libgtk-3-dev`, `libpng-dev`, `libjpeg-dev`, `libtiff-dev`, `libexpat1-dev`,
-`libgl1-mesa-dev` and `libglu1-mesa-dev`.
+`libssl-dev`, `zlib1g-dev`, `libgl1-mesa-dev` and `libglu1-mesa-dev`.
 
 From the repository root:
 
