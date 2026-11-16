@@ -3,6 +3,7 @@
 - Add File → Recent with a remembered list of five successful opens or saves by default, a configurable count, and a clear-history command.
 - Use the dedicated Yaru Recent Files icon in a full-height dropdown aligned with the File ribbon.
 - Gently snap table moves, corner resizes and the outer column edge to the page margins shown by the rulers, with a live guide and matching saved geometry.
+- Publish separate Mint 22.x, Ubuntu 24.04/26.04 LTS and Debian 13 packages with native dependency metadata, checksums and installation/startup evidence.
 - Verify 194 Rust tests, 42 UI resource checks, native recent-file workflows and the saved geometry of snapped tables.
 
 ## 0.8.6-58 — Page-aligned rulers

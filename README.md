@@ -16,9 +16,15 @@ Format support depends on the features used in a document. The [DOCX](docs/DOCX-
 
 ## Get started
 
-[Download Impress from GitHub Releases](https://github.com/NullMagic2/Impress/releases/latest).
+Choose the release matching your Linux distribution (64-bit x86 / amd64):
 
-The Ubuntu package targets **Ubuntu 26.04, amd64**. Releases also include a standalone Linux document converter. Windows build scripts are included in the source; see the [build guide](docs/BUILDING.md).
+| System | Download |
+| --- | --- |
+| Linux Mint 22.x | [Mint packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-59-mint22) |
+| Ubuntu 24.04 / 26.04 LTS | [Ubuntu packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-59-ubuntu) |
+| Debian 13 | [Debian packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-59-debian13) |
+
+The packages include the desktop editor and command-line converter. See [Linux packages](docs/LINUX-PACKAGES.md) for installation and validation details. Windows build scripts are included in the source; see the [build guide](docs/BUILDING.md).
 
 Open Impress to start with an empty document, or use **File → Open** to work on an existing file. Save in `.impress` to keep the native document, or choose another supported format with **Save as**.
 
