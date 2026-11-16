@@ -89,7 +89,10 @@ if command -v gtk-update-icon-cache >/dev/null 2>&1; then gtk-update-icon-cache 
 exit 0
 ''',0o755)
         write('usr/share/doc/impress/copyright',(ROOT/'LICENSE').read_text() if (ROOT/'LICENSE').exists() else (ROOT/'LICENSE.md').read_text())
-        info={'application_version':args.version,'package_version':version,'target':label,'architecture':'amd64','build_os':release,'source_commit':os.environ.get('GITHUB_SHA',run(['git','rev-parse','HEAD'],cwd=ROOT)),'rust':run(['rustc','--version']),'dependencies':dependency,'binaries':{name:digest(args.binaries/name) for name in ['Impress','impress-convert']}}
+        source_commit=os.environ.get('GITHUB_SHA') or run(['git','rev-parse','HEAD'],cwd=ROOT)
+        info={'application_version':args.version,'package_version':version,'target':label,'architecture':'amd64','build_os':release,'source_commit':source_commit,'binary_source_commit':os.environ.get('IMPRESS_BINARY_SOURCE_SHA',source_commit),'rust':run(['rustc','--version']),'dependencies':dependency,'binaries':{name:digest(args.binaries/name) for name in ['Impress','impress-convert']}}
+        provenance=args.output/'BINARY-PROVENANCE.json'
+        if provenance.exists(): info['validation_provenance']=json.loads(provenance.read_text())
         info_path=args.output/f'BUILD-INFO-{args.target}.json';info_path.write_text(json.dumps(info,indent=2)+'\n');install(info_path,'usr/share/doc/impress/BUILD-INFO.json')
         subprocess.run(['desktop-file-validate',str(stage/'usr/share/applications/Impress.desktop')],check=True)
         package=args.output/f'impress_{args.version}_{args.target}_amd64.deb'

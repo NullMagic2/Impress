@@ -23,9 +23,13 @@ def main():
             assert (folder/'TESTS-PASSED.txt').read_text().strip()=='Rust and UI checks passed'
             assets.extend(folder.glob('*.deb'));assets.append(folder/f'BUILD-INFO-{target}.json')
             verification=folder/f'VERIFICATION-{target}.tar.gz'
-            subprocess.run(['tar','-czf',str(verification),'-C',str(folder),'validation','TESTS-PASSED.txt',f'tests-{target}.log'],check=True)
+            provenance=['BINARY-PROVENANCE.json'] if (folder/'BINARY-PROVENANCE.json').exists() else []
+            subprocess.run(['tar','-czf',str(verification),'-C',str(folder),'validation','TESTS-PASSED.txt',f'tests-{target}.log',*provenance],check=True)
             assets.append(verification)
             notes.append(f"- **{info['target']}**, amd64 — built on {info['build_os'].get('PRETTY_NAME',info['target'])}; dependencies generated from that environment.")
+            if info.get('validation_provenance'):
+                original=info['validation_provenance']
+                notes.append(f"  Binaries and passing tests came from [this build]({original['source_run']}) at `{info['binary_source_commit']}`. Application inputs and pinned build images were verified unchanged for this packaging revision; installation and startup checks were run again.")
         assert len([path for path in assets if path.suffix=='.deb'])==len(targets)
         with tempfile.TemporaryDirectory(prefix='impress-release-') as tmp:
             tmp=Path(tmp);checksums=tmp/f'SHA256SUMS-{suffix}.txt'

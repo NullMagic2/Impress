@@ -46,6 +46,13 @@ separate Mint, Ubuntu and Debian release entries only after all targets pass.
 The Ubuntu entry contains both LTS builds. Checksums, build metadata, test logs
 and a startup screenshot accompany the packages.
 
+For a packaging-only correction, the workflow can reuse binaries and passing
+test evidence from a completed run using `validated_run`. It verifies the
+original job's build and test results, unchanged application inputs and identical
+pinned build images, then repeats package installation and startup checks.
+Build metadata and verification archives record both source commits and the
+original run. Changes to application inputs require a fresh compilation and test run.
+
 These checks establish package installation and basic operation in the named
 container environments; they do not cover every display server, desktop or
 hardware configuration.
