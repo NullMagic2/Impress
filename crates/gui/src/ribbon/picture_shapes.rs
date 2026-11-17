@@ -152,7 +152,10 @@ pub(super) fn show(ribbon: &Ribbon) {
         .with_label(&crate::i18n::text("Close"))
         .build();
     close.on_click(move |_| window.end_modal(ID_CANCEL));
+    dialog_actions::size(close);
     footer.add(&close, 0, SizerFlag::empty(), 0);
+    footer.add_stretch_spacer(1);
+    dialog_actions::divider(&window, &root, dip(GAP_DIP));
     root.add_sizer(&footer, 0, SizerFlag::All | SizerFlag::Expand, dip(GAP_DIP));
     window.set_sizer(root, true);
     window.set_size(Size::new(dip(WIDTH_DIP), dip(HEIGHT_DIP)));

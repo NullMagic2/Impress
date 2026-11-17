@@ -198,8 +198,7 @@ fn choose_style_color(parent:&StyleEditorUi,initial:Option<&str>)->Option<Option
         let dc=AutoBufferedPaintDC::new(&surface);
         paint_rounded_surface(&dc,&surface,Colour::rgb(255,255,255),Colour::rgb(202,211,223),5);
         let dip=|n:i32|surface.from_dip(Size::new(n,n)).width;
-        if let Some(font)=Font::new_with_details(10,FontFamily::Default as i32,FontStyle::Normal as i32,
-            FontWeight::Normal as i32,false,"Segoe UI"){dc.set_font(&font);}
+        if let Some(font) = surface.get_font() { dc.set_font(&font); }
         let chosen=selected_for_paint.borrow();
         let active=chosen.as_ref().or(current_for_paint.as_ref());
         if active.is_none(){
@@ -255,6 +254,7 @@ fn choose_style_color(parent:&StyleEditorUi,initial:Option<&str>)->Option<Option
         }
         event.skip(true);
     });
+    #[cfg(windows)]
     let anchor=crate::gtk_native::to_screen(&parent.style_color_display,wxdragon::geometry::Point::new(0,parent.style_color_display.get_size().height+2));
     #[cfg(windows)] unsafe {
         use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowPos,SWP_NOSIZE,SWP_NOZORDER};
@@ -613,13 +613,6 @@ impl Ribbon{
   ui.style_color_display.set_min_size(ui.style_color_display.from_dip(Size::new(150,28)));
   let side=ui.style_font_size.get_size().height.max(field);
   for (button,icon,tip) in style_toolbar(&ui){skin_dialog_button(button,icon,tip,side,16);}
-  // Footer commands use the Ribbon painter too: outlined faces on the chrome,
-  // OK filled with the accent as the default button, Format with the combo caret.
-  for (button,kind,label) in [(ui.style_format,"dialog-menu","Format"),(ui.style_save,"dialog-default","OK"),(ui.style_cancel,"dialog","Cancel")]{
-    // The painted face draws its own caret; the native fallback keeps "Format ▾".
-    if skin::install(&ButtonSpec{button,name:"style_editor_command",label,icon:"",action:Action::StyleModify,kind,segment:"single",
-      tip:label,disabled:false,width_dip:88,height_dip:28,art_width_dip:0,art_height_dip:0}){button.set_label(&crate::i18n::text(&(label)));}
-  }
   install_rounded_surfaces(&ui);
   install_style_color_display(&ui);
   ui.style_editor.set_escape_id(StyleEditorUi::xrc_id("style_cancel"));

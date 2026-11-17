@@ -159,7 +159,7 @@ fn skin(button: Button, kind: &'static str, label: &'static str, icon: &'static 
 }
 
 /// Dialog chrome shared by all Format dialogs: Ribbon-style tabs joined to the
-/// white rounded card, one page per tab, skinned footer buttons, and a size
+/// white rounded card, one page per tab, native footer buttons, and a size
 /// that fits the largest page (so switching tabs never resizes the dialog).
 pub(super) struct Chrome { dialog: Dialog, card: Panel, tabs: Vec<Button>, pages: Vec<Panel>, current: Cell<usize> }
 impl Chrome {
@@ -167,9 +167,8 @@ impl Chrome {
            cancel: Option<Button>, footer: &[(Button, &'static str)], card_buttons: &[(Button, &'static str)]) -> Rc<Chrome> {
         let chrome = Rc::new(Chrome { dialog, card, tabs: tabs.iter().map(|t| t.0).collect(), pages: pages.to_vec(), current: Cell::new(0) });
         for &(tab, label) in tabs { skin(tab, "tab", label, ""); }
-        skin(ok.0, "dialog-default", ok.1, "");
-        if let Some(cancel) = cancel { skin(cancel, "dialog", "Cancel", ""); }
-        for &(button, label) in footer { skin(button, "dialog", label, ""); }
+        ok.0.set_label(&crate::i18n::text(ok.1));
+        for &(button, label) in footer { button.set_label(&crate::i18n::text(label)); }
         for &(button, label) in card_buttons { skin(button, "pane", label, ""); }
         card.set_background_style(BackgroundStyle::Paint);
         let weak = Rc::downgrade(&chrome);
@@ -1191,18 +1190,14 @@ fn numbering_dialog(parent: Dialog, pending: &Pending) -> bool {
     { let ui2=Rc::clone(&ui);let bullets=Rc::clone(&bullets);let pending=Rc::clone(pending);
       ui.num_define_bullet.on_click(move |_| {
         let initial=pending.borrow().get("num_custom_bullet").cloned().unwrap_or_else(||"★".into());
-        let prompt=wxdragon::dialogs::text_entry_dialog::TextEntryDialog::builder(&ui2.num_dialog,
-            &crate::i18n::text(&("Bullet character:")),&crate::i18n::text(&("Define New Bullet"))).with_default_value(&initial).build();
-        if ({crate::placement::centre(&prompt);prompt.show_modal()})==ID_OK { let Some(marker)=prompt.get_value() else{return};
+        if let Some(marker) = input_dialog::text(&ui2.num_dialog, "Define New Bullet", "Bullet character:", &initial, false) {
             if !marker.trim().is_empty() && marker.chars().count()<=8 {pending.borrow_mut().set("num_custom_bullet",marker);bullets.select(BULLETS.len());}
         }
       }); }
     { let ui2=Rc::clone(&ui);let numbers=Rc::clone(&numbers);let pending=Rc::clone(pending);
       ui.num_define_number.on_click(move |_| {
         let initial=pending.borrow().get("num_custom_number").cloned().unwrap_or_else(||"%1.".into());
-        let prompt=wxdragon::dialogs::text_entry_dialog::TextEntryDialog::builder(&ui2.num_dialog,
-            &crate::i18n::text(&("Number format (use %1 for the number):")),&crate::i18n::text(&("Define New Number Format"))).with_default_value(&initial).build();
-        if ({crate::placement::centre(&prompt);prompt.show_modal()})==ID_OK { let Some(template)=prompt.get_value() else{return};
+        if let Some(template) = input_dialog::text(&ui2.num_dialog, "Define New Number Format", "Number format (use %1 for the number):", &initial, false) {
             if template.contains("%1") && template.chars().count()<=32 {pending.borrow_mut().set("num_custom_number",template);numbers.select(NUMBERS.len());}
         }
       }); }

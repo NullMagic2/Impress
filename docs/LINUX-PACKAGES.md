@@ -31,7 +31,7 @@ Build the release binaries inside the target distribution, following
 [BUILDING.md](BUILDING.md), then run:
 
 ```sh
-python3 packaging/linux/build-deb.py --target debian13 --version 0.8.6-62
+python3 packaging/linux/build-deb.py --target debian13 --version 0.8.6-64
 sudo apt install ./dist/*.deb
 packaging/linux/verify-installed.sh dist/validation
 ```

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="158" viewBox="0 0 128 158">
+  <rect width="128" height="158" fill="#4c3b4f"/>
+  <path d="M4 6h121 M4 14h121 M4 22h121 M4 30h121 M4 38h121 M4 46h121 M4 54h121 M4 62h121 M4 70h121 M4 78h121 M4 86h121 M4 94h121 M4 102h121 M4 110h121 M4 118h121 M4 126h121 M4 134h121 M4 142h121 M4 150h121" fill="none" stroke="#695465" stroke-dasharray="1 7"/>
+  <g transform="translate(64 79) rotate(-8) scale(.73)">
+    <rect x="-68" y="-42" width="50" height="30" rx="6" fill="#a9684b"/>
+    <rect x="-68" y="-34" width="136" height="106" rx="6" fill="#a9684b"/>
+    <!-- sheets -->
+    <rect x="-68" y="-16" width="136" height="85" rx="5" fill="#e6986e"/>
+    <rect x="-63" y="-11" width="126" height="75" rx="3" stroke="#ad704f" stroke-dasharray="3 2" fill="none"/>
+    <g stroke="#7d4a3b" stroke-width="2" fill="none">
+      <circle cx="0" cy="26" r="14.5"/><path d="M0 16v10l7 4"/>
+    </g>
+  </g>
+</svg>

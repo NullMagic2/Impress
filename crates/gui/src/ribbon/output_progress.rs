@@ -45,6 +45,7 @@ impl Progress {
             .with_label(&crate::i18n::text(title(state.printing)))
             .with_size(Size::new(dip(WIDTH_DIP - 2 * GAP_DIP), -1))
             .build();
+        dialog_actions::heading(&message);
         let root = BoxSizer::builder(Orientation::Vertical).build();
         root.add(
             &message,
@@ -66,10 +67,12 @@ impl Progress {
             .with_id(ID_CANCEL)
             .with_label(&crate::i18n::text("Cancel"))
             .build();
+        dialog_actions::size(cancel);
+        dialog_actions::divider(&window, &root, dip(GAP_DIP));
         root.add(
             &cancel,
             0,
-            SizerFlag::All | SizerFlag::AlignRight,
+            SizerFlag::All | SizerFlag::AlignCenterHorizontal,
             dip(GAP_DIP),
         );
         window.set_sizer_and_fit(root, true);

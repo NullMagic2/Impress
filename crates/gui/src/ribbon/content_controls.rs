@@ -159,9 +159,8 @@ impl Ribbon {
             .with_id(ID_CANCEL)
             .with_label(&crate::i18n::text("Cancel"))
             .build();
-        buttons.add_stretch_spacer(1);
-        buttons.add(&ok, 0, SizerFlag::Right, gap);
-        buttons.add(&cancel, 0, SizerFlag::empty(), 0);
+        dialog_actions::pair(&buttons, ok, cancel);
+        dialog_actions::divider(&dialog, &root, gap);
         root.add_sizer(&buttons, 0, SizerFlag::All | SizerFlag::Expand, gap);
         dialog.set_sizer_and_fit(root, true);
         dialog.set_escape_id(ID_CANCEL);

@@ -47,6 +47,7 @@ impl Manager {
         let heading = StaticText::builder(&window)
             .with_label(&crate::i18n::text(&("Installed spelling dictionaries")))
             .build();
+        dialog_actions::heading(&heading);
         let list = ListCtrl::builder(&window)
             .with_style(ListCtrlStyle::Report | ListCtrlStyle::SingleSel | ListCtrlStyle::NoSort)
             .build();
@@ -70,6 +71,7 @@ impl Manager {
             .with_id(ID_CANCEL)
             .with_label(&crate::i18n::text(&("Close")))
             .build();
+        dialog_actions::size(close);
         close.set_default();
         let root = BoxSizer::builder(Orientation::Vertical).build();
         root.add(
@@ -85,6 +87,7 @@ impl Manager {
             dip(GAP_DIP),
         );
         root.add(&status, 0, SizerFlag::All | SizerFlag::Expand, dip(GAP_DIP));
+        dialog_actions::divider(&window, &root, dip(GAP_DIP));
         let buttons = BoxSizer::builder(Orientation::Horizontal).build();
         for button in [add, delete, refresh_button] {
             buttons.add(&button, 0, SizerFlag::Right, dip(GAP_DIP));
@@ -94,7 +97,7 @@ impl Manager {
         root.add_sizer(
             &buttons,
             0,
-            SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom | SizerFlag::Expand,
+            SizerFlag::All | SizerFlag::Expand,
             dip(GAP_DIP),
         );
         window.set_sizer(root, true);
@@ -408,9 +411,8 @@ fn add_dialog(
         dip(GAP_DIP),
     );
     let buttons = BoxSizer::builder(Orientation::Horizontal).build();
-    buttons.add_stretch_spacer(1);
-    buttons.add(&add, 0, SizerFlag::Right, dip(GAP_DIP));
-    buttons.add(&cancel, 0, SizerFlag::empty(), 0);
+    dialog_actions::pair(&buttons, add, cancel);
+    dialog_actions::divider(&window, &root, dip(GAP_DIP));
     root.add_sizer(
         &buttons,
         0,

@@ -52,6 +52,7 @@ impl Manager {
         let heading = StaticText::builder(&window)
             .with_label(&crate::i18n::text(&("Styles in this document")))
             .build();
+        dialog_actions::heading(&heading);
         root.add(&heading, 0, SizerFlag::All, dip(GAP_DIP));
         let body = BoxSizer::builder(Orientation::Horizontal).build();
         let list = ListBox::builder(&window).build();
@@ -99,10 +100,12 @@ impl Manager {
             .with_label(&crate::i18n::text(&("Close")))
             .build();
         close.set_default();
+        dialog_actions::size(close);
+        dialog_actions::divider(&window, &root, dip(GAP_DIP));
         root.add(
             &close,
             0,
-            SizerFlag::AlignRight | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom,
+            SizerFlag::AlignCenterHorizontal | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom,
             dip(GAP_DIP),
         );
         window.set_sizer(root, true);

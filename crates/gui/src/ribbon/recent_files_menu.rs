@@ -6,7 +6,12 @@ use wxdragon::{
     dialogs::{DialogBuilder, DialogStyle},
     id::ID_CANCEL,
     sizers::{BoxSizer, Orientation, SizerFlag},
-    widgets::{checkbox::CheckBox, spinctrl::SpinCtrl, static_text::StaticText},
+    widgets::{
+        StaticBitmap, StaticLine,
+        checkbox::CheckBox,
+        static_text::StaticText,
+        textctrl::{TextCtrl, TextCtrlStyle},
+    },
 };
 const FIRST_ID: i32 = 32_650;
 const CLEAR_ID: i32 = 32_675;
@@ -81,13 +86,15 @@ impl Ribbon {
                 if id == CLEAR_ID {
                     history.files.clear();
                 } else {
-                    let Some(count) = settings_dialog(&self.ui.main_frame, history.limit) else {
+                    let Some((enabled, count)) = settings_dialog(&self.ui.main_frame, &history)
+                    else {
                         return Ok(());
                     };
                     // A background open/save may have recorded a file while
                     // this modal dialog was open; change only the latest limit.
                     history = History::load(&settings);
-                    history.set_limit(count);
+                    history.preferred_limit = count;
+                    history.set_limit(if enabled { count } else { 0 });
                 }
                 history.store(&settings)
             })()
@@ -103,52 +110,134 @@ impl Ribbon {
     }
 }
 
-/// Native settings controls keep numeric entry bounded and use the desktop theme.
-fn settings_dialog(parent:&wxdragon::widgets::frame::Frame,limit:usize)->Option<usize> {
-    let window=DialogBuilder::new(parent,&crate::i18n::text("Recent files"))
-        .with_style(DialogStyle::DefaultDialogStyle).build();
-    let dip=move |v|window.from_dip_int(v);
-    let root=BoxSizer::builder(Orientation::Vertical).build();
-    let row=BoxSizer::builder(Orientation::Horizontal).build();
-    let remember=CheckBox::builder(&window)
+// The illustration scales with the display; widgets use the platform theme.
+fn pocket(count: usize) -> Option<wxdragon::bitmap_bundle::BitmapBundle> {
+    use std::fmt::Write;
+    const SHEET_COLOURS: [&str; 4] = ["#fff8e9", "#eadcc5", "#dbc2af", "#d0b5c1"];
+    let mut sheets = String::new();
+    for index in (0..count.min(SHEET_COLOURS.len())).rev() {
+        let angle = 5.0 - index as f32 * (4.0 + count as f32 / 8.0);
+        let top = -65.0 - index as f32 * (2.0 + count as f32 / 10.0);
+        let colour = SHEET_COLOURS[index];
+        write!(
+            sheets,
+            r##"<g transform="rotate({angle}) translate(-48 {top})">
+            <rect width="98" height="95" rx="3" fill="{colour}"/>
+            <path d="M11 12h29" stroke="#cbbdb4" stroke-width="3"/>
+            <path d="M11 18h69 M11 23h63 M11 28h57" stroke="#dbd1c6"/></g>"##
+        )
+        .ok()?;
+    }
+    let svg =
+        include_str!("../../assets/dialogs/recent-pocket.svg").replace("<!-- sheets -->", &sheets);
+    wxdragon::bitmap_bundle::BitmapBundle::from_svg_text(&svg, Size::new(128, 158))
+}
+
+fn settings_dialog(
+    parent: &wxdragon::widgets::frame::Frame,
+    history: &History,
+) -> Option<(bool, usize)> {
+    let window = DialogBuilder::new(parent, &crate::i18n::text("Recent files"))
+        .with_style(DialogStyle::DefaultDialogStyle)
+        .build();
+    let dip = |value| window.from_dip_int(value);
+    let body = BoxSizer::builder(Orientation::Horizontal).build();
+    let illustration = pocket(if history.limit > 0 { history.limit } else { 0 }).map(|bundle| {
+        let picture =
+            StaticBitmap::new_with_bitmap_bundle(&window, wxdragon::id::ID_ANY as i32, &bundle);
+        body.add(&picture, 0, SizerFlag::AlignCenterVertical, 0);
+        picture
+    });
+    let content = BoxSizer::builder(Orientation::Vertical).build();
+    let row = BoxSizer::builder(Orientation::Horizontal).build();
+    let remember = CheckBox::builder(&window)
         .with_label(&crate::i18n::text("Remember up to"))
         .build();
-    remember.set_value(limit>0);
-    let count=SpinCtrl::builder(&window).with_range(1,recent_files::MAX_LIMIT as i32)
-        .with_initial_value(if limit==0{recent_files::DEFAULT_LIMIT}else{limit.min(recent_files::MAX_LIMIT)} as i32)
-        .with_size(Size::new(dip(136),-1)).build();
-    let suffix=StaticText::builder(&window)
+    remember.set_value(history.limit > 0);
+    let count = TextCtrl::builder(&window)
+        .with_value(&history.preferred_limit.to_string())
+        .with_style(TextCtrlStyle::Centre)
+        .with_size(Size::new(dip(44), -1))
+        .build();
+    count.set_name(&crate::i18n::text("Number of files:"));
+    count.set_tooltip(&crate::i18n::text("Enter a number from 1 to 20."));
+    let suffix = StaticText::builder(&window)
         .with_label(&crate::i18n::text("recently opened files."))
         .build();
-    row.add(&remember,0,SizerFlag::AlignCenterVertical|SizerFlag::Right,dip(8));
-    row.add(&count,0,SizerFlag::AlignCenterVertical|SizerFlag::Right,dip(8));
-    row.add(&suffix,0,SizerFlag::AlignCenterVertical,0);
-    let update=move || {
-        let enabled=remember.is_checked();count.enable(enabled);suffix.enable(enabled);
+    row.add(
+        &remember,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::Right,
+        dip(7),
+    );
+    row.add(
+        &count,
+        0,
+        SizerFlag::AlignCenterVertical | SizerFlag::Right,
+        dip(7),
+    );
+    row.add(&suffix, 0, SizerFlag::AlignCenterVertical, 0);
+    content.add_sizer(&row, 0, SizerFlag::AlignCenterHorizontal, 0);
+    let line = StaticLine::builder(&window).build();
+    content.add(
+        &line,
+        0,
+        SizerFlag::Expand | SizerFlag::Top | SizerFlag::Bottom,
+        dip(16),
+    );
+    let footer = BoxSizer::builder(Orientation::Horizontal).build();
+    let ok = Button::builder(&window)
+        .with_id(ID_OK)
+        .with_label(&crate::i18n::text("OK"))
+        .build();
+    let cancel = Button::builder(&window)
+        .with_id(ID_CANCEL)
+        .with_label(&crate::i18n::text("Cancel"))
+        .build();
+    dialog_actions::pair(&footer, ok, cancel);
+    content.add_sizer(&footer, 0, SizerFlag::Expand, 0);
+    body.add_sizer(
+        &content,
+        1,
+        SizerFlag::All | SizerFlag::AlignCenterVertical,
+        dip(21),
+    );
+
+    let last_valid = Rc::new(Cell::new(history.preferred_limit));
+    let saved = last_valid.clone();
+    let update = move || {
+        let enabled = remember.is_checked();
+        let parsed = count
+            .get_value()
+            .trim()
+            .parse::<usize>()
+            .ok()
+            .filter(|n| (1..=recent_files::MAX_LIMIT).contains(n));
+        if let Some(value) = parsed {
+            saved.set(value);
+        }
+        count.enable(enabled);
+        suffix.enable(enabled);
+        ok.enable(!enabled || parsed.is_some());
+        if let Some(picture) = illustration {
+            if let Some(bundle) = pocket(if enabled { saved.get() } else { 0 }) {
+                StaticBitmap::set_bitmap_bundle(&picture, &bundle);
+            }
+        }
     };
-    remember.on_toggled(move |_|update());
+    let on_toggle = update.clone();
+    remember.on_toggled(move |_| on_toggle());
     update();
-    root.add_sizer(&row,0,SizerFlag::All|SizerFlag::Expand,dip(20));
-    let footer=BoxSizer::builder(Orientation::Horizontal).build();
-    let cancel=Button::builder(&window).with_id(ID_CANCEL).with_label(&crate::i18n::text("Cancel")).build();
-    let ok=Button::builder(&window).with_id(ID_OK).with_label(&crate::i18n::text("OK")).build();
-    for button in [cancel,ok] {
-        button.set_min_size(Size::new(dip(112),dip(36)));
-    }
-    footer.add_stretch_spacer(1);
-    let buttons=if cfg!(windows){[ok,cancel]}else{[cancel,ok]};
-    footer.add(&buttons[0],0,SizerFlag::Right,dip(16));
-    footer.add(&buttons[1],0,SizerFlag::empty(),0);
-    footer.add_stretch_spacer(1);
-    root.add_sizer(&footer,0,SizerFlag::Left|SizerFlag::Right|SizerFlag::Bottom|SizerFlag::Expand,dip(20));
-    window.set_sizer_and_fit(root,true);
-    window.set_escape_id(ID_CANCEL);ok.set_default();
-    ok.on_click(move |_|window.end_modal(ID_OK));
-    cancel.on_click(move |_|window.end_modal(ID_CANCEL));
+    count.on_text_updated(move |_| update());
+    window.set_sizer_and_fit(body, true);
+    window.set_escape_id(ID_CANCEL);
+    ok.set_default();
+    ok.on_click(move |_| window.end_modal(ID_OK));
+    cancel.on_click(move |_| window.end_modal(ID_CANCEL));
     crate::placement::centre(&window);
     remember.set_focus();
-    let accepted=window.show_modal()==ID_OK;
-    let selected=if remember.is_checked(){count.value() as usize}else{0};
+    let accepted = window.show_modal() == ID_OK;
+    let result = (remember.is_checked(), last_valid.get());
     window.destroy();
-    accepted.then_some(selected)
+    accepted.then_some(result)
 }

@@ -2,22 +2,16 @@
 //! RefCell borrow, then show a modal dialog (wx timers continue during dialogs).
 use super::*;
 use model::{AnchorRange,TextAnchor,inline_text};
-use wxdragon::dialogs::text_entry_dialog::{TextEntryDialog,TextEntryDialogStyle};
+
 
 pub(super) struct SpellJob { pub generation:u64, pub revision:u64, pub selection_only:bool, pub dictionary:crate::spelling::Dictionary, pub receiver:Receiver<Result<crate::spelling::Report,String>> }
 impl Ribbon {
     pub(super) fn choose_review(&self,title:&str,message:&str,items:&[String])->Option<usize>{
         if items.is_empty(){MessageDialog::builder(&self.ui.main_frame,&crate::i18n::text(&("No entries yet.")),&crate::i18n::text(&(title))).build().show_modal();return None;}
-        let refs=items.iter().map(String::as_str).collect::<Vec<_>>();
-        let d=SingleChoiceDialog::builder(&self.ui.main_frame,&crate::i18n::text(&(message)),&crate::i18n::text(&(title)),&refs).build();
-        d.set_selection(0);if ({crate::placement::centre(&d);d.show_modal()})!=ID_OK{return None;}usize::try_from(d.get_selection()).ok().filter(|&i|i<items.len())
+        input_dialog::choice(&self.ui.main_frame, title, message, items)
     }
     pub(super) fn text_review(&self,title:&str,message:&str,initial:&str,multiline:bool)->Option<String>{
-        // wxTE_MULTILINE is 0x0020; wxDragon's text-entry style wrapper does not
-        // name the generic text-control flag, but forwards retained bits to wx.
-        let style=if multiline{TextEntryDialogStyle::from_bits_retain(TextEntryDialogStyle::Default.bits()|0x0020)}else{TextEntryDialogStyle::Default};
-        let d=TextEntryDialog::builder(&self.ui.main_frame,&crate::i18n::text(&(message)),&crate::i18n::text(&(title))).with_default_value(initial).with_style(style).build();
-        if ({crate::placement::centre(&d);d.show_modal()})!=ID_OK{return None;}d.get_value()
+        input_dialog::text(&self.ui.main_frame, title, message, initial, multiline)
     }
     pub(super) fn review_info(&self,title:&str,text:&str){MessageDialog::builder(&self.ui.main_frame,&crate::i18n::text(&(text)),&crate::i18n::text(&(title))).build().show_modal();}
     pub(super) fn bookmarks(&self)->Result<(),String>{

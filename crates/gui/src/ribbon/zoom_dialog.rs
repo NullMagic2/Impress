@@ -8,7 +8,7 @@ use wxdragon::{
 };
 
 const GAP_DIP: i32 = 12;
-const PERCENT_WIDTH_DIP: i32 = 100;
+const PERCENT_WIDTH_DIP: i32 = 136;
 const ZOOM_STEP_PERCENT: i32 = 10;
 
 pub(super) fn show(ribbon: &Ribbon) {
@@ -118,9 +118,8 @@ pub(super) fn show(ribbon: &Ribbon) {
         .with_id(ID_CANCEL)
         .with_label(&crate::i18n::text("Cancel"))
         .build();
-    footer.add_stretch_spacer(1);
-    footer.add(&ok, 0, SizerFlag::Right, dip(GAP_DIP));
-    footer.add(&cancel, 0, SizerFlag::empty(), 0);
+    dialog_actions::pair(&footer, ok, cancel);
+    dialog_actions::divider(&window, &root, dip(GAP_DIP));
     root.add_sizer(&footer, 0, SizerFlag::All | SizerFlag::Expand, dip(GAP_DIP));
     window.set_sizer_and_fit(root, true);
     window.set_escape_id(ID_CANCEL);

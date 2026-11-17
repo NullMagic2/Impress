@@ -212,15 +212,20 @@
         </object>
       </object>
       <object class="sizeritem">
+        <flag>wxEXPAND|wxLEFT|wxRIGHT</flag>
+        <border>12</border>
+        <object class="wxStaticLine"/>
+      </object>
+      <object class="sizeritem">
         <option>0</option>
-        <flag>wxALIGN_RIGHT|wxALL</flag>
+        <flag>wxALIGN_CENTER_HORIZONTAL|wxALL</flag>
         <border>10</border>
         <object class="wxBoxSizer">
           <orient>wxHORIZONTAL</orient>
           <object class="sizeritem">
             <option>0</option>
             <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
-            <border>5</border>
+            <border>8</border>
             <object class="wxButton" name="find_previous">
               <label>Find Previous</label>
               <minsize>86,28</minsize>
@@ -229,7 +234,7 @@
           <object class="sizeritem">
             <option>0</option>
             <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
-            <border>5</border>
+            <border>8</border>
             <object class="wxButton" name="find_next">
               <label>Find Next</label>
               <minsize>86,28</minsize>
@@ -239,7 +244,7 @@
           <object class="sizeritem">
             <option>0</option>
             <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
-            <border>5</border>
+            <border>8</border>
             <object class="wxButton" name="find_replace_one">
               <label>Replace</label>
               <minsize>86,28</minsize>
@@ -248,7 +253,7 @@
           <object class="sizeritem">
             <option>0</option>
             <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
-            <border>5</border>
+            <border>8</border>
             <object class="wxButton" name="find_replace_all">
               <label>Replace All</label>
               <minsize>86,28</minsize>
@@ -257,7 +262,7 @@
           <object class="sizeritem">
             <option>0</option>
             <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
-            <border>5</border>
+            <border>8</border>
             <object class="wxButton" name="find_close">
               <label>Close</label>
               <minsize>86,28</minsize>

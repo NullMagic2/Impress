@@ -361,6 +361,12 @@
       </object>
       <object class="sizeritem">
         <option>0</option>
+        <flag>wxEXPAND|wxLEFT|wxRIGHT|wxTOP</flag>
+        <border>12</border>
+        <object class="wxStaticLine" />
+      </object>
+      <object class="sizeritem">
+        <option>0</option>
         <flag>wxEXPAND|wxALL</flag>
         <border>12</border>
         <object class="wxBoxSizer">
@@ -371,29 +377,34 @@
             <border>0</border>
             <object class="wxButton" name="key_assign">
               <label>Assign</label>
-              <size>96,28</size>
-              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
             </object>
+            <minsize>96,-1</minsize>
+          </object>
+          <object class="spacer">
+            <size>12,1</size>
+            <option>0</option>
           </object>
           <object class="sizeritem">
             <option>0</option>
-            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
-            <border>8</border>
+            <flag>wxALIGN_CENTER_VERTICAL</flag>
+            <border>0</border>
             <object class="wxButton" name="key_remove">
               <label>Remove</label>
-              <size>96,28</size>
-              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
             </object>
+            <minsize>96,-1</minsize>
+          </object>
+          <object class="spacer">
+            <size>12,1</size>
+            <option>0</option>
           </object>
           <object class="sizeritem">
             <option>0</option>
-            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
-            <border>8</border>
+            <flag>wxALIGN_CENTER_VERTICAL</flag>
+            <border>0</border>
             <object class="wxButton" name="key_reset">
               <label>Reset All…</label>
-              <size>96,28</size>
-              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
             </object>
+            <minsize>96,-1</minsize>
           </object>
           <object class="spacer">
             <size>1,1</size>
@@ -405,10 +416,9 @@
             <border>0</border>
             <object class="wxButton" name="key_ok">
               <label>Close</label>
-              <size>88,28</size>
-              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
               <default>1</default>
             </object>
+            <minsize>96,-1</minsize>
           </object>
         </object>
       </object>

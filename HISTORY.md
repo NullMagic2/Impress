@@ -1,3 +1,13 @@
+## 0.8.6-64 — Native dialog actions and recent-file preferences
+
+- Type the recent-file count beside an illustrated document pocket. Impress remembers the count when history is disabled and re-enabled.
+- Use native dialog action buttons, consistent spacing, and separated footers across the editing, layout, and output dialogs. Review prompts support resizable lists and long text.
+
+## 0.8.6-63 — Recent files dialog layout
+
+- Lay the Recent files dialog out top to bottom: a “Remember recently opened files” checkbox with a left-aligned “Number of files” spinbox beneath it.
+- Keep Cancel/OK centered in the platform's order, at natural width instead of oversized, with a wider gap above them and consistent margins.
+
 ## 0.8.6-62 — Dialog button alignment
 
 - Center the Recent files dialog buttons, give them matching padded widths, and increase the gap between them.

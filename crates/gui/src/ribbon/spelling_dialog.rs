@@ -92,6 +92,7 @@ impl SpellingDialog {
         let heading = StaticText::builder(&window)
             .with_label(&crate::i18n::text(&("Not in dictionary")))
             .build();
+        dialog_actions::heading(&heading);
         let language = StaticText::builder(&window).with_label(&crate::i18n::text(&(""))).build();
         let context = TextCtrl::builder(&window)
             .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::ReadOnly | TextCtrlStyle::Rich2)
@@ -150,12 +151,11 @@ impl SpellingDialog {
                 buttons.add_spacer(dip(GAP_DIP));
             }
         }
-        buttons.add_stretch_spacer(1);
         let close = Button::builder(&window)
             .with_id(ID_CANCEL)
             .with_label(&crate::i18n::text(&("Close")))
             .build();
-        buttons.add(&close, 0, SizerFlag::Expand, 0);
+        dialog_actions::size(close);
         body.add_sizer(
             &fields,
             1,
@@ -176,7 +176,12 @@ impl SpellingDialog {
             dip(GAP_DIP),
         );
         let status = StaticText::builder(&window).with_label(&crate::i18n::text(&(""))).build();
-        root.add(&status, 0, SizerFlag::Expand | SizerFlag::All, dip(GAP_DIP));
+        root.add_spacer(dip(GAP_DIP));
+        dialog_actions::divider(&window, &root, dip(GAP_DIP));
+        let footer = BoxSizer::builder(Orientation::Horizontal).build();
+        footer.add(&status, 1, SizerFlag::AlignCenterVertical | SizerFlag::Right, dip(GAP_DIP));
+        footer.add(&close, 0, SizerFlag::AlignCenterVertical, 0);
+        root.add_sizer(&footer, 0, SizerFlag::Expand | SizerFlag::All, dip(GAP_DIP));
         window.set_sizer(root, true);
         let this = Rc::new(Self {
             window,

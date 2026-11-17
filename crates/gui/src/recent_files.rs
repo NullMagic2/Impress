@@ -12,12 +12,14 @@ pub const MAX_LIMIT: usize = 20;
 pub struct History {
     pub limit: usize,
     pub files: Vec<PathBuf>,
+    pub preferred_limit: usize,
 }
 impl Default for History {
     fn default() -> Self {
         Self {
             limit: DEFAULT_LIMIT,
             files: Vec::new(),
+            preferred_limit: DEFAULT_LIMIT,
         }
     }
 }
@@ -33,6 +35,11 @@ impl History {
     }
     fn normalize(&mut self) {
         self.limit = self.limit.min(MAX_LIMIT);
+        if self.limit > 0 {
+            self.preferred_limit = self.limit;
+        } else if !(1..=MAX_LIMIT).contains(&self.preferred_limit) {
+            self.preferred_limit = DEFAULT_LIMIT;
+        }
         let mut seen = std::collections::HashSet::new();
         self.files
             .retain(|path| path.is_absolute() && seen.insert(path.clone()));

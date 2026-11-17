@@ -108,6 +108,7 @@ pub fn hide_system_title_bar(window: &impl WxWidget) -> bool {
     if handle.is_null() { return false; }
     unsafe {
         if ffi::gtk_widget_get_realized(handle) != 0 { return false; }
+        ffi::gtk_style_context_add_class(ffi::gtk_widget_get_style_context(handle), c"impress-main-window".as_ptr());
         let screen = ffi::gdk_screen_get_default();
         if !screen.is_null() {
             let provider = ffi::gtk_css_provider_new();
@@ -138,7 +139,7 @@ pub fn set_title_bar_colour(colour: [u8; 3]) {
         // Without transitions: the theme fades a button's hover state over
         // 200 ms, and moving or resizing the window under the pointer made
         // the whole Ribbon repaint every frame for that long.
-        let css = format!(".impress-titlebar, .titlebar.impress-titlebar, headerbar.impress-titlebar {{ min-height: 0; padding: 0; margin: 0; border: none; box-shadow: none; background: rgb({}, {}, {}); }} button {{ transition: none; }}",
+        let css = format!(".impress-titlebar, .titlebar.impress-titlebar, headerbar.impress-titlebar {{ min-height: 0; padding: 0; margin: 0; border: none; box-shadow: none; background: rgb({}, {}, {}); }} .impress-main-window button {{ transition: none; }}",
             colour[0], colour[1], colour[2]);
         let Ok(css) = std::ffi::CString::new(css) else { return; };
         ffi::gtk_css_provider_load_from_data(provider, css.as_ptr(), -1, std::ptr::null_mut());

@@ -2,6 +2,9 @@
 //! this module owns commands, native widgets, UI state and embedded icon images.
 mod interface_language;
 mod zoom_dialog;
+mod dialog_actions;
+mod document_info;
+mod input_dialog;
 mod header_footer_gallery;
 mod art;
 mod font_preview;
@@ -93,7 +96,7 @@ use editor::FormattingSummary;
 use std::{cell::Cell, collections::HashMap, sync::{OnceLock,mpsc::{self, Receiver, TryRecvError}}};
 use wxdragon::{
     color::Colour,
-    dialogs::{colour_dialog::ColourDialog, message_dialog::MessageDialog, single_choice_dialog::SingleChoiceDialog},
+    dialogs::{colour_dialog::ColourDialog, message_dialog::MessageDialog},
     event::{menu_events::MenuEvents, scroll_events::ScrollEvents, text_events::TextEvents},
     id::ID_OK,
     menus::Menu,
@@ -619,14 +622,9 @@ impl Ribbon {
                 let mut insert_new = existing.is_none();
                 if let Some((width, height)) = existing {
                     let choices = ["Insert another picture…", "Scale to 50%", "Scale to 75%", "Scale to 125%", "Delete picture"];
-                    let dialog = SingleChoiceDialog::builder(
-                        &self.ui.main_frame,
-                        &crate::i18n::text(&("The caret is next to an inline picture.")),
-                        &crate::i18n::text(&("Picture")),
-                        &choices,
-                    ).build();
-                    if ({crate::placement::centre(&dialog);dialog.show_modal()}) == ID_OK {
-                        match dialog.get_selection() {
+                    let choices = choices.map(crate::i18n::text);
+                    if let Some(index) = input_dialog::choice(&self.ui.main_frame, "Picture", "The caret is next to an inline picture.", &choices) {
+                        match index {
                             0 => insert_new = true,
                             1 => self.edit(|e| e.resize_inline_image_at_caret(width * 0.5, height * 0.5))?,
                             2 => self.edit(|e| e.resize_inline_image_at_caret(width * 0.75, height * 0.75))?,
@@ -698,16 +696,11 @@ impl Ribbon {
             Action::Print => output_dialogs::print(self)?,
             Action::WordCount => {
                 let stats = navigation::count_body(&self.state.borrow().editor.document);
-                let message = format!("Body text\n\n{} words (whitespace-delimited)\n{} Unicode characters, including spaces\n{} paragraphs\n\nEquations and image contents are not counted as text.", stats.words, stats.characters, stats.paragraphs);
-                MessageDialog::builder(&self.ui.main_frame, &crate::i18n::text(&(&message)), &crate::i18n::text(&("Word count"))).build().show_modal();
+                document_info::word_count(&self.ui.main_frame, stats);
             }
             Action::RefreshSource => { self.source_revision.set(None); self.request_source(); }
             Action::CopySource => { self.source_copy_pending.set(true); self.request_source(); }
-            Action::Help => {
-                MessageDialog::builder(&self.ui.main_frame,
-                    &crate::i18n::text(&(concat!("Impress ", env!("CARGO_PKG_VERSION"), "\n\nDocument editing, styles, DOCX, Typst, RTF, PDF output, and native Windows printing."))),
-                    &crate::i18n::text(&("About Impress"))).build().show_modal();
-            }
+            Action::Help => document_info::about(&self.ui.main_frame),
             Action::Contents => self.contents()?,
             Action::Footnotes => self.footnotes()?, Action::Bookmarks => self.bookmarks()?,
             Action::Comments => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.show(!p.shown()); } }

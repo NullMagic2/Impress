@@ -5,7 +5,7 @@ tools/build_format_dialogs.py (the Format ▾ dialogs). One set of interface
 tokens and one alignment grid, so every dialog reads like the Ribbon: a white
 rounded card on the pale blue-grey chrome, accent section headings with a
 hairline, section bodies indented under their heading, 28-DIP fields, and
-skinned footer buttons (OK is the accent default).
+native dialog action buttons.
 
 XRC sizes are DIPs (wxWidgets 3.1.5+). Controls get <size>, not <minsize>:
 wxWidgets turns an explicit initial size into the minimum size, and <minsize>
@@ -107,7 +107,7 @@ def colour_combo(name, width=FIELD, hint=None):
 
 def spin(name, width=90, minimum=0, maximum=100, increment=1, digits=0, value=0):
     """Word-style spin box (wxSpinCtrlDouble); the unit sits in a label after it."""
-    return node(None, 'wxSpinCtrlDouble', name, size=f'{width},{FIELD_H}', min=minimum, max=maximum,
+    return node(None, 'wxSpinCtrlDouble', name, size=f'{max(width, 124)},-1', min=minimum, max=maximum,
                 inc=increment, digits=digits, value=value)
 
 
@@ -147,14 +147,39 @@ def skinned(name, label, width=88):
 
 
 def notext(dialog):
-    """Rust skins every button with a painted face that includes its caption
-    (as the Ribbon does); the native caption stays for accessibility only."""
+    """Only custom-painted controls suppress their native caption."""
+    footer_buttons = set(dialog.footer.iter('object'))
     for b in dialog.root.iter('object'):
-        if b.get('class') == 'wxButton':
+        if b.get('class') == 'wxButton' and b not in footer_buttons:
             style = b.find('style')
             if style is None:
                 style = ET.SubElement(b, 'style')
             style.text = SKINNED
+
+
+ACTION_WIDTH = 96
+ACTION_GAP = 12
+
+
+def footer_action(row, name, label, width=ACTION_WIDTH, default=False):
+    """Let native captions set the height and expand for longer translations."""
+    button = node(None, 'wxButton', name, label=label)
+    if default:
+        ET.SubElement(button, 'default').text = '1'
+    entry = item(row, button, 0, 'wxALIGN_CENTER_VERTICAL')
+    ET.SubElement(entry, 'minsize').text = f'{max(ACTION_WIDTH, width)},-1'
+    return entry
+
+
+def footer_pair(row, accept_name, accept_label, cancel_name, cancel_label, width=ACTION_WIDTH):
+    # XRC filters cell positions per platform. Each button keeps one ID and caption.
+    grid = node(None, 'wxGridBagSizer', hgap=ACTION_GAP)
+    item(row, grid, 0, 'wxALIGN_CENTER_VERTICAL')
+    cancel = footer_action(grid, cancel_name, cancel_label, width)
+    accept = footer_action(grid, accept_name, accept_label, width, default=True)
+    for col, action in enumerate((cancel, accept)):
+        ET.SubElement(action, 'cellpos', platform='unix|mac').text = f'0,{col}'
+        ET.SubElement(action, 'cellpos', platform='msw').text = f'0,{1-col}'
 
 
 def rounded(name, fill, **props):
@@ -317,22 +342,27 @@ class Dialog:
                 self.pages.append(page_sizer)
             else:
                 self.pages.append(self.body)
+        item(self.outer, node(None, 'wxStaticLine'), 0, 'wxEXPAND|wxLEFT|wxRIGHT|wxTOP', M)
         self.footer = sizer('wxHORIZONTAL')
         item(self.outer, self.footer, 0, 'wxEXPAND|wxALL', M)
         self._left = 0
 
     def footer_left(self, name, label, width=96):
-        item(self.footer, skinned(name, label, width), 0,
-             'wxALIGN_CENTER_VERTICAL' + ('|wxLEFT' if self._left else ''), 8 if self._left else 0)
+        if self._left:
+            spacer(self.footer, ACTION_GAP)
+        footer_action(self.footer, name, label, width)
         self._left += 1
 
-    def finish(self, ok_label='OK', cancel=True, cancel_label='Cancel', ok_width=88):
+    def finish(self, ok_label='OK', cancel=True, cancel_label='Cancel', ok_width=ACTION_WIDTH):
+        # Keep secondary commands separate. Center a simple pair as one unit.
+        has_auxiliary = len(self.footer.findall('object')) > 0
         spacer(self.footer, 1, 1, 1)
-        ok = skinned(f'{self.prefix}_ok', ok_label, ok_width)
-        ET.SubElement(ok, 'default').text = '1'
-        item(self.footer, ok, 0, 'wxALIGN_CENTER_VERTICAL')
         if cancel:
-            item(self.footer, skinned(f'{self.prefix}_cancel', cancel_label), 0, 'wxALIGN_CENTER_VERTICAL|wxLEFT', 8)
+            footer_pair(self.footer, f'{self.prefix}_ok', ok_label, f'{self.prefix}_cancel', cancel_label, ok_width)
+        else:
+            footer_action(self.footer, f'{self.prefix}_ok', ok_label, ok_width, default=True)
+        if not has_auxiliary:
+            spacer(self.footer, 1, 1, 1)
 
     def write(self, filename):
         write(self.root, filename)

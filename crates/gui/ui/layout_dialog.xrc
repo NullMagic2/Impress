@@ -810,6 +810,12 @@
       </object>
       <object class="sizeritem">
         <option>0</option>
+        <flag>wxEXPAND|wxLEFT|wxRIGHT|wxTOP</flag>
+        <border>12</border>
+        <object class="wxStaticLine" />
+      </object>
+      <object class="sizeritem">
+        <option>0</option>
         <flag>wxEXPAND|wxALL</flag>
         <border>12</border>
         <object class="wxBoxSizer">
@@ -822,22 +828,36 @@
             <option>0</option>
             <flag>wxALIGN_CENTER_VERTICAL</flag>
             <border>0</border>
-            <object class="wxButton" name="lay_ok">
-              <label>OK</label>
-              <size>88,28</size>
-              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
-              <default>1</default>
+            <object class="wxGridBagSizer">
+              <hgap>12</hgap>
+              <object class="sizeritem">
+                <option>0</option>
+                <flag>wxALIGN_CENTER_VERTICAL</flag>
+                <border>0</border>
+                <object class="wxButton" name="lay_cancel">
+                  <label>Cancel</label>
+                </object>
+                <minsize>96,-1</minsize>
+                <cellpos platform="unix|mac">0,0</cellpos>
+                <cellpos platform="msw">0,1</cellpos>
+              </object>
+              <object class="sizeritem">
+                <option>0</option>
+                <flag>wxALIGN_CENTER_VERTICAL</flag>
+                <border>0</border>
+                <object class="wxButton" name="lay_ok">
+                  <label>OK</label>
+                  <default>1</default>
+                </object>
+                <minsize>96,-1</minsize>
+                <cellpos platform="unix|mac">0,1</cellpos>
+                <cellpos platform="msw">0,0</cellpos>
+              </object>
             </object>
           </object>
-          <object class="sizeritem">
-            <option>0</option>
-            <flag>wxALIGN_CENTER_VERTICAL|wxLEFT</flag>
-            <border>8</border>
-            <object class="wxButton" name="lay_cancel">
-              <label>Cancel</label>
-              <size>88,28</size>
-              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
-            </object>
+          <object class="spacer">
+            <size>1,1</size>
+            <option>1</option>
           </object>
         </object>
       </object>

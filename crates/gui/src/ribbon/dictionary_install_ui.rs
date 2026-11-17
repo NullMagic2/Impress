@@ -52,6 +52,7 @@ impl InstallDialog {
         let caption = StaticText::builder(&window)
             .with_label(&crate::i18n::text(&("Dictionary progress")))
             .build();
+        dialog_actions::heading(&caption);
         let gauge = Gauge::builder(&window).with_range(STEPS).build();
         let details = TextCtrl::builder(&window)
             .with_style(TextCtrlStyle::MultiLine | TextCtrlStyle::ReadOnly)
@@ -84,10 +85,12 @@ impl InstallDialog {
             SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right,
             dip(GAP_DIP),
         );
+        dialog_actions::size(close);
+        dialog_actions::divider(&window, &layout, dip(GAP_DIP));
         layout.add(
             &close,
             0,
-            SizerFlag::AlignRight | SizerFlag::All,
+            SizerFlag::AlignCenterHorizontal | SizerFlag::All,
             dip(GAP_DIP),
         );
         window.set_sizer(layout, true);
@@ -303,7 +306,7 @@ fn choose_scope(ribbon: &Ribbon, tag: &str) -> Option<Scope> {
     layout.add_sizer(
         &buttons,
         0,
-        SizerFlag::AlignRight | SizerFlag::All,
+        SizerFlag::AlignCenterHorizontal | SizerFlag::All,
         dip(GAP_DIP),
     );
     window.set_sizer_and_fit(layout, true);

@@ -3,10 +3,11 @@
 File → Recent uses Yaru’s `recentfilelist` document-and-clock command icon
 (from LibreOffice’s Yaru theme), with a dropdown arrow below its caption.
 It opens a native menu of the most recently opened or saved files,
-newest first. Five files are remembered by default. Recent files settings opens a native dialog with one row:
-‘Remember up to [number] recently opened files.’ The checkbox enables history;
-the spinbox chooses 1–20 files. Unchecking it disables history and clears the list.
-Cancel or Escape leaves the saved settings unchanged. Clear recent files removes the list without
+newest first. Five files are remembered by default.
+
+Recent files settings shows a document pocket beside “Remember up to [5] recently opened files.”
+Type a count from 1 to 20. Turning history off and confirming clears the list and remembers
+the count for next time. Cancel or Escape discards the edit. Clear recent files removes the list without
 changing the configured count. The list survives restarts in recent-files.json
 in Impress's normal per-user/portable data directory.
 

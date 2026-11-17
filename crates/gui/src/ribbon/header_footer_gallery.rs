@@ -205,7 +205,6 @@ pub(super) fn show(ribbon: &Ribbon, header: bool) -> Result<(), String> {
         .build();
     apply_color.show(existing.is_some());
     footer.add(&apply_color, 0, SizerFlag::Right, dip(GAP_DIP));
-    footer.add_stretch_spacer(1);
     let insert = Button::builder(&window)
         .with_id(ID_OK)
         .with_label(&crate::i18n::text("Insert"))
@@ -214,8 +213,8 @@ pub(super) fn show(ribbon: &Ribbon, header: bool) -> Result<(), String> {
     let cancel = Button::builder(&window)
         .with_label(&crate::i18n::text("Cancel"))
         .build();
-    footer.add(&insert, 0, SizerFlag::Right, dip(GAP_DIP));
-    footer.add(&cancel, 0, SizerFlag::empty(), 0);
+    dialog_actions::pair(&footer, insert, cancel);
+    dialog_actions::divider(&window, &root, dip(GAP_DIP));
     root.add_sizer(&footer, 0, SizerFlag::All | SizerFlag::Expand, dip(GAP_DIP));
     window.set_sizer_and_fit(root, true);
     window.set_min_size(window.get_size());

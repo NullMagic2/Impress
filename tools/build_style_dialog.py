@@ -124,18 +124,15 @@ item(summary_sizer, text('Font:', 'style_summary', fg=MUTED, size='-1,48'), 0, '
 # Format ▾ items open Word-style dialogs (tools/build_format_dialogs.py).
 item(body, text('', 'style_error', fg=ERROR), 0, 'wxEXPAND|wxTOP', ROW)
 
-# Footer on the chrome: Format ▾ left; OK / Cancel end on the card's right edge
+# Keep the Format menu at the leading edge and group the native actions.
+item(outer, node(None, 'wxStaticLine'), 0, 'wxEXPAND|wxTOP|wxLEFT|wxRIGHT', M)
 buttons = sizer('wxHORIZONTAL')
 item(outer, buttons, 0, 'wxEXPAND|wxALL', M)
-item(buttons, node(None, 'wxButton', 'style_format', label='Format ▾', size='96,28'), 0, 'wxALIGN_CENTER_VERTICAL')
+footer_action(buttons, 'style_format', 'Format ▾')
 spacer(buttons, 1, 1, 1)
-ok = node(None, 'wxButton', 'style_save', label='OK', size='88,28')
-ET.SubElement(ok, 'default').text = '1'
-item(buttons, ok, 0, 'wxALIGN_CENTER_VERTICAL')
-item(buttons, node(None, 'wxButton', 'style_cancel', label='Cancel', size='88,28'), 0,
-     'wxALIGN_CENTER_VERTICAL|wxLEFT', 8)
+footer_pair(buttons, 'style_save', 'OK', 'style_cancel', 'Cancel')
 
-for control in root.iter('object'):
+for control in body.iter('object'):
     if control.get('class') == 'wxButton':
         style = control.find('style')
         if style is None: style = ET.SubElement(control, 'style')

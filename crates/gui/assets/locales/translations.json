@@ -1847,6 +1847,12 @@
     "Corpo de Texto",
     "Corpo de Texto"
   ],
+  "Body text": [
+    "Κείμενο εγγράφου",
+    "Texto del cuerpo",
+    "Corpo do texto",
+    "Corpo do texto"
+  ],
   "Body text\n\n{} words (whitespace-delimited)\n{} Unicode characters, including spaces\n{} paragraphs\n\nEquations and image contents are not counted as text.": [
     "Το κείμενο του σώματος {} λέξεις (αποκλεισμός του λευκού χώρου) {} Unicode χαρακτήρες, συμπεριλαμβανομένων των χώρων {} παράγραφοι Οι εξισώσεις και τα περιεχόμενα εικόνας δεν υπολογίζονται ως κείμενο.",
     "Texto del cuerpo {} palabras (delimitado en espacio blanco) {} Unicode caracteres, incluyendo espacios {} párrafos Las ecuaciones y el contenido de la imagen no se cuentan como texto.",
@@ -5255,6 +5261,12 @@
     "Digite primeiro um cabeçalho ou rodapé",
     "Digite primeiro um cabeçalho ou pé de página"
   ],
+  "Enter a number from 1 to 20.": [
+    "Εισαγάγετε έναν αριθμό από 1 έως 20.",
+    "Introduce un número del 1 al 20.",
+    "Digite um número de 1 a 20.",
+    "Introduza um número de 1 a 20."
+  ],
   "Enter a numeric value.": [
     "Εισάγετε μια αριθμητική τιμή.",
     "Introduzca un valor numérico.",
@@ -5374,6 +5386,12 @@
     "Ecuación: {error}",
     "Equação: {error}",
     "Equação: {error}"
+  ],
+  "Equations and image contents are not counted as text.": [
+    "Οι εξισώσεις και τα περιεχόμενα εικόνων δεν υπολογίζονται ως κείμενο.",
+    "Las ecuaciones y el contenido de las imágenes no se cuentan como texto.",
+    "As equações e o conteúdo das imagens não são contados como texto.",
+    "As equações e o conteúdo das imagens não são contabilizados como texto."
   ],
   "Equations on their own line can only be inserted in the main document flow.": [
     "Οι εξισώσεις στη δική τους γραμμή μπορούν να εισαχθούν μόνο στην κύρια ροή του εγγράφου.",
@@ -9881,6 +9899,12 @@
     "Número de colunas:",
     "Número de colunas:"
   ],
+  "Number of files:": [
+    "Αριθμός αρχείων:",
+    "Número de archivos:",
+    "Número de arquivos:",
+    "Número de ficheiros:"
+  ],
   "Number spacing": [
     "Απόσταση αριθμών",
     "Espaciado de números",
@@ -10066,6 +10090,12 @@
     "Abrir",
     "Abrir",
     "Abrir"
+  ],
+  "Open a recent file": [
+    "Άνοιγμα πρόσφατου αρχείου",
+    "Abrir un archivo reciente",
+    "Abrir um arquivo recente",
+    "Abrir um ficheiro recente"
   ],
   "Open document": [
     "Άνοιγμα εγγράφου",
@@ -10504,6 +10534,12 @@
     "El seguimiento del texto de párrafos admite ediciones de texto dentro de los párrafos existentes sólo de texto. Apagarlo antes de cambiar la estructura u objetos.",
     "O rastreamento de texto de parágrafos suporta edições de texto dentro dos parágrafos existentes apenas de texto. Desligue- o antes de alterar a estrutura ou os objetos.",
     "O rastreamento de texto de parágrafos suporta edições de texto dentro de parágrafos existentes apenas de texto. Desligue- o antes de alterar a estrutura ou objetos."
+  ],
+  "Paragraphs": [
+    "Παράγραφοι",
+    "Párrafos",
+    "Parágrafos",
+    "Parágrafos"
   ],
   "Paragraph…": [
     "Παράγραφος…",
@@ -11285,6 +11321,12 @@
     "Comentário de reanchor",
     "Comentário Reanchor"
   ],
+  "Recent files": [
+    "Πρόσφατα αρχεία",
+    "Archivos recientes",
+    "Arquivos recentes",
+    "Ficheiros recentes"
+  ],
   "Recover": [
     "Ανάκτηση",
     "Recuperar",
@@ -11512,6 +11554,12 @@
     "Liberar para eliminar esta pestaña parar",
     "Lançar para remover esta aba parar",
     "Lançar para remover esta página parar"
+  ],
+  "Remember up to": [
+    "Να εμφανίζονται έως",
+    "Recordar hasta",
+    "Lembrar até",
+    "Memorizar até"
   ],
   "Removal": [
     "Κατάργηση",
@@ -15539,6 +15587,12 @@
     "Tipo de arquivo de dicionário inesperado.",
     "Tipo de arquivo de dicionário inesperado."
   ],
+  "Unicode characters, including spaces": [
+    "Χαρακτήρες Unicode, μαζί με τα κενά",
+    "Caracteres Unicode, incluidos los espacios",
+    "Caracteres Unicode, incluindo espaços",
+    "Caracteres Unicode, incluindo espaços"
+  ],
   "Unlock this picture's anchor before attaching it to another paragraph": [
     "Ξεκλειδώστε την άγκυρα αυτής της εικόνας πριν την συνδέσετε σε άλλη παράγραφο",
     "Desbloquee el anclaje de esta imagen antes de conectarla a otro párrafo",
@@ -16102,6 +16156,12 @@
     "Revisiones de Word…",
     "Revisões do Word…",
     "Revisões do Word…"
+  ],
+  "Words (whitespace-delimited)": [
+    "Λέξεις (με διαχωρισμό βάσει κενών)",
+    "Palabras (separadas por espacios en blanco)",
+    "Palavras (separadas por espaços em branco)",
+    "Palavras (separadas por espaços em branco)"
   ],
   "Words only": [
     "Μόνο λέξεις",
@@ -16684,6 +16744,12 @@
     "pt y superiores",
     "pt e acima",
     "pt e acima"
+  ],
+  "recently opened files.": [
+    "πρόσφατα ανοιγμένα αρχεία.",
+    "archivos abiertos recientemente.",
+    "arquivos abertos recentemente.",
+    "ficheiros abertos recentemente."
   ],
   "relative to": [
     "σε σχέση με",
