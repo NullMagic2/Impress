@@ -2,6 +2,12 @@
 use super::*;
 use crate::recent_files::{self, History};
 use wxdragon::geometry::Point;
+use wxdragon::{
+    dialogs::{DialogBuilder, DialogStyle},
+    id::ID_CANCEL,
+    sizers::{BoxSizer, Orientation, SizerFlag},
+    widgets::{checkbox::CheckBox, spinctrl::SpinCtrl, static_text::StaticText},
+};
 const FIRST_ID: i32 = 32_650;
 const CLEAR_ID: i32 = 32_675;
 const COUNT_ID: i32 = 32_676;
@@ -41,11 +47,7 @@ impl Ribbon {
         menu.append_separator();
         menu.append(
             COUNT_ID,
-            &format!(
-                "{} ({})…",
-                crate::i18n::text("Number of recent files"),
-                history.limit
-            ),
+            &crate::i18n::text("Recent files settings…"),
             "",
             wxdragon::menus::ItemKind::Normal,
         );
@@ -79,20 +81,12 @@ impl Ribbon {
                 if id == CLEAR_ID {
                     history.files.clear();
                 } else {
-                    let Some(value) = self.text_review(
-                        "Recent files",
-                        "Number of files to remember (0–20; 0 disables history):",
-                        &history.limit.to_string(),
-                        false,
-                    ) else {
+                    let Some(count) = settings_dialog(&self.ui.main_frame, history.limit) else {
                         return Ok(());
                     };
-                    let count = value
-                        .trim()
-                        .parse::<usize>()
-                        .ok()
-                        .filter(|count| *count <= recent_files::MAX_LIMIT)
-                        .ok_or("Choose a number from 0 to 20")?;
+                    // A background open/save may have recorded a file while
+                    // this modal dialog was open; change only the latest limit.
+                    history = History::load(&settings);
                     history.set_limit(count);
                 }
                 history.store(&settings)
@@ -107,4 +101,50 @@ impl Ribbon {
         self.focus_document();
         true
     }
+}
+
+/// Native settings controls keep numeric entry bounded and use the desktop theme.
+fn settings_dialog(parent:&wxdragon::widgets::frame::Frame,limit:usize)->Option<usize> {
+    let window=DialogBuilder::new(parent,&crate::i18n::text("Recent files"))
+        .with_style(DialogStyle::DefaultDialogStyle).build();
+    let dip=move |v|window.from_dip_int(v);
+    let root=BoxSizer::builder(Orientation::Vertical).build();
+    let row=BoxSizer::builder(Orientation::Horizontal).build();
+    let remember=CheckBox::builder(&window)
+        .with_label(&crate::i18n::text("Remember up to"))
+        .build();
+    remember.set_value(limit>0);
+    let count=SpinCtrl::builder(&window).with_range(1,recent_files::MAX_LIMIT as i32)
+        .with_initial_value(if limit==0{recent_files::DEFAULT_LIMIT}else{limit.min(recent_files::MAX_LIMIT)} as i32)
+        .with_size(Size::new(dip(136),-1)).build();
+    let suffix=StaticText::builder(&window)
+        .with_label(&crate::i18n::text("recently opened files."))
+        .build();
+    row.add(&remember,0,SizerFlag::AlignCenterVertical|SizerFlag::Right,dip(8));
+    row.add(&count,0,SizerFlag::AlignCenterVertical|SizerFlag::Right,dip(8));
+    row.add(&suffix,0,SizerFlag::AlignCenterVertical,0);
+    let update=move || {
+        let enabled=remember.is_checked();count.enable(enabled);suffix.enable(enabled);
+    };
+    remember.on_toggled(move |_|update());
+    update();
+    root.add_sizer(&row,0,SizerFlag::All|SizerFlag::Expand,dip(20));
+    let footer=BoxSizer::builder(Orientation::Horizontal).build();
+    let cancel=Button::builder(&window).with_id(ID_CANCEL).with_label(&crate::i18n::text("Cancel")).build();
+    let ok=Button::builder(&window).with_id(ID_OK).with_label(&crate::i18n::text("OK")).build();
+    footer.add_stretch_spacer(1);
+    let buttons=if cfg!(windows){[ok,cancel]}else{[cancel,ok]};
+    footer.add(&buttons[0],0,SizerFlag::Right,dip(8));
+    footer.add(&buttons[1],0,SizerFlag::empty(),0);
+    root.add_sizer(&footer,0,SizerFlag::Left|SizerFlag::Right|SizerFlag::Bottom|SizerFlag::Expand,dip(20));
+    window.set_sizer_and_fit(root,true);
+    window.set_escape_id(ID_CANCEL);ok.set_default();
+    ok.on_click(move |_|window.end_modal(ID_OK));
+    cancel.on_click(move |_|window.end_modal(ID_CANCEL));
+    crate::placement::centre(&window);
+    remember.set_focus();
+    let accepted=window.show_modal()==ID_OK;
+    let selected=if remember.is_checked(){count.value() as usize}else{0};
+    window.destroy();
+    accepted.then_some(selected)
 }

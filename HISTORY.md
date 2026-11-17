@@ -1,3 +1,8 @@
+## 0.8.6-61 — Recent files settings dialog
+
+- Replace the text prompt with a native dialog containing one checkbox-and-spinbox row: “Remember up to [number] recently opened files.”
+- Keep file-count limits, remembered settings and Cancel/Escape behavior, using native themed controls.
+
 ## 0.8.6-60 — Hyperlinks and clipboard interoperability
 
 - Follow document hyperlinks with Ctrl+click, with a URL tooltip and a hand pointer while Ctrl is held. Ordinary clicks keep editing the text; internal bookmark links navigate within the document.
