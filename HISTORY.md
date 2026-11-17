@@ -1,3 +1,7 @@
+## 0.8.6-62 — Dialog button alignment
+
+- Center the Recent files dialog buttons, give them matching padded widths, and increase the gap between them.
+
 ## 0.8.6-61 — Recent files settings dialog
 
 - Replace the text prompt with a native dialog containing one checkbox-and-spinbox row: “Remember up to [number] recently opened files.”

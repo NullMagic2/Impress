@@ -132,10 +132,14 @@ fn settings_dialog(parent:&wxdragon::widgets::frame::Frame,limit:usize)->Option<
     let footer=BoxSizer::builder(Orientation::Horizontal).build();
     let cancel=Button::builder(&window).with_id(ID_CANCEL).with_label(&crate::i18n::text("Cancel")).build();
     let ok=Button::builder(&window).with_id(ID_OK).with_label(&crate::i18n::text("OK")).build();
+    for button in [cancel,ok] {
+        button.set_min_size(Size::new(dip(112),dip(36)));
+    }
     footer.add_stretch_spacer(1);
     let buttons=if cfg!(windows){[ok,cancel]}else{[cancel,ok]};
-    footer.add(&buttons[0],0,SizerFlag::Right,dip(8));
+    footer.add(&buttons[0],0,SizerFlag::Right,dip(16));
     footer.add(&buttons[1],0,SizerFlag::empty(),0);
+    footer.add_stretch_spacer(1);
     root.add_sizer(&footer,0,SizerFlag::Left|SizerFlag::Right|SizerFlag::Bottom|SizerFlag::Expand,dip(20));
     window.set_sizer_and_fit(root,true);
     window.set_escape_id(ID_CANCEL);ok.set_default();
