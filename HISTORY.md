@@ -1,3 +1,11 @@
+## 0.8.6-60 — Hyperlinks and clipboard interoperability
+
+- Follow document hyperlinks with Ctrl+click, with a URL tooltip and a hand pointer while Ctrl is held. Ordinary clicks keep editing the text; internal bookmark links navigate within the document.
+- Keep Cut, Copy and Paste available in the spelling context menu as well as the ordinary page menu.
+- Exchange Unicode text, HTML, RTF and PNG images through the native GTK clipboard on Linux, preserving Impress formatting for internal transfers. Read other applications' clipboard data asynchronously and let clipboard managers retain copied content.
+- Keep the Windows clipboard owner valid when the user changes applications while Copy is being prepared.
+- Verify 61 GUI tests, 42 interface resource checks and native external-application clipboard and hyperlink workflows on Linux.
+
 ## 0.8.6-59 — Recent files and table margin snapping
 
 - Add File → Recent with a remembered list of five successful opens or saves by default, a configurable count, and a clear-history command.

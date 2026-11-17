@@ -13,6 +13,9 @@ const LANGUAGES_LIMIT: usize = 256;
 const ADD_ID: i32 = 31_400;
 const SUGGESTIONS_FIRST_ID: i32 = 31_410;
 const SUGGESTIONS_LIMIT: usize = 8;
+const CUT_ID:i32=31_430;
+const COPY_ID:i32=31_431;
+const PASTE_ID:i32=31_432;
 
 impl Ribbon {
     pub(super) fn show_spelling_menu(&self) {
@@ -126,6 +129,11 @@ impl Ribbon {
     }
 
     pub(super) fn handle_spelling_menu(&self, id: i32) -> bool {
+        let clipboard=match id {CUT_ID=>Some(AppCommand::Cut),COPY_ID=>Some(AppCommand::Copy),PASTE_ID=>Some(AppCommand::Paste),_=>None};
+        if let Some(command)=clipboard {
+            self.spelling_context.borrow_mut().take();
+            self.run(Action::Editor(command));self.focus_document();return true;
+        }
         let result = match id {
             TOGGLE_ID => {
                 let result = {
@@ -210,7 +218,11 @@ impl Ribbon {
         let Some((generation, revision, issue)) = context else {
             return false;
         };
-        let mut builder = Menu::builder();
+        let mut builder = Menu::builder()
+            .append_item(CUT_ID,&format!("{}\tCtrl+X",crate::i18n::text("Cut")),"")
+            .append_item(COPY_ID,&format!("{}\tCtrl+C",crate::i18n::text("Copy")),"")
+            .append_item(PASTE_ID,&format!("{}\tCtrl+V",crate::i18n::text("Paste")),"")
+            .append_separator();
         if issue.suggestions.is_empty() {
             builder = builder.append_item(HEADING_ID, &crate::i18n::text(&("No suggestions")), &crate::i18n::text(&("")));
         } else {
@@ -244,6 +256,8 @@ impl Ribbon {
             .build();
         menu.enable_item(HEADING_ID, false);
         menu.check_item(TOGGLE_ID, true);
+        let has_selection={let s=self.state.borrow();s.selected_object.is_some() || s.editor.selection.as_ref().is_some_and(|v|!v.is_collapsed())};
+        menu.enable_item(CUT_ID,has_selection);menu.enable_item(COPY_ID,has_selection);
         self.spelling_context
             .replace(Some((generation, revision, issue)));
         self.ui.main_frame.popup_menu(&mut menu, Some(at));

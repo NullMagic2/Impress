@@ -30,6 +30,7 @@ Open Impress to start with an empty document, or use **File → Open** to work o
 
 ## Learn more
 
+- [Links and the clipboard](docs/LINKS-AND-CLIPBOARD.md)
 - [Equations](docs/EQUATIONS.md) and [typography](docs/TYPOGRAPHY.md)
 - [Styles](docs/STYLE-UPDATE.md) and [spellchecking](docs/SPELLCHECKING.md)
 - [Page rulers](docs/PAGE-RULERS.md), [tab stops](docs/TAB-STOPS.md), and [recent files and table snapping](docs/RECENT-FILES-AND-TABLE-SNAP.md)

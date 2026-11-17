@@ -8,7 +8,8 @@ struct Envelope { version: u32, fragment: ClipboardFragment }
 
 const MAX_TRANSFER:usize=128*1024*1024;
 #[derive(Default)]
-pub struct Captured {private:Option<Vec<u8>>,html:Option<Vec<u8>>,rtf:Option<Vec<u8>>,png:Option<Vec<u8>>,dib:Option<Vec<u8>>,text:Option<Vec<u8>>}
+pub struct Captured {private:Option<Vec<u8>>,html:Option<Vec<u8>>,rtf:Option<Vec<u8>>,png:Option<Vec<u8>>,dib:Option<Vec<u8>>,text:Option<Vec<u8>>,
+    #[cfg(target_os="linux")] pending:Option<std::sync::mpsc::Receiver<Result<Captured,String>>>}
 pub struct Prepared {private:Vec<u8>,html:Vec<u8>,rtf:Option<Vec<u8>>,png:Option<Vec<u8>>,dib:Option<Vec<u8>>,text:Vec<u8>}
 /// CPU parsing, image conversion, fragment validation and serialization run on
 /// a clipboard worker, outside both the OS clipboard lock and the UI borrow.
@@ -24,7 +25,12 @@ pub fn prepare(fragment:&ClipboardFragment)->Result<Prepared,String>{
     if size>MAX_TRANSFER{return Err("Combined clipboard representations exceed 128 MiB".into());}
     Ok(Prepared{private,html,rtf,png,dib,text})
 }
-pub fn decode_captured(c:Captured)->Result<Content,String>{
+pub fn decode_captured(mut c:Captured)->Result<Content,String>{
+    #[cfg(target_os="linux")]
+    if let Some(pending)=c.pending.take(){
+        return decode_captured(pending.recv_timeout(std::time::Duration::from_secs(10))
+            .map_err(|_|"The other application did not provide clipboard data in time. Try Paste again.".to_string())??);
+    }
     if let Some(bytes)=c.private{return decode(&bytes).map(Content::Rich).ok_or_else(||"Invalid or unsupported Impress clipboard data. Use Text only for an explicit fallback.".into());}
     if let Some(bytes)=c.html{if let Ok(f)=clipboard::html::unwrap_cf_html(&bytes).and_then(clipboard::html::import){if !f.paragraphs.is_empty()||f.table.is_some()||!f.blocks.is_empty(){return Ok(Content::Rich(f));}}}
     if let Some(bytes)=c.rtf{let end=bytes.iter().rposition(|b|*b!=0).map(|i|i+1).unwrap_or(0);return clipboard::rtf::decode(&bytes[..end]).map(Content::Rich);}
@@ -45,6 +51,8 @@ mod native {
     const MAX: usize = 64 * 1024 * 1024;
     const UNICODE: u32 = 13;
     const PRIVATE: &str = "Impress.SemanticFragment.v3";
+    thread_local! {static OWNER:std::cell::Cell<*mut c_void>=const{std::cell::Cell::new(ptr::null_mut())};}
+    pub fn set_owner(owner:*mut c_void){OWNER.with(|value|value.set(owner));}
     fn format(name: &str) -> Result<u32, String> {
         let name: Vec<u16> = name.encode_utf16().chain(Some(0)).collect();
         let id = unsafe { RegisterClipboardFormatW(name.as_ptr()) };
@@ -55,7 +63,10 @@ mod native {
         fn acquire() -> Result<Self, String> {
             // A non-null owner is required when EmptyClipboard is followed by
             // SetClipboardData. Never hold this guard across a modal dialog.
-            let owner = unsafe { GetActiveWindow() };
+            // Copy is prepared asynchronously. The user may already have
+            // switched to the destination application when publication finishes.
+            let owner = OWNER.with(|value|value.get());
+            let owner = if owner.is_null(){unsafe{GetActiveWindow()}}else{owner};
             if owner.is_null() || unsafe { OpenClipboard(owner) } == 0 {
                 return Err("The clipboard is busy. Try Copy or Paste again.".into());
             }
@@ -135,13 +146,16 @@ mod native {
     }
 
 }
-#[cfg(windows)] pub use native::{capture,publish,sequence};
+#[cfg(windows)] pub use native::{capture,publish,sequence,set_owner};
+#[cfg(not(windows))]pub fn set_owner(_owner:*mut std::ffi::c_void){}
+#[cfg(target_os="linux")] #[path="system_clipboard_gtk.rs"] mod gtk;
+#[cfg(target_os="linux")] pub use gtk::{capture,publish};
 #[cfg(not(windows))]pub fn sequence()->u32{0}
-#[cfg(not(windows))]pub fn capture(_plain_only:bool)->Result<Captured,String>{
+#[cfg(not(any(windows,target_os="linux")))]pub fn capture(_plain_only:bool)->Result<Captured,String>{
     let text=wxdragon::clipboard::Clipboard::get().get_text().map(|s|s.encode_utf16().chain(Some(0)).flat_map(u16::to_le_bytes).collect());
     Ok(Captured{text,..Default::default()})
 }
-#[cfg(not(windows))]pub fn publish(prepared:&Prepared,_expected:u32)->Result<(),String>{
+#[cfg(not(any(windows,target_os="linux")))]pub fn publish(prepared:&Prepared,_expected:u32)->Result<(),String>{
     let units=prepared.text.chunks_exact(2).map(|c|u16::from_le_bytes([c[0],c[1]])).take_while(|u|*u!=0).collect::<Vec<_>>();
     if wxdragon::clipboard::Clipboard::get().set_text(&String::from_utf16_lossy(&units)){Ok(())}else{Err("Could not write clipboard".into())}
 }

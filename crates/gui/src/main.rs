@@ -39,6 +39,7 @@ mod title_bar;
 mod gtk_native;
 mod clipboard_jobs;
 mod shortcuts;
+mod hyperlinks;
 
 use commands::AppCommand;
 use file_io::{ensure_extension_for_filter, load_document, save_document, document_open_wildcard, document_save_wildcard, save_filter_index};
@@ -69,7 +70,7 @@ use wxdragon::{
     keycode::{
         WXK_BACK, WXK_DELETE, WXK_DOWN, WXK_END, WXK_ESCAPE, WXK_HOME, WXK_LEFT, WXK_NUMPAD_ENTER,
         WXK_ADD, WXK_NUMPAD_ADD, WXK_NUMPAD_SUBTRACT, WXK_PAGEDOWN, WXK_PAGEUP,
-        WXK_RETURN, WXK_RIGHT, WXK_SUBTRACT, WXK_TAB, WXK_UP,
+        WXK_RETURN, WXK_RIGHT, WXK_SUBTRACT, WXK_TAB, WXK_UP, WXK_CONTROL,
     },
     prelude::*,
     timer::Timer,
@@ -461,6 +462,7 @@ fn rotate_cursor() -> Option<wxdragon::cursor::Cursor> {
 
 fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
     let canvas = ui.paper_canvas.clone();
+    system_clipboard::set_owner(ui.main_frame.get_handle());
 
     // wxDragon owns the canvas paint on every supported platform.
     let paint_state = Rc::clone(&state);
@@ -562,6 +564,15 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
                     drain_native_input(&mut state);
                     if state.input.active() { event.skip(false); return; }
                     let view_point = logical_to_view(position, state.pixel_scale);
+                    if (mouse.event.event.control_down() || wxdragon::utils::get_key_state(WXK_CONTROL)) && !mouse.event.event.alt_down() {
+                        if let Some(target)=hyperlinks::under(&state,view_point) {
+                            state.dragging_selection=false;state.cell_drag_anchor=None;state.drag_pointer=None;
+                            state.key_repeat=None;
+                            drop(state);
+                            if let Err(error)=hyperlinks::follow(&down_state,&target) {down_state.borrow_mut().action_status=Some(error);}
+                            down_canvas.refresh(false,None);event.skip(false);return;
+                        }
+                    }
                     // A click ends typing into an equation slot (a click on
                     // another slot selects that one below).
                     slot_ui::finish(&mut state);
@@ -655,11 +666,18 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
         let table_changed = table_ui::hover(&mut state, Some(view_point));
         let picture_changed = picture_chrome::hover(&mut state, Some(view_point));
         if objects_ui::resize_guide(&state) != guide { state.needs_present = true; }
-        let note_tip = if state.dragging_selection { None } else { footnote_ui::tooltip(&state, view_point) };
+        let link=(!state.dragging_selection && state.object_drag.is_none()).then(||hyperlinks::under(&state,view_point)).flatten();
+        let note_tip = if state.dragging_selection { None } else {
+            link.as_ref().map(|target|format!("{}\n{target}",i18n::text("Ctrl+click to follow link")))
+                .or_else(||footnote_ui::tooltip(&state, view_point))
+        };
         let tooltip = (table_changed || picture_changed)
             .then(|| picture_chrome::tooltip(&state).unwrap_or_else(|| table_ui::tooltip(&state)).to_string())
             .or_else(|| (NOTE_TOOLTIP.with(|t| t.replace(note_tip.clone())) != note_tip).then(|| note_tip.clone().unwrap_or_default()));
-        let pointer = objects_ui::hover(&state, view_point);
+        let mut pointer = objects_ui::hover(&state, view_point);
+        if pointer==objects_ui::Pointer::Arrow && link.is_some() && wxdragon::utils::get_key_state(WXK_CONTROL) {
+            pointer=objects_ui::Pointer::Hand;
+        }
         let needs_present = state.needs_present;
         drop(state);
         native_input::set_pointer(pointer);
