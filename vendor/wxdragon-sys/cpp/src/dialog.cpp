@@ -44,6 +44,13 @@ wxd_Dialog_SetIcon(wxd_Dialog* dlg, const wxd_Bitmap_t* bitmap)
     }
 }
 
+void
+wxd_Dialog_ShowWithoutActivating(wxd_Dialog* self)
+{
+    if (self)
+        reinterpret_cast<wxDialog*>(self)->ShowWithoutActivating();
+}
+
 int
 wxd_Dialog_ShowModal(wxd_Dialog* self)
 {

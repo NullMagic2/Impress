@@ -82,20 +82,14 @@ impl Ribbon {
         } else if id == CLEAR_ID || id == COUNT_ID {
             (|| {
                 let settings = recent_files::settings_path()?;
-                let mut history = History::load(&settings);
-                if id == CLEAR_ID {
-                    history.files.clear();
-                } else {
-                    let Some((enabled, count)) = settings_dialog(&self.ui.main_frame, &history)
-                    else {
-                        return Ok(());
-                    };
-                    // A background open/save may have recorded a file while
-                    // this modal dialog was open; change only the latest limit.
-                    history = History::load(&settings);
-                    history.preferred_limit = count;
-                    history.set_limit(if enabled { count } else { 0 });
+                if id == COUNT_ID {
+                    if !self.recent_settings_open.get() {
+                        show_recent_settings(self, settings);
+                    }
+                    return Ok(());
                 }
+                let mut history = History::load(&settings);
+                history.files.clear();
                 history.store(&settings)
             })()
         } else {
@@ -133,11 +127,9 @@ fn pocket(count: usize) -> Option<wxdragon::bitmap_bundle::BitmapBundle> {
     wxdragon::bitmap_bundle::BitmapBundle::from_svg_text(&svg, Size::new(128, 158))
 }
 
-fn settings_dialog(
-    parent: &wxdragon::widgets::frame::Frame,
-    history: &History,
-) -> Option<(bool, usize)> {
-    let window = DialogBuilder::new(parent, &crate::i18n::text("Recent files"))
+fn show_recent_settings(ribbon: &Ribbon, settings: std::path::PathBuf) {
+    let history = History::load(&settings);
+    let window = DialogBuilder::new(&ribbon.ui.main_frame, &crate::i18n::text("Recent files"))
         .with_style(DialogStyle::DefaultDialogStyle)
         .build();
     let dip = |value| window.from_dip_int(value);
@@ -232,12 +224,33 @@ fn settings_dialog(
     window.set_sizer_and_fit(body, true);
     window.set_escape_id(ID_CANCEL);
     ok.set_default();
-    ok.on_click(move |_| window.end_modal(ID_OK));
-    cancel.on_click(move |_| window.end_modal(ID_CANCEL));
+    let state = Rc::clone(&ribbon.state);
+    ok.on_click(move |_| {
+        // The editor can open or save files while the settings window is visible.
+        let mut latest = History::load(&settings);
+        latest.preferred_limit = last_valid.get();
+        latest.set_limit(if remember.is_checked() {
+            last_valid.get()
+        } else {
+            0
+        });
+        if let Err(error) = latest.store(&settings) {
+            state.borrow_mut().action_status = Some(error);
+            return;
+        }
+        window.close(false);
+    });
+    cancel.on_click(move |_| {
+        window.close(false);
+    });
+    let open = Rc::clone(&ribbon.recent_settings_open);
+    window.on_close(move |event| {
+        open.set(false);
+        window.destroy();
+        event.skip(false);
+    });
     crate::placement::centre(&window);
-    remember.set_focus();
-    let accepted = window.show_modal() == ID_OK;
-    let result = (remember.is_checked(), last_valid.get());
-    window.destroy();
-    accepted.then_some(result)
+    ribbon.recent_settings_open.set(true);
+    // Allow normal mouse and keyboard input once the user activates this window.
+    unsafe { wxdragon::ffi::wxd_Dialog_ShowWithoutActivating(window.handle_ptr().cast()) };
 }

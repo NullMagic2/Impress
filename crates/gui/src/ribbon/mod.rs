@@ -260,6 +260,7 @@ pub struct Ribbon {
     style_context: RefCell<Option<(model::StyleId,u64,Option<editor::Selection>)>>,
     tab_strip: RefCell<Option<Rc<tab_strip::TabStrip>>>,
     tab_ruler: RefCell<Option<Rc<tab_ruler::TabRuler>>>,
+    recent_settings_open: Rc<Cell<bool>>,
     recent_paths: RefCell<Vec<std::path::PathBuf>>,
     table_bar: RefCell<Option<Rc<table_bar::TableBar>>>,
     picture_bar: RefCell<Option<Rc<picture_bar::PictureBar>>>,
@@ -305,7 +306,7 @@ impl Ribbon {
             last_status: RefCell::new(String::new()), last_title: RefCell::new(String::new()),
             last_scroll: Cell::new(None), navigation: RefCell::new(Vec::new()), navigation_revision: Cell::new(None),
             search_options: Cell::new(Default::default()), search_report: RefCell::new(None), search_job: RefCell::new(None), search_due: Cell::new(Instant::now()), search_cursor: Cell::new(None),
-            last_context: RefCell::new(None), context_key: RefCell::new(None), label_text: RefCell::new(HashMap::new()), equation: RefCell::new(None), comments: RefCell::new(None), style_gallery: RefCell::new(None), style_context: RefCell::new(None), tab_strip: RefCell::new(None), tab_ruler: RefCell::new(None), recent_paths: RefCell::new(Vec::new()), table_bar: RefCell::new(None), picture_bar: RefCell::new(None), spell_job: RefCell::new(None), spelling_languages: RefCell::new(Vec::new()), output_progress: RefCell::new(None), dictionary_install: RefCell::new(None), dictionary_manager: RefCell::new(None), spelling_context: RefCell::new(None),
+            last_context: RefCell::new(None), context_key: RefCell::new(None), label_text: RefCell::new(HashMap::new()), equation: RefCell::new(None), comments: RefCell::new(None), style_gallery: RefCell::new(None), style_context: RefCell::new(None), tab_strip: RefCell::new(None), tab_ruler: RefCell::new(None), recent_paths: RefCell::new(Vec::new()), recent_settings_open: Rc::new(Cell::new(false)), table_bar: RefCell::new(None), picture_bar: RefCell::new(None), spell_job: RefCell::new(None), spelling_languages: RefCell::new(Vec::new()), output_progress: RefCell::new(None), dictionary_install: RefCell::new(None), dictionary_manager: RefCell::new(None), spelling_context: RefCell::new(None),
             source_revision: Cell::new(None), source_job: RefCell::new(None), source_copy_pending: Cell::new(false),
         });
         generated::install_group_relief(&this.ui);

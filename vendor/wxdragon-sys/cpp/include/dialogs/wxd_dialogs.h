@@ -11,6 +11,9 @@ wxd_Dialog_Create(wxd_Window_t* parent, const char* title, wxd_Style_t style, in
 WXD_EXPORTED void
 wxd_Dialog_SetIcon(wxd_Dialog_t* dlg, const wxd_Bitmap_t* bitmap);
 
+WXD_EXPORTED void
+wxd_Dialog_ShowWithoutActivating(wxd_Dialog_t* self);
+
 WXD_EXPORTED int
 wxd_Dialog_ShowModal(wxd_Dialog_t* self);
 

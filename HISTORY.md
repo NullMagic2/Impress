@@ -1,3 +1,7 @@
+## 0.8.6-65 — Recent files keyboard focus
+
+- Keep editing the document when Recent files settings opens. Click the settings window to edit the history limit.
+
 ## 0.8.6-64 — Native dialog actions and recent-file preferences
 
 - Type the recent-file count beside an illustrated document pocket. Impress remembers the count when history is disabled and re-enabled.

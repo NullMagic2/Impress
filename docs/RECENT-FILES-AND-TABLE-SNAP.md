@@ -6,7 +6,7 @@ It opens a native menu of the most recently opened or saved files,
 newest first. Five files are remembered by default.
 
 Recent files settings shows a document pocket beside “Remember up to [5] recently opened files.”
-Type a count from 1 to 20. Turning history off and confirming clears the list and remembers
+You can keep typing in the document while settings are open. Click the number to enter a count from 1 to 20. Turning history off and confirming clears the list and remembers
 the count for next time. Cancel or Escape discards the edit. Clear recent files removes the list without
 changing the configured count. The list survives restarts in recent-files.json
 in Impress's normal per-user/portable data directory.
