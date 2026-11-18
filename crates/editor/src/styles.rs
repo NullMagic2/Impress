@@ -81,18 +81,18 @@ impl EditorState{
     pub fn apply_named_style(&mut self,id:&StyleId,clear_direct:bool)->Result<(),String>{
         let kind=self.document.styles.get(id).ok_or("Style not found")?.kind;
         let before_selection=self.selection.clone().ok_or("Select text or place the caret first")?;
-        if kind==StyleKind::Character && before_selection.is_collapsed(){
+        if kind==StyleKind::Character && before_selection.is_collapsed() && self.table_formatting_spans.is_none(){
             self.typing_style=Some(id.clone());if clear_direct{self.typing_properties=CharacterProperties::default();}self.break_coalescing();return Ok(());
         }
         fn named(items:&mut[Inline],id:&StyleId,clear:bool){for i in items{match i{Inline::Text(t)=>{t.style=Some(id.clone());if clear{t.properties=Default::default();}},Inline::Hyperlink(h)=>named(&mut h.content,id,clear),_=>{}}}}
         fn clear_runs(items:&mut[Inline]){for i in items{match i{Inline::Text(t)=>t.properties=Default::default(),Inline::Hyperlink(h)=>clear_runs(&mut h.content),_=>{}}}}
         let mut changes=Vec::new();
-        let spans=if kind==StyleKind::Paragraph {self.paragraph_formatting_spans()} else {self.selected_paragraph_spans()};
+        let spans=if kind==StyleKind::Paragraph {self.paragraph_formatting_spans()} else {self.character_formatting_spans()};
         for (node,a,b) in spans{
             let before=self.paragraph(&node).cloned().ok_or("Paragraph not found")?;let mut after=before.clone();
             match kind{
                 StyleKind::Paragraph=>{after.style=Some(id.clone());if clear_direct{after.properties=Default::default();clear_runs(&mut after.content);}},
-                StyleKind::Character=>{let(left,suffix)=split_content(&after.content,b)?;let(mut prefix,mut selected)=split_content(&left,a)?;named(&mut selected,id,clear_direct);prefix.extend(selected);prefix.extend(suffix);after.content=(normalized_content(prefix)).into();}
+                StyleKind::Character=>{let (mut prefix, mut selected, suffix)=self.split_for_formatting(&before,a,b)?;named(&mut selected,id,clear_direct);prefix.extend(selected);prefix.extend(suffix);after.content=self.finish_formatting_content(prefix).into();}
             }
             if after!=before{changes.push(Mutation::ParagraphChanged{id:node,before,after});}
         }
@@ -104,11 +104,11 @@ impl EditorState{
         *self=staged;Ok(())
     }
     pub fn clear_direct_formatting(&mut self)->Result<(),String>{
-        if self.selection.as_ref().is_some_and(Selection::is_collapsed){self.typing_properties=Default::default();return Ok(());}
+        if self.table_formatting_spans.is_none() && self.selection.as_ref().is_some_and(Selection::is_collapsed){self.typing_properties=Default::default();return Ok(());}
         fn clear(items:&mut[Inline]){for i in items{match i{Inline::Text(t)=>t.properties=Default::default(),Inline::Hyperlink(h)=>clear(&mut h.content),_=>{}}}}
         let selection=self.selection.clone();let mut changes=Vec::new();
-        for(id,a,b)in self.selected_paragraph_spans(){let before=self.paragraph(&id).cloned().ok_or("Paragraph not found")?;let mut after=before.clone();
-            let(left,suffix)=split_content(&after.content,b)?;let(mut prefix,mut selected)=split_content(&left,a)?;clear(&mut selected);prefix.extend(selected);prefix.extend(suffix);after.content=(normalized_content(prefix)).into();
+        for(id,a,b)in self.character_formatting_spans(){let before=self.paragraph(&id).cloned().ok_or("Paragraph not found")?;let mut after=before.clone();
+            let (mut prefix, mut selected, suffix)=self.split_for_formatting(&before,a,b)?;clear(&mut selected);prefix.extend(selected);prefix.extend(suffix);after.content=self.finish_formatting_content(prefix).into();
             if a==0&&b==paragraph_flat_text(&before).len(){after.properties=Default::default();}
             changes.push(Mutation::ParagraphChanged{id,before,after});}
         let mut staged=self.clone();for m in &changes{apply_mutation(&mut staged.document,m,true)?;}staged.commit("Clear direct formatting",changes,selection,None)?;*self=staged;Ok(())

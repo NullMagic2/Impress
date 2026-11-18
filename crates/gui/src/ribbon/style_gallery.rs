@@ -116,7 +116,7 @@ impl Gallery {
                 if !self.enabled(&ribbon) { return; }
                 let (cards, _) = gallery_popup::cards(&ribbon);
                 let Some(card) = cards.get(index) else { return; };
-                if let Err(error) = ribbon.edit(|editor| editor.apply_named_style(&card.id, true)) {
+                if let Err(error) = ribbon.edit_formatting(|editor| editor.apply_named_style(&card.id, true)) {
                     ribbon.state.borrow_mut().action_status = Some(error);
                 }
                 self.panel.refresh(false, None);

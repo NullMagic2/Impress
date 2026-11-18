@@ -43,7 +43,7 @@ pub(super) fn sample_colour(card: &Card) -> Colour {
 pub(super) fn cards(ribbon: &Ribbon) -> (Vec<Card>, Option<model::StyleId>) {
     let state = ribbon.state.borrow();
     let sheet = &state.editor.document.styles;
-    let selected = state.editor.formatting_summary().style;
+    let selected = state.formatting_summary().style;
     let mut cards = sheet.styles.values()
         .filter(|style| style.kind == model::StyleKind::Paragraph)
         .map(|style| {
@@ -124,7 +124,7 @@ pub(super) fn show(ribbon: &Ribbon) {
             } else if let Some(index) = hit(surface, point, first_row.get(), cards.len()) {
                 dropdown::dismiss(popup);
                 if let Some(ribbon) = weak.upgrade() {
-                    if let Err(error) = ribbon.edit(|editor| editor.apply_named_style(&cards[index].id, true)) {
+                    if let Err(error) = ribbon.edit_formatting(|editor| editor.apply_named_style(&cards[index].id, true)) {
                         ribbon.state.borrow_mut().action_status = Some(error);
                     }
                 }
@@ -171,7 +171,7 @@ pub(super) fn show(ribbon: &Ribbon) {
                 WXK_RETURN => {
                     dropdown::dismiss(popup);
                     if let Some(ribbon) = weak.upgrade() {
-                        if let Err(error) = ribbon.edit(|editor| editor.apply_named_style(&cards[index].id, true)) {
+                        if let Err(error) = ribbon.edit_formatting(|editor| editor.apply_named_style(&cards[index].id, true)) {
                             ribbon.state.borrow_mut().action_status = Some(error);
                         }
                     }

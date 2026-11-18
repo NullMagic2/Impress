@@ -870,7 +870,7 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
             if let Some(target) = target {
                 let mut state = key_state.borrow_mut();
                 let old_revision = state.editor.revision;
-                if let Err(error) = state.editor.apply_named_style(&target, false) {
+            if let Err(error) = state.apply_formatting(|editor| editor.apply_named_style(&target, false)) {
                     state.action_status = Some(format!("Style shortcut failed: {error}"));
                 }
                 if state.editor.revision != old_revision { submit_layout(&mut state); }
@@ -985,6 +985,26 @@ fn mouse_data(event: &WindowEventData) -> Option<&wxdragon::event::event_data::M
     }
 }
 
+impl CanvasState {
+    fn apply_formatting(&mut self, operation: impl FnOnce(&mut EditorState) -> Result<(), String>) -> Result<(), String> {
+        match &self.selected_object {
+            Some(objects_ui::SelectedObject::Cells { table_id, cell_ids }) => {
+                self.editor.with_table_formatting(table_id, cell_ids, operation)
+            }
+            _ => operation(&mut self.editor),
+        }
+    }
+
+    fn formatting_summary(&self) -> editor::FormattingSummary {
+        match &self.selected_object {
+            Some(objects_ui::SelectedObject::Cells { table_id, cell_ids }) => {
+                self.editor.table_formatting_summary(table_id, cell_ids)
+            }
+            _ => self.editor.formatting_summary(),
+        }
+    }
+}
+
 fn execute_editor_app_command(state: &mut CanvasState, command: AppCommand) -> Result<(), String> {
     equation_ui::show_document(state);
     let old_revision = state.editor.revision;
@@ -1005,7 +1025,17 @@ fn execute_editor_app_command(state: &mut CanvasState, command: AppCommand) -> R
             let editor_command = command
                 .editor_command()
                 .ok_or_else(|| format!("no editor command mapping for {command:?}"))?;
-            state.editor.execute(editor_command)?;
+            match command {
+                AppCommand::Bold | AppCommand::Italic | AppCommand::Underline |
+                AppCommand::StyleNormal | AppCommand::StyleHeading1 | AppCommand::StyleTitle => {
+                    state.apply_formatting(|editor| editor.execute(editor_command).map(|_| ()))?;
+                }
+                AppCommand::SelectAll => {
+                    objects_ui::deselect(state);
+                    state.editor.execute(editor_command)?;
+                }
+                _ => { state.editor.execute(editor_command)?; }
+            }
         }
         AppCommand::Open | AppCommand::Save | AppCommand::SaveAs => {}
     }

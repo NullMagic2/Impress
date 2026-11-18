@@ -636,7 +636,7 @@ impl Ribbon{
   } else { self.edit_without_focus(|e|e.put_styles_with_selection(vec![change]))?; }
   Ok(true)
  }
- pub(crate)fn highlight_dialog(&self)->Result<(),String>{let options=["Yellow".into(),"Green".into(),"Cyan".into(),"Pink".into(),"Remove highlight (override inherited highlight)".into(),"Custom #RRGGBB…".into()];let Some(i)=self.choose_review("Text highlight","Applies to selected text or subsequent typing.",&options)else{return Ok(());};let color=if i==5{let Some(v)=self.text_review("Highlight color","#RRGGBB:","#FFFF00",false)else{return Ok(());};v}else{["#FFFF00","#B6F5A5","#A5E7FF","#FFC2E2","none"][i].into()};self.edit(|e|e.apply_character_properties(&CharacterProperties{highlight:Some(color),..Default::default()}))}
+ pub(crate)fn highlight_dialog(&self)->Result<(),String>{let options=["Yellow".into(),"Green".into(),"Cyan".into(),"Pink".into(),"Remove highlight (override inherited highlight)".into(),"Custom #RRGGBB…".into()];let Some(i)=self.choose_review("Text highlight","Applies to selected text or subsequent typing.",&options)else{return Ok(());};let color=if i==5{let Some(v)=self.text_review("Highlight color","#RRGGBB:","#FFFF00",false)else{return Ok(());};v}else{["#FFFF00","#B6F5A5","#A5E7FF","#FFC2E2","none"][i].into()};self.edit_formatting(|e|e.apply_character_properties(&CharacterProperties{highlight:Some(color),..Default::default()}))}
  pub(crate) fn language_dialog(&self) -> Result<(), String> {
      self.show_spelling_menu();
      Ok(())
@@ -644,11 +644,11 @@ impl Ribbon{
  pub(crate) fn tabs_dialog(&self) -> Result<(), String> {
     let (tabs, default) = {
         let state = self.state.borrow();
-        (state.editor.formatting_summary().tabs,
+        (state.formatting_summary().tabs,
             state.editor.document.styles.resolve_paragraph(Some(&model::StyleId::from(model::STYLE_NORMAL))).default_tab_mm.unwrap_or(model::DEFAULT_TAB_INTERVAL_MM))
     };
     if let Some(patch) = super::format_dialogs::edit_tab_stops(&self.ui.main_frame, tabs, default) {
-        self.edit(|editor| editor.set_tab_settings(patch.tabs, patch.default_tab_mm))?;
+        self.edit_formatting(|editor| editor.set_tab_settings(patch.tabs, patch.default_tab_mm))?;
     }
     Ok(())
  }
@@ -1006,7 +1006,7 @@ impl Ribbon {
                     face:c.font_family.clone().unwrap_or_else(||"Linux Libertine G".into()),
                     points:c.font_size_pt.unwrap_or(11.0).clamp(9.0,13.0).round() as i32,
                     bold:c.bold==Some(true),italic:c.italic==Some(true),underline:c.underline==Some(true),colour:hex(c.color.as_deref())}}).collect::<Vec<_>>();
-            (styles,s.editor.formatting_summary().style.clone(),rows)};
+            (styles,s.formatting_summary().style.clone(),rows)};
         self.styles_syncing.set(true);
         let selected=selected.or(current);
         let index=selected.as_ref().and_then(|id|styles.iter().position(|s|&s.id==id)).or_else(||(!styles.is_empty()).then_some(0));
@@ -1025,7 +1025,7 @@ impl Ribbon {
     }
     pub(crate) fn apply_pane_style(&self)->Result<(),String>{
         let style=self.selected_pane_style()?;let clear=self.ui.styles_clear_direct.is_checked();
-        self.edit(|e|e.apply_named_style(&style.id,clear))
+        self.edit_formatting(|e|e.apply_named_style(&style.id,clear))
     }
     pub(crate) fn create_pane_style(&self)->Result<(),String>{
         let options=["Paragraph style".into(),"Character style".into()];
@@ -1044,7 +1044,7 @@ impl Ribbon {
         }Ok(())
     }
     pub(crate) fn inspect_pane_style(&self){
-        let text={let s=self.state.borrow();let summary=s.editor.formatting_summary();
+        let text={let s=self.state.borrow();let summary=s.formatting_summary();
             format!("Current selection\nParagraph style: {:?}\nCharacter formatting: {:#?}\nAlignment: {:?}\nDirect formatting is identified in the document context strip.",summary.style,summary.character,summary.alignment)};
         self.review_info("Style inspector",&text);
     }

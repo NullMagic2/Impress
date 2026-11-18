@@ -150,6 +150,9 @@ pub struct EditorState {
     pub typing_properties: CharacterProperties,
     /// Named character style for newly typed runs; kept semantic, not flattened.
     pub typing_style: Option<StyleId>,
+    /// Whole paragraphs targeted by the current table formatting command.
+    /// The ordinary caret/selection remains available for undo and typing.
+    table_formatting_spans: Option<Vec<(NodeId, usize, usize)>>,
     composition: Option<CompositionState>,
     undo: Vec<std::sync::Arc<UndoRecord>>,
     redo: Vec<std::sync::Arc<UndoRecord>>,
@@ -172,6 +175,7 @@ impl EditorState {
             selection: None,
             typing_properties: CharacterProperties::default(),
             typing_style: None,
+            table_formatting_spans: None,
             composition: None,
             undo: Vec::new(),
             redo: Vec::new(),
@@ -191,6 +195,7 @@ impl EditorState {
         self.clean_undo_depth = Some(0);
         self.typing_properties = CharacterProperties::default();
         self.typing_style = None;
+        self.table_formatting_spans = None;
         self.composition = None;
         self.selection = first_paragraph_position(&self.document).map(Selection::collapsed);
     }
@@ -864,6 +869,17 @@ impl EditorState {
     }
 
     pub fn toggle_character_property(&mut self, property: CharacterToggle) -> Result<(), String> {
+        if self.table_formatting_spans.is_some() {
+            let common = self.formatting_summary().character;
+            let enabled = match property {
+                CharacterToggle::Bold => common.bold,
+                CharacterToggle::Italic => common.italic,
+                CharacterToggle::Underline => common.underline,
+            } == Some(true);
+            let mut patch = CharacterProperties::default();
+            set_toggle(&mut patch, property, !enabled);
+            return self.apply_character_properties(&patch);
+        }
         let selection = self.selection.clone().ok_or("no active selection")?;
         if selection.is_collapsed() {
             let current = match property {
@@ -1103,11 +1119,16 @@ impl EditorState {
     /// byte zero of the following paragraph does not select that paragraph.
     /// Keep the raw spans for clipboard operations, which need the separator.
     fn paragraph_formatting_spans(&self) -> Vec<(NodeId, usize, usize)> {
+        if let Some(spans) = &self.table_formatting_spans { return spans.clone(); }
         let mut spans = self.selected_paragraph_spans();
         if spans.len() > 1 && spans.last().is_some_and(|(_, start, end)| *start == 0 && *end == 0) {
             spans.pop();
         }
         spans
+    }
+
+    fn character_formatting_spans(&self) -> Vec<(NodeId, usize, usize)> {
+        self.table_formatting_spans.clone().unwrap_or_else(|| self.selected_paragraph_spans())
     }
 
     fn selected_paragraph_ids(&self) -> Vec<NodeId> {

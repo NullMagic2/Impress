@@ -87,6 +87,50 @@ fn inserting_a_row_below_a_merged_cell_uses_its_bottom_edge() {
 }
 
 #[test]
+fn formatting_disjoint_table_cells_includes_empty_cells_and_undoes_together() {
+    let mut e = editor("Outside the table");
+    e.insert_table(2, 2).unwrap();
+    let table = e.table_cell_context().unwrap().table_id;
+    e.insert_text("Alpha").unwrap();
+    e.select_cell(&table, 0, 1).unwrap();
+    e.insert_text("Bravo").unwrap();
+    e.select_cell(&table, 1, 1).unwrap();
+    let before = e.document.clone();
+    let [alpha, _, _, blank]: [NodeId; 4] = e.table_by_id(&table).unwrap().rows.iter()
+        .flat_map(|row| &row.cells).map(|cell| cell.id.clone()).collect::<Vec<_>>().try_into().unwrap();
+    let cells = [alpha, blank];
+    let bold = |e: &mut EditorState| e.toggle_character_property(CharacterToggle::Bold);
+    e.with_table_formatting(&table, &cells, bold).unwrap();
+    assert_eq!(e.table_formatting_summary(&table, &cells).character.bold, Some(true));
+    assert_eq!(e.typing_properties.bold, Some(true));
+    assert!(e.undo());
+    assert_eq!(e.document, before);
+
+    let patch = CharacterProperties { italic: Some(true), font_size_pt: Some(18.0), ..Default::default() };
+    e.with_table_formatting(&table, &cells, |e| e.apply_character_properties(&patch)).unwrap();
+    let selected = e.table_formatting_summary(&table, &cells).character;
+    assert_eq!((selected.italic, selected.font_size_pt), (Some(true), Some(18.0)));
+    e.select_cell(&table, 0, 1).unwrap();
+    assert_ne!(e.formatting_summary().character.font_size_pt, Some(18.0));
+    assert_eq!(e.formatting_summary().character.italic, Some(false));
+    assert!(e.undo());
+    assert_eq!(e.document, before);
+}
+
+#[test]
+fn formatting_columns_includes_empty_final_paragraph_and_leaves_other_cells_alone() {
+    let mut e = editor("");
+    e.insert_table(2, 2).unwrap();
+    let table = e.table_cell_context().unwrap().table_id;
+    let cells: Vec<_> = e.table_by_id(&table).unwrap().rows.iter().map(|row| row.cells[0].id.clone()).collect();
+    let apply = ParagraphProperties { alignment: Some(ParagraphAlignment::Center), ..Default::default() };
+    e.with_table_formatting(&table, &cells, |e| e.apply_paragraph_properties(&apply)).unwrap();
+    assert_eq!(e.table_formatting_summary(&table, &cells).alignment, Some(ParagraphAlignment::Center));
+    e.select_cell(&table, 1, 1).unwrap();
+    assert_eq!(e.formatting_summary().alignment, Some(ParagraphAlignment::Left));
+}
+
+#[test]
 fn header_footer_paragraphs_use_normal_typing_and_escape_target() {
     let mut e=editor("body");
     e.enter_header(HeaderFooterVariant::Default).unwrap();

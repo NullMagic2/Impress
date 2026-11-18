@@ -25,6 +25,57 @@ pub struct FormattingSummary {
 }
 
 impl EditorState {
+    fn cell_formatting_spans(&self, table: &NodeId, cells: &[NodeId]) -> Vec<(NodeId, usize, usize)> {
+        let ids: std::collections::HashSet<_> = cells.iter().collect();
+        let mut paragraphs = Vec::new();
+        if let Some(table) = self.table_by_id(table) {
+            for cell in table.rows.iter().flat_map(|row| &row.cells).filter(|cell| ids.contains(&cell.id)) {
+                collect_paragraph_refs(&cell.blocks, &mut paragraphs);
+            }
+        }
+        paragraphs.into_iter().map(|p| (p.id.clone(), 0, flat_content_len(&p.content))).collect()
+    }
+
+    /// Reuse the usual formatting commands with whole, possibly disjoint
+    /// cells. The scope ends before any subsequent edit or typing.
+    pub fn with_table_formatting(&mut self, table: &NodeId, cells: &[NodeId],
+        operation: impl FnOnce(&mut Self) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let spans = self.cell_formatting_spans(table, cells);
+        if spans.is_empty() { return Ok(()); }
+        let revision = self.revision;
+        let previous = self.table_formatting_spans.replace(spans);
+        let result = operation(self);
+        self.table_formatting_spans = previous;
+        if self.revision != revision { self.reset_typing_properties_from_caret(); }
+        result
+    }
+
+    pub fn table_formatting_summary(&self, table: &NodeId, cells: &[NodeId]) -> FormattingSummary {
+        let spans = self.cell_formatting_spans(table, cells);
+        self.summarize_formatting(Some(&spans))
+    }
+
+    pub(super) fn split_for_formatting(&self, paragraph: &Paragraph, start: usize, end: usize)
+        -> Result<(Vec<Inline>, Vec<Inline>, Vec<Inline>), String> {
+        if self.table_formatting_spans.is_some() {
+            let mut content = paragraph.content.to_vec();
+            if content.is_empty() { content.push(Inline::Text(TextRun::plain(""))); }
+            return Ok((Vec::new(), content, Vec::new()));
+        }
+        let (left, suffix) = split_content(&paragraph.content, end)?;
+        let (prefix, selected) = split_content(&left, start)?;
+        Ok((prefix, selected, suffix))
+    }
+
+    pub(super) fn finish_formatting_content(&self, content: Vec<Inline>) -> Vec<Inline> {
+        if self.table_formatting_spans.is_some() && flat_content_len(&content) == 0 {
+            content
+        } else {
+            normalized_content(content)
+        }
+    }
+
     pub fn apply_character_properties(&mut self, patch: &CharacterProperties) -> Result<(), String> {
         if patch == &CharacterProperties::default() { return Ok(()); }
         if patch.font_size_pt.is_some_and(|v| !v.is_finite() || !(1.0..=400.0).contains(&v)) {
@@ -35,22 +86,21 @@ impl EditorState {
         }
         if let Some(color)=&patch.highlight { if color!="none" && !(color.len()==7 && color.starts_with('#') && color[1..].bytes().all(|b|b.is_ascii_hexdigit())) {return Err("Highlight must be #RRGGBB or none".into());} }
         let selection = self.selection.clone().ok_or("no active selection")?;
-        if selection.is_collapsed() {
+        if selection.is_collapsed() && self.table_formatting_spans.is_none() {
             self.typing_properties.overlay(patch);
             self.break_coalescing();
             return Ok(());
         }
         let mut mutations = Vec::new();
-        for (id, start, end) in self.selected_paragraph_spans() {
-            if start >= end { continue; }
+        for (id, start, end) in self.character_formatting_spans() {
+            if start >= end && self.table_formatting_spans.is_none() { continue; }
             let before = self.paragraph(&id).cloned().ok_or("paragraph not found")?;
-            let (prefix_selected, suffix) = split_content(&before.content, end)?;
-            let (mut prefix, mut selected) = split_content(&prefix_selected, start)?;
+            let (mut prefix, mut selected, suffix) = self.split_for_formatting(&before, start, end)?;
             if !patch_runs(&mut selected, patch) { continue; }
             prefix.extend(selected);
             prefix.extend(suffix);
             let mut after = before.clone();
-            after.content = (normalized_content(prefix)).into();
+            after.content = self.finish_formatting_content(prefix).into();
             self.replace_paragraph(&after)?;
             mutations.push(Mutation::ParagraphChanged { id, before, after });
         }
@@ -62,7 +112,7 @@ impl EditorState {
     /// Selected mixed-format runs are patched separately in one undo transaction.
     pub fn set_ligature_mode(&mut self, mode: LigatureMode) -> Result<(), String> {
         let selection = self.selection.clone().ok_or("no active selection")?;
-        if selection.is_collapsed() {
+        if selection.is_collapsed() && self.table_formatting_spans.is_none() {
             let mut props = self.effective_caret_properties();
             props.overlay(&self.typing_properties);
             let mut typography = props.typography.unwrap_or_default();
@@ -72,14 +122,13 @@ impl EditorState {
             return Ok(());
         }
         let mut mutations = Vec::new();
-        for (id,start,end) in self.selected_paragraph_spans() {
-            if start >= end { continue; }
+        for (id,start,end) in self.character_formatting_spans() {
+            if start >= end && self.table_formatting_spans.is_none() { continue; }
             let before = self.paragraph(&id).cloned().ok_or("paragraph not found")?;
-            let (prefix_selected,suffix) = split_content(&before.content,end)?;
-            let (mut prefix,mut selected) = split_content(&prefix_selected,start)?;
+            let (mut prefix, mut selected, suffix) = self.split_for_formatting(&before, start, end)?;
             if !patch_ligatures(&mut selected,&self.document.styles,before.style.as_ref(),mode) { continue; }
             prefix.extend(selected); prefix.extend(suffix);
-            let mut after=before.clone();after.content=(normalized_content(prefix)).into();
+            let mut after=before.clone();after.content=self.finish_formatting_content(prefix).into();
             self.replace_paragraph(&after)?;
             mutations.push(Mutation::ParagraphChanged {id,before,after});
         }
@@ -90,7 +139,7 @@ impl EditorState {
     /// Change optical/metrics kerning without resetting the other font features.
     pub fn set_kerning_mode(&mut self, mode: KerningMode) -> Result<(), String> {
         let selection = self.selection.clone().ok_or("no active selection")?;
-        if selection.is_collapsed() {
+        if selection.is_collapsed() && self.table_formatting_spans.is_none() {
             let mut props = self.effective_caret_properties();
             props.overlay(&self.typing_properties);
             let mut typography = props.typography.unwrap_or_default();
@@ -101,14 +150,13 @@ impl EditorState {
             return Ok(());
         }
         let mut mutations = Vec::new();
-        for (id,start,end) in self.selected_paragraph_spans() {
-            if start >= end { continue; }
+        for (id,start,end) in self.character_formatting_spans() {
+            if start >= end && self.table_formatting_spans.is_none() { continue; }
             let before = self.paragraph(&id).cloned().ok_or("paragraph not found")?;
-            let (prefix_selected,suffix) = split_content(&before.content,end)?;
-            let (mut prefix,mut selected) = split_content(&prefix_selected,start)?;
+            let (mut prefix, mut selected, suffix) = self.split_for_formatting(&before, start, end)?;
             if !patch_kerning(&mut selected,&self.document.styles,before.style.as_ref(),mode) { continue; }
             prefix.extend(selected); prefix.extend(suffix);
-            let mut after=before.clone();after.content=normalized_content(prefix).into();
+            let mut after=before.clone();after.content=self.finish_formatting_content(prefix).into();
             self.replace_paragraph(&after)?;
             mutations.push(Mutation::ParagraphChanged {id,before,after});
         }
@@ -1260,46 +1308,50 @@ impl EditorState {
     }
 
     pub fn formatting_summary(&self) -> FormattingSummary {
-        let collapsed = self.selection.as_ref().is_none_or(Selection::is_collapsed);
-        let character = if collapsed {
+        self.summarize_formatting(self.table_formatting_spans.as_deref())
+    }
+
+    fn summarize_formatting(&self, cells: Option<&[(NodeId, usize, usize)]>) -> FormattingSummary {
+        let (character, ligatures, kerning_mode) = if cells.is_none()
+            && self.selection.as_ref().is_none_or(Selection::is_collapsed) {
             let mut properties = self.effective_caret_properties();
             properties.overlay(&self.document.styles.resolve_character(self.typing_style.as_ref()));
             properties.overlay(&self.typing_properties);
-            normalized_effective(properties)
+            let character = normalized_effective(properties);
+            let typography = character.typography.clone().unwrap_or_default();
+            (character, Some(typography.ligatures), Some(effective_kerning_mode(&typography)))
         } else {
-            let mut result: Option<CharacterProperties> = None;
-            for (id, start, end) in self.selected_paragraph_spans() {
-                let Some(p) = self.paragraph(&id) else { continue; };
-                let Ok(selected) = slice_content(&p.content, start, end) else { continue; };
-                collect_common_runs(&self.document.styles, p.style.as_ref(), &selected, &mut result);
+            let mut result = None;
+            let mut ligatures = Vec::new();
+            let mut kerning = Vec::new();
+            let selection;
+            let spans = match cells {
+                Some(cells) => cells,
+                None => { selection = self.selected_paragraph_spans(); &selection }
+            };
+            for (id, start, end) in spans {
+                let Some(p) = self.paragraph(id) else { continue; };
+                let selected;
+                let content = if cells.is_some() {
+                    &p.content[..]
+                } else {
+                    let Ok(slice) = slice_content(&p.content, *start, *end) else { continue; };
+                    selected = slice;
+                    &selected
+                };
+                let styles = &self.document.styles;
+                collect_common_runs(styles, p.style.as_ref(), content, &mut result);
+                collect_ligature_modes(content, styles, p.style.as_ref(), &mut ligatures);
+                collect_kerning_modes(content, styles, p.style.as_ref(), &mut kerning);
             }
-            result.unwrap_or_else(|| normalized_effective(self.effective_caret_properties()))
+            (
+                result.unwrap_or_else(|| normalized_effective(self.effective_caret_properties())),
+                ligatures.first().copied().filter(|first| ligatures.iter().all(|value| value == first)),
+                kerning.first().copied().filter(|first| kerning.iter().all(|value| value == first)),
+            )
         };
-        let ligatures = if collapsed {
-            Some(character.typography.clone().unwrap_or_default().ligatures)
-        } else {
-            let mut modes=Vec::new();
-            for (id,start,end) in self.selected_paragraph_spans() {
-                let Some(p)=self.paragraph(&id) else {continue;};
-                if let Ok(selected)=slice_content(&p.content,start,end) {
-                    collect_ligature_modes(&selected,&self.document.styles,p.style.as_ref(),&mut modes);
-                }
-            }
-            modes.first().copied().filter(|first| modes.iter().all(|m| m==first))
-        };
-        let kerning_mode = if collapsed {
-            Some(effective_kerning_mode(&character.typography.clone().unwrap_or_default()))
-        } else {
-            let mut modes=Vec::new();
-            for (id,start,end) in self.selected_paragraph_spans() {
-                let Some(p)=self.paragraph(&id) else {continue;};
-                if let Ok(selected)=slice_content(&p.content,start,end) {
-                    collect_kerning_modes(&selected,&self.document.styles,p.style.as_ref(),&mut modes);
-                }
-            }
-            modes.first().copied().filter(|first| modes.iter().all(|m| m==first))
-        };
-        let ids = self.selected_paragraph_ids();
+        let ids = cells.map_or_else(|| self.selected_paragraph_ids(),
+            |spans| spans.iter().map(|(id, _, _)| id.clone()).collect());
         let mut result: Option<FormattingSummary> = None;
         for id in ids {
             let Some(p) = self.paragraph(&id) else { continue; };
@@ -1598,7 +1650,7 @@ fn resize_image_near_offset(content: &mut [Inline], offset: usize, width_mm: f32
 fn patch_ligatures(content:&mut [Inline],styles:&model::StyleSheet,paragraph_style:Option<&StyleId>,mode:LigatureMode)->bool {
     let mut changed=false;
     for inline in content {match inline {
-        Inline::Text(run) if !run.text.is_empty() => {
+        Inline::Text(run) => {
             let mut typography=styles.resolve_run(paragraph_style,run.style.as_ref(),&run.properties).typography.unwrap_or_default();
             if typography.ligatures!=mode {
                 typography.ligatures=mode;run.properties.typography=Some(typography);changed=true;
@@ -1611,7 +1663,7 @@ fn patch_ligatures(content:&mut [Inline],styles:&model::StyleSheet,paragraph_sty
 fn patch_kerning(content:&mut [Inline],styles:&model::StyleSheet,paragraph_style:Option<&StyleId>,mode:KerningMode)->bool {
     let mut changed=false;
     for inline in content {match inline {
-        Inline::Text(run) if !run.text.is_empty() => {
+        Inline::Text(run) => {
             let mut typography=styles.resolve_run(paragraph_style,run.style.as_ref(),&run.properties).typography.unwrap_or_default();
             if typography.kerning_mode!=mode || typography.kerning!=(mode!=KerningMode::Off) {
                 typography.kerning_mode=mode;typography.kerning=mode!=KerningMode::Off;
@@ -1627,14 +1679,14 @@ fn effective_kerning_mode(typography:&model::OpenTypeTypography)->KerningMode {
 }
 fn collect_kerning_modes(content:&[Inline],styles:&model::StyleSheet,paragraph_style:Option<&StyleId>,out:&mut Vec<KerningMode>) {
     for inline in content {match inline {
-        Inline::Text(run) if !run.text.is_empty()=>out.push(effective_kerning_mode(&styles.resolve_run(paragraph_style,run.style.as_ref(),&run.properties).typography.unwrap_or_default())),
+        Inline::Text(run)=>out.push(effective_kerning_mode(&styles.resolve_run(paragraph_style,run.style.as_ref(),&run.properties).typography.unwrap_or_default())),
         Inline::Hyperlink(link)=>collect_kerning_modes(&link.content,styles,paragraph_style,out),
         _=>{}
     }}
 }
 fn collect_ligature_modes(content:&[Inline],styles:&model::StyleSheet,paragraph_style:Option<&StyleId>,out:&mut Vec<LigatureMode>) {
     for inline in content {match inline {
-        Inline::Text(run) if !run.text.is_empty()=>out.push(styles.resolve_run(paragraph_style,run.style.as_ref(),&run.properties).typography.unwrap_or_default().ligatures),
+        Inline::Text(run)=>out.push(styles.resolve_run(paragraph_style,run.style.as_ref(),&run.properties).typography.unwrap_or_default().ligatures),
         Inline::Hyperlink(link)=>collect_ligature_modes(&link.content,styles,paragraph_style,out),
         _=>{}
     }}
@@ -1644,7 +1696,7 @@ fn patch_runs(content: &mut [Inline], patch: &CharacterProperties) -> bool {
     let mut changed = false;
     for item in content {
         match item {
-            Inline::Text(run) if !run.text.is_empty() => {
+            Inline::Text(run) => {
                 let before = run.properties.clone();
                 run.properties.overlay(patch);
                 changed |= before != run.properties;
@@ -1667,7 +1719,7 @@ fn collect_common_runs(styles: &model::StyleSheet, paragraph_style: Option<&Styl
     content: &[Inline], result: &mut Option<CharacterProperties>) {
     for inline in content {
         match inline {
-            Inline::Text(run) if !run.text.is_empty() => {
+            Inline::Text(run) => {
                 let current = normalized_effective(styles.resolve_run(paragraph_style, run.style.as_ref(), &run.properties));
                 if let Some(common) = result {
                     macro_rules! intersect { ($($field:ident),*) => { $(if common.$field != current.$field { common.$field = None; })* }; }

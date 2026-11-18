@@ -176,6 +176,7 @@ struct EditKey {
     revision: u64,
     selection: Option<Selection>,
     typing: CharacterProperties,
+    cells: Option<(NodeId, Vec<NodeId>)>,
 }
 
 type ScrollMetrics = (i32, i32, i32);
@@ -587,9 +588,9 @@ impl Ribbon {
             Action::RecentFiles => self.show_recent_files()?,
             Action::Save | Action::SaveAs => background_io::queue_save(&self.ui.main_frame,&self.state,action==Action::SaveAs)?,
             Action::GrowFont | Action::ShrinkFont => {
-                let current = self.state.borrow().editor.formatting_summary().character.font_size_pt.unwrap_or(11.0);
+                let current = self.state.borrow().formatting_summary().character.font_size_pt.unwrap_or(11.0);
                 let next = (current + if action == Action::GrowFont { 1.0 } else { -1.0 }).clamp(1.0, 400.0);
-                self.edit(|editor| editor.apply_character_properties(&CharacterProperties { font_size_pt: Some(next), ..Default::default() }))?;
+                self.edit_formatting(|editor| editor.apply_character_properties(&CharacterProperties { font_size_pt: Some(next), ..Default::default() }))?;
             }
             Action::Typography => self.show_typography_menu(),
             Action::FontColor => {
@@ -598,13 +599,13 @@ impl Ribbon {
                 if ({crate::placement::centre(&dialog);dialog.show_modal()}) == ID_OK {
                     if let Some(c) = dialog.get_colour() {
                         let color = format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b);
-                        self.edit(|e| e.apply_character_properties(&CharacterProperties { color: Some(color), ..Default::default() }))?;
+                        self.edit_formatting(|e| e.apply_character_properties(&CharacterProperties { color: Some(color), ..Default::default() }))?;
                     }
                 }
             }
-            Action::Align(alignment) => self.edit(|e| e.apply_paragraph_properties(&ParagraphProperties { alignment: Some(alignment), ..Default::default() }))?,
-            Action::Direction(direction) => self.edit(|e| e.apply_paragraph_properties(&ParagraphProperties { direction: Some(direction), ..Default::default() }))?,
-            Action::Indent(delta) => self.edit(|e| {
+            Action::Align(alignment) => self.edit_formatting(|e| e.apply_paragraph_properties(&ParagraphProperties { alignment: Some(alignment), ..Default::default() }))?,
+            Action::Direction(direction) => self.edit_formatting(|e| e.apply_paragraph_properties(&ParagraphProperties { direction: Some(direction), ..Default::default() }))?,
+            Action::Indent(delta) => self.edit_formatting(|e| {
                 if e.current_list_level().is_some() {
                     e.adjust_list_level(if delta > 0.0 { 1 } else { -1 })
                 } else { e.adjust_left_indent(delta) }
@@ -612,8 +613,8 @@ impl Ribbon {
             Action::PageBreak => self.edit(EditorState::insert_page_break)?,
             Action::ColumnBreak => self.edit(EditorState::insert_column_break)?,
             Action::SectionBreak => section_break_menu::show(self),
-            Action::Bullets => self.edit(|editor| editor.toggle_list(ListFormat::Bullet))?,
-            Action::Numbering => self.edit(|editor| editor.toggle_list(ListFormat::Decimal))?,
+            Action::Bullets => self.edit_formatting(|editor| editor.toggle_list(ListFormat::Bullet))?,
+            Action::Numbering => self.edit_formatting(|editor| editor.toggle_list(ListFormat::Decimal))?,
             Action::Columns => columns_menu::show(self, &self.ui.columns_button),
             Action::InsertTable => {
                 // Word's Insert > Table: in a table, open its tools; otherwise
@@ -689,7 +690,7 @@ impl Ribbon {
             Action::StyleApply => self.apply_pane_style()?,
             Action::StyleInspect => self.inspect_pane_style(),
             Action::StyleDelete => self.delete_pane_style()?,
-            Action::ClearDirect => self.edit(EditorState::clear_direct_formatting)?,
+            Action::ClearDirect => self.edit_formatting(EditorState::clear_direct_formatting)?,
             Action::Highlight => self.highlight_dialog()?,
             Action::Hyphenation => self.show_hyphenation_menu(),
             Action::TextLanguage => self.language_dialog()?,
@@ -795,11 +796,21 @@ impl Ribbon {
         result
     }
 
+    fn edit_formatting(&self, operation: impl FnOnce(&mut EditorState) -> Result<(), String>) -> Result<(), String> {
+        let result = self.edit_canvas(|state| state.apply_formatting(operation));
+        self.focus_document();
+        result
+    }
+
     /// Modal review windows retain keyboard focus while applying document edits.
     fn edit_without_focus(&self, operation: impl FnOnce(&mut EditorState) -> Result<(), String>) -> Result<(), String> {
+        self.edit_canvas(|state| operation(&mut state.editor))
+    }
+
+    fn edit_canvas(&self, operation: impl FnOnce(&mut CanvasState) -> Result<(), String>) -> Result<(), String> {
         let result = {
             let mut state = self.state.borrow_mut(); let before = state.editor.revision;let selection=state.editor.selection.clone();
-            let result = operation(&mut state.editor);
+            let result = operation(&mut state);
             if state.editor.revision != before { submit_layout(&mut state); }
             state.preferred_caret_x_pt = None; state.caret_visual_line = None;
             state.action_status = None; refresh_overlay(&mut state); wake_caret(&mut state);
@@ -939,7 +950,7 @@ impl Ribbon {
     fn commit_field_value(&self, text: String, field: Field) {
         if self.syncing.get() { return; }
         let value = text.trim().to_string();
-        let result = self.edit(|editor| match field {
+        let apply = |editor: &mut EditorState| match field {
             Field::Family => editor.apply_character_properties(&CharacterProperties { font_family: Some(value), ..Default::default() }),
             Field::Size => editor.apply_character_properties(&CharacterProperties { font_size_pt: Some(number(&value)?), ..Default::default() }),
             Field::LineSpacing => editor.apply_paragraph_properties(&ParagraphProperties { line_spacing: Some(number(&value)?), ..Default::default() }),
@@ -969,20 +980,25 @@ impl Ribbon {
                 }
                 editor.set_section_properties(props)
             }
-        });
+        };
+        let result = if matches!(field, Field::Paper | Field::Margins) {
+            self.edit(apply)
+        } else {
+            self.edit_formatting(apply)
+        };
         if let Err(error) = result { self.state.borrow_mut().action_status = Some(error); }
         self.last_key.borrow_mut().take();
     }
 
     fn commit_kerning_mode(&self, mode: KerningMode) {
-        if let Err(error) = self.edit(|editor| editor.set_kerning_mode(mode)) {
+        if let Err(error) = self.edit_formatting(|editor| editor.set_kerning_mode(mode)) {
             self.state.borrow_mut().action_status = Some(error);
         }
         self.last_key.borrow_mut().take();
     }
 
     fn commit_ligature_mode(&self, mode: LigatureMode) {
-        if let Err(error) = self.edit(|editor| editor.set_ligature_mode(mode)) {
+        if let Err(error) = self.edit_formatting(|editor| editor.set_ligature_mode(mode)) {
             self.state.borrow_mut().action_status = Some(error);
         }
         self.last_key.borrow_mut().take();
@@ -1003,7 +1019,7 @@ impl Ribbon {
         debug_assert_eq!(menu.get_item_count(),9);
         menu.enable_item(KERNING_HEADING_ID,false);
         menu.enable_item(LIGATURE_HEADING_ID,false);
-        let format=self.state.borrow().editor.formatting_summary();
+        let format=self.state.borrow().formatting_summary();
         menu.check_item(match format.kerning_mode {
             Some(KerningMode::Optical)=>KERNING_OPTICAL_ID,
             Some(KerningMode::Off)=>KERNING_OFF_ID,
@@ -1476,7 +1492,12 @@ impl Ribbon {
         if let Some(ruler) = self.tab_ruler.borrow().as_ref() { ruler.refresh(); }
         let (key, title, status, zoom, metrics, can_undo, can_redo, page, pages, section, editing_header_footer) = {
             let state = self.state.borrow();
-            let key = EditKey { revision: state.editor.revision, selection: state.editor.selection.clone(), typing: state.editor.typing_properties.clone() };
+            let cells = match &state.selected_object {
+                Some(objects_ui::SelectedObject::Cells { table_id, cell_ids }) => Some((table_id.clone(), cell_ids.clone())),
+                _ => None,
+            };
+            let key = EditKey { revision: state.editor.revision, selection: state.editor.selection.clone(),
+                typing: state.editor.typing_properties.clone(), cells };
             let pages = state.vector_document.pages.len().max(1);
             let page = state.overlay.caret.as_ref().map(|caret| caret.page_index + 1).unwrap_or(1);
             let section = state.editor.section_properties_at_caret();
@@ -1547,9 +1568,9 @@ impl Ribbon {
             if let Some(gallery) = self.style_gallery.borrow().as_ref() { gallery.refresh(); }
             self.sync_style_caption();
             self.refresh_styles_pane();
-            let (format, section) = { let state = self.state.borrow(); (state.editor.formatting_summary(), state.editor.section_properties_at_caret()) };
+            let (format, section) = { let state = self.state.borrow(); (state.formatting_summary(), state.editor.section_properties_at_caret()) };
             self.sync_format(&format, section.as_ref());
-            self.sync_buttons(&format, section.as_ref(), can_undo, can_redo, key.selection.as_ref().is_some_and(|s| !s.is_collapsed()));
+            self.sync_buttons(&format, section.as_ref(), can_undo, can_redo, key.cells.is_some() || key.selection.as_ref().is_some_and(|s| !s.is_collapsed()));
             self.last_key.replace(Some(key.clone()));
             self.last_activity.set(Instant::now());
         }
