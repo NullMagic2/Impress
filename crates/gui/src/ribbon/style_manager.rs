@@ -180,7 +180,6 @@ impl Manager {
                 manager.modify_selected();
             }
         });
-        close.on_click(move |_| window.end_modal(ID_CANCEL));
         manager
     }
 

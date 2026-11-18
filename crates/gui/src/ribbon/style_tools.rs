@@ -168,7 +168,9 @@ pub(super) fn find_replace(
         if id == REPLACE || id == REPLACE_ALL {
             button.enable(false);
         }
-        button.on_click(move |_| window.end_modal(id));
+        if id != ID_CANCEL {
+            button.on_click(move |_| window.end_modal(id));
+        }
         actions.add(&button, 0, SizerFlag::Right, window.from_dip_int(5));
         buttons.push(button);
     }
@@ -683,8 +685,6 @@ impl Form {
         window.set_sizer_and_fit(self.root, true);
         window.set_escape_id(ID_CANCEL);
         ok.set_default();
-        ok.on_click(move |_| window.end_modal(ID_OK));
-        cancel.on_click(move |_| window.end_modal(ID_CANCEL));
         crate::placement::centre(&window);
         window.show_modal() == ID_OK
     }

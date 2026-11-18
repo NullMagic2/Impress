@@ -80,8 +80,7 @@ impl Prompt {
         window.set_sizer_and_fit(self.root, true);
         ok.set_default();
         window.set_escape_id(ID_CANCEL);
-        ok.on_click(move |_| window.end_modal(ID_OK));
-        cancel.on_click(move |_| window.end_modal(ID_CANCEL));
+        // Let wx supply the stock button and keyboard responses.
         crate::placement::centre(&window);
         field.set_focus();
         window.show_modal() == ID_OK
