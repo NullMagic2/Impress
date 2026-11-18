@@ -318,3 +318,47 @@ fn unplaceable_picture_keeps_surrounding_paragraphs_in_the_editing_view() {
     assert_eq!(pages.len(), 1, "discard the partial placement of the failed picture");
     assert_eq!(doc, original);
 }
+
+#[test]
+fn contents_tab_fits_the_actual_column_with_rtl_titles_and_wrapped_titles() {
+    let mut document = Document::default();
+    let section = &mut document.sections[0];
+    section.properties.column_count = 2;
+    section.properties.column_gap_mm = 9.0;
+    let target = Paragraph::plain("Chapter two");
+    let anchor = model::TextAnchor { paragraph: target.id.clone(), offset: 0 };
+    let bookmark_id = NodeId::new();
+    document.review.bookmarks.insert(bookmark_id.clone(), model::Bookmark {
+        id: bookmark_id, name: "Chapter".into(),
+        range: Some(model::AnchorRange { start: anchor.clone(), end: anchor }),
+    });
+    let titles = ["פרק מבוא".to_owned(), "A longer chapter title that will wrap across a narrow column ".repeat(4)];
+    let mut ids = Vec::new();
+    for title in titles {
+        let mut paragraph = Paragraph::plain("");
+        paragraph.properties.left_indent_mm = Some(7.0);
+        paragraph.properties.contents_leader = Some(model::TabLeader::Dots);
+        paragraph.content = vec![
+            Inline::Text(model::TextRun::plain(title)),
+            Inline::Tab { id: NodeId::new() },
+            Inline::Field(model::Field { id: NodeId::new(), kind: FieldKind::PageReference { bookmark: "Chapter".into() },
+                display_text: None, color: None }),
+        ].into();
+        ids.push(paragraph.id.0.clone());
+        section.blocks.push(Block::Paragraph(paragraph));
+    }
+    section.blocks.push(Block::PageBreak { id: NodeId::new() });
+    section.blocks.push(Block::Paragraph(target));
+    let width = (section.properties.margin_left_mm + section.properties.column_bands()[0].width_mm) * MM_TO_PT;
+
+    let scene = LayoutEngine::default().layout_document(&document).unwrap();
+    assert_eq!(scene.pages.len(), 2);
+    let number_count = scene.pages[0].commands.iter().filter(|command| matches!(command.unclipped().0,
+        DrawCommand::TextRun(run) if run.actual_text.as_deref() == Some("2"))).count();
+    assert_eq!(number_count, 2);
+    for id in &ids {
+        let number = scene.pages[0].hit_regions.iter().filter(|region| &region.node_id == id)
+            .max_by_key(|region| region.byte_range.end).expect("contents page-number hit region");
+        assert!((number.rect.max_x() - width).abs() < 0.5);
+    }
+}

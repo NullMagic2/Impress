@@ -261,6 +261,9 @@ impl Ribbon {
         if let Some(target) = self.table_context_menu.borrow().as_ref() {
             target.append_commands(&menu);
         }
+        if contents_menu::contains_paragraph(self) {
+            contents_menu::append_context(&menu);
+        }
         self.spelling_context
             .replace(Some((generation, revision, issue)));
         self.ui.main_frame.popup_menu(&mut menu, Some(at));

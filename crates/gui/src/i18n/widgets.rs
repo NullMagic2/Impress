@@ -146,9 +146,9 @@ self.send_backward_button.set_tooltip(&text("Send backward — Not available in 
 self.align_objects_button.set_tooltip(&text("Align — Not available in this alpha"));
 self.rotate_button.set_tooltip(&text("Rotate — Not available in this alpha"));
 self.i18n_control_115.set_label(&text("Arrange"));
-self.toc_button.set_tooltip(&text("Insert table of contents"));
-self.update_toc_button.set_tooltip(&text("Update table — Not available in this alpha"));
-self.toc_add_text_button.set_tooltip(&text("Add text — Not available in this alpha"));
+self.toc_button.set_tooltip(&text("Table of contents"));
+self.update_toc_button.set_tooltip(&text("Update table"));
+self.toc_add_text_button.set_tooltip(&text("Add text"));
 self.i18n_control_119.set_label(&text("Table of contents"));
 self.insert_footnote_button.set_tooltip(&text("Insert footnote (Ctrl+Alt+F)"));
 self.insert_endnote_button.set_tooltip(&text("Insert endnote"));

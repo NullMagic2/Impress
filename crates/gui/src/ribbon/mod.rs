@@ -127,7 +127,7 @@ enum Action {
     New, Open, RecentFiles, Save, SaveAs, Recovery, Editor(AppCommand),
     Pdf, ImportPdf, Print, CommentNew, CommentDelete, CommentResolve, CommentStep(bool), StyleManager, ManageStyles, StyleGalleryMore, StylesClose, StyleNew, StyleModify, StyleApply, StyleInspect, StyleDelete, ClearDirect, Highlight, Hyphenation, TextLanguage,
     SearchOptions, SearchStep(bool), ReplaceOne, ReplaceAll,
-    Contents, Footnotes, Bookmarks, Comments, TextTracking, Spelling, Compatibility,
+    Contents, ContentsUpdate, ContentsLevel, Footnotes, Bookmarks, Comments, TextTracking, Spelling, Compatibility,
     EquationClose,
     SelectCells(u8), Table(crate::table_ui::TableOp), TablePosition, CloseTableTools, PictureAlign(u8), PictureDelete, ClosePictureTools, HeaderVariant(u8), HeaderFooterGo(bool), InsertField(u8), RemoveHeaderFooter, InsertNote(bool), NextFootnote(bool), ShowNotes, ExitHeaderFooter, ToggleRibbon, Help, CitationManager, SelectRibbonTab(u8), Brand, Unavailable,
     GrowFont, ShrinkFont, FontColor, Typography, Align(ParagraphAlignment), Indent(f32),
@@ -708,6 +708,8 @@ impl Ribbon {
             Action::CopySource => { self.source_copy_pending.set(true); self.request_source(); }
             Action::Help => document_info::about(&self.ui.main_frame),
             Action::Contents => contents_menu::show(self),
+            Action::ContentsUpdate => { contents_menu::update(self)?; self.focus_document(); }
+            Action::ContentsLevel => contents_menu::show_levels(self),
             Action::Footnotes => self.footnotes()?, Action::Bookmarks => self.bookmarks()?,
             Action::Comments => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.show(!p.shown()); } }
             Action::CommentNew => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.new_comment(); } }
@@ -1624,6 +1626,9 @@ impl Ribbon {
                 Action::CommentStep(_) => !self.state.borrow().editor.document.review.comments.is_empty(),
                 Action::Editor(AppCommand::Redo) => redo,
                 Action::Editor(AppCommand::Cut | AppCommand::Copy) => selection,
+                Action::Contents | Action::ContentsLevel => self.mode.get() != ViewMode::Typst,
+                Action::ContentsUpdate => self.mode.get() != ViewMode::Typst
+                    && !self.state.borrow().editor.document.review.contents_paragraphs.is_empty(),
                 Action::Editor(_) | Action::GrowFont | Action::ShrinkFont | Action::FontColor | Action::Typography |
                     Action::Align(_) | Action::Direction(_) | Action::Indent(_) | Action::Symbol | Action::PageBreak | Action::SectionBreak => self.mode.get() != ViewMode::Typst,
                 _ => true,

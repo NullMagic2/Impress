@@ -76,7 +76,7 @@ def adopt(env):
         'print_layout_button':'view_graphical_button', 'split_window_button':'view_split_button',
     }
     # Mockup-only buttons whose command exists although no historical button does.
-    mockup_actions={'zoom_dialog_button':'ZoomDialog','insert_citation_button':'CitationManager','date_time_button':'InsertField(2)',
+    mockup_actions={'update_toc_button':'ContentsUpdate','toc_add_text_button':'ContentsLevel','zoom_dialog_button':'ZoomDialog','insert_citation_button':'CitationManager','date_time_button':'InsertField(2)',
         # Word's footnote commands: insert and edit on the page, step through notes.
         'insert_footnote_button':'InsertNote(false)','insert_endnote_button':'InsertNote(true)',
         'next_footnote_button':'NextFootnote(true)','show_notes_button':'ShowNotes',

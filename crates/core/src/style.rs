@@ -136,6 +136,9 @@ impl StyleSheet {
         while let Some(style_id)=current {
             if !seen.insert(style_id.clone()) {return None;}
             let style=self.get(style_id)?;
+            if let Some(level) = style.paragraph.outline_level {
+                return (1..=9).contains(&level).then_some(level);
+            }
             if let Some(choice)=style.formatting.get("par_outline_level") {
                 return choice.strip_prefix("Level ").and_then(|value|value.parse::<u8>().ok()).filter(|level|(1..=9).contains(level));
             }
@@ -147,6 +150,13 @@ impl StyleSheet {
             current=style.based_on.as_ref();
         }
         None
+    }
+
+    pub fn paragraph_outline_level(&self, paragraph: &crate::Paragraph) -> Option<u8> {
+        match paragraph.properties.outline_level {
+            Some(level) => (1..=9).contains(&level).then_some(level),
+            None => self.outline_level(paragraph.style.as_ref()),
+        }
     }
 
     pub fn id_by_name(&self, name: &str) -> Option<StyleId> {
@@ -359,6 +369,12 @@ pub enum LigatureMode {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ParagraphProperties {
+    /// Direct outline level: 1–9 includes this paragraph, 0 excludes it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub outline_level: Option<u8>,
+    /// Contents entries resolve their page-number tab against the actual column.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contents_leader: Option<TabLeader>,
     pub alignment: Option<ParagraphAlignment>,
     pub space_before_pt: Option<f32>,
     pub space_after_pt: Option<f32>,
@@ -390,6 +406,8 @@ pub struct ParagraphProperties {
 
 impl ParagraphProperties {
     pub fn overlay(&mut self, other: &Self) {
+        if other.outline_level.is_some() { self.outline_level = other.outline_level; }
+        if other.contents_leader.is_some() { self.contents_leader = other.contents_leader; }
         if other.alignment.is_some() { self.alignment = other.alignment; }
         if other.space_before_pt.is_some() { self.space_before_pt = other.space_before_pt; }
         if other.space_after_pt.is_some() { self.space_after_pt = other.space_after_pt; }

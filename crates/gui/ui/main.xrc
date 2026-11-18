@@ -2595,8 +2595,7 @@
                                                     <label></label>
                                                     <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
                                                     <minsize>68,24</minsize>
-                                                    <enabled>0</enabled>
-                                                    <tooltip>Update table — Not available in this alpha</tooltip>
+                                                    <tooltip>Update table</tooltip>
                                                   </object>
                                                 </object>
                                                 <object class="sizeritem">
@@ -2606,8 +2605,7 @@
                                                     <label></label>
                                                     <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
                                                     <minsize>68,24</minsize>
-                                                    <enabled>0</enabled>
-                                                    <tooltip>Add text — Not available in this alpha</tooltip>
+                                                    <tooltip>Add text</tooltip>
                                                   </object>
                                                 </object>
                                               </object>

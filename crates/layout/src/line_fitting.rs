@@ -76,6 +76,14 @@ pub(super) fn next_line(tokens:&[InlineToken], start:usize, source:&str,
     if let Some(b)=preferred_end.filter(|b|*b>start && *b<end){end=b;}
     end=end.max(start+1).min(tokens.len());
     loop {
+        // Keep the contents leader together with its page number when a
+        // long title wraps. Otherwise an orphaned tab can fill a whole line.
+        if props.contents_leader.is_some() && end < tokens.len()
+            && source.get(tokens[end - 1].start..tokens[end - 1].end) == Some("\t")
+        {
+            if end > start + 1 { end -= 1; }
+            else { end += 1; }
+        }
         let mut line=reshape_line_text(&tokens[start..end],fonts)?;
         // Preserve bytes/caret stops without painting automatic trailing spaces
         // into the adjacent cell. Explicit tabs retain their own positioning.
@@ -89,7 +97,8 @@ pub(super) fn next_line(tokens:&[InlineToken], start:usize, source:&str,
         let tab_result=if tabs {align_tabs(&mut line,source,props,width,indent)} else {Ok(())};
         let natural=line.iter().enumerate().map(|(i,t)|token_advance(t,i+1==line.len(),0.0,1.0)).sum::<f32>();
         if tab_result.is_ok() && natural<=goal+0.01 {return Ok((end,line));}
-        if end==start+1 {
+        if end==start+1 || (props.contents_leader.is_some() && end == start + 2
+            && source.get(tokens[start].start..tokens[start].end) == Some("\t")) {
             // A single grapheme/object may be wider than an extremely narrow
             // cell. Keep its source editable; the cell/body clip is authoritative.
             if tabs {

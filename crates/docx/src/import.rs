@@ -378,12 +378,28 @@ fn parse_document_xml(xml: &str, context: &ImportContext) -> FormatResult<Docume
 
     let mut sections = Vec::new();
     let mut section = Section::default();
-    let mut body_items=Vec::new();flatten_body(body,false,&mut body_items);
+    let mut body_items=Vec::new();flatten_body(body,None,&mut body_items);
     for (child,managed_contents) in body_items {
         match child.name.as_str() {
             "w:p" => {
-                let paragraph = parse_paragraph(child, context);
-                if managed_contents {context.annotations.borrow_mut().state.contents_paragraphs.push(paragraph.id.clone());}
+                let mut paragraph = parse_paragraph(child, context);
+                if let Some(tag) = managed_contents {
+                    let mut annotations = context.annotations.borrow_mut();
+                    let review = &mut annotations.state;
+                    if review.contents_paragraphs.is_empty() {
+                        if let Some((options, automatic)) = crate::parse_contents_tag(tag) {
+                            review.contents_options = options;
+                            review.automatic_contents = automatic;
+                        }
+                        let title = model::inline_text(&paragraph.content);
+                        if !title.trim().is_empty() { review.contents_options.title = title; }
+                    } else if let Some(tab) = paragraph.properties.tabs.as_ref().and_then(|tabs| {
+                        tabs.iter().find(|tab| tab.alignment == model::TabAlignment::Right)
+                    }) {
+                        paragraph.properties.contents_leader = Some(tab.leader);
+                    }
+                    review.contents_paragraphs.push(paragraph.id.clone());
+                }
                 let section_break = child.child("w:pPr").and_then(|p| p.child("w:sectPr"));
                 let has_content = section_break.is_none() || !paragraph.content.is_empty() || paragraph.style.is_some();
                 if (paragraph.content.is_empty() || (paragraph.content.len() == 1 && matches!(paragraph.content[0], Inline::PaginationBreak { .. }))) && section_break.is_none() {
@@ -420,11 +436,11 @@ fn parse_document_xml(xml: &str, context: &ImportContext) -> FormatResult<Docume
 
 /// Expand block content controls without treating a nested table's paragraphs
 /// as body siblings. Managed contents membership is retained through DOCX.
-fn flatten_body<'a>(node:&'a XmlNode,managed:bool,out:&mut Vec<(&'a XmlNode,bool)>) {
+fn flatten_body<'a>(node:&'a XmlNode,managed:Option<&'a str>,out:&mut Vec<(&'a XmlNode,Option<&'a str>)>) {
     for child in &node.children {
         match child.name.as_str() {
             "w:p"|"w:tbl"|"m:oMathPara"|"w:sectPr"=>out.push((child,managed)),
-            "w:sdt"=>{let is_contents=child.child("w:sdtPr").and_then(|n|n.child("w:tag")).and_then(|n|n.attr("w:val"))==Some("Impress.Contents.v1");if let Some(content)=child.child("w:sdtContent"){flatten_body(content,managed||is_contents,out);}},
+            "w:sdt"=>{let tag = child.child("w:sdtPr").and_then(|n|n.child("w:tag")).and_then(|n|n.attr("w:val")).filter(|tag| crate::is_contents_tag(tag));if let Some(content)=child.child("w:sdtContent"){flatten_body(content,managed.or(tag),out);}},
             "w:sdtContent"|"w:customXml"|"w:smartTag"|"w:ins"|"w:moveTo"=>flatten_body(child,managed,out),
             _=>{}
         }
@@ -436,7 +452,7 @@ fn parse_header_footer_blocks(xml: &str, context: &ImportContext) -> FormatResul
     let root = find_descendant(&tree, "w:hdr").or_else(|| find_descendant(&tree, "w:ftr")).ok_or_else(|| invalid("header/footer XML has no root"))?;
     let mut blocks = Vec::new();
     let mut items = Vec::new();
-    flatten_body(root, false, &mut items);
+    flatten_body(root, None, &mut items);
     for (child, _) in items {
         match child.name.as_str() {
             "w:p" => {
@@ -571,6 +587,9 @@ fn parse_paragraph(node:&XmlNode,context:&ImportContext)->Paragraph {
 }
 
 fn parse_paragraph_properties(paragraph: &mut Paragraph, ppr: &XmlNode, context: &ImportContext) {
+    paragraph.properties.outline_level = ppr.child("w:outlineLvl").and_then(|n| n.attr("w:val"))
+        .and_then(|raw| raw.parse::<u8>().ok()).filter(|level| *level <= 9)
+        .map(|level| if level == 9 { 0 } else { level + 1 });
     if let Some(style) = ppr.child("w:pStyle").and_then(|n| n.attr("w:val")) { paragraph.style = Some(model::StyleId(style.to_owned())); }
     if let Some(jc) = ppr.child("w:jc").and_then(|n| n.attr("w:val")) {
         paragraph.properties.alignment = match jc { "center" => Some(ParagraphAlignment::Center), "right" | "end" => Some(ParagraphAlignment::Right), "both" | "distribute" => Some(ParagraphAlignment::Justify), _ => Some(ParagraphAlignment::Left) };

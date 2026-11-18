@@ -1,6 +1,5 @@
 use super::*;
 use model::{AnchorRange,Bookmark,ReviewComment,ReviewState,TextAnchor,TextRevision,document_paragraphs,inline_text,valid_range};
-use std::collections::BTreeMap;
 
 impl EditorState {
     pub fn selection_anchor_range(&self)->Result<AnchorRange,String> {
@@ -83,61 +82,6 @@ impl EditorState {
         self.document.review=after_review.clone();changes.push(Mutation::ReviewChanged{before:before_review,after:after_review});
         self.commit(if accept{"Accept text revision"}else{"Reject text revision"},changes,selection,None)
     }
-    /// Create/update an editable contents snapshot. It intentionally does not
-    /// pretend to be a live TOC field; invoke Update after document changes.
-    pub fn update_contents(&mut self,_pages:&BTreeMap<NodeId,usize>)->Result<(),String> {self.update_contents_options(self.document.review.contents_options.clone())}
-    pub fn update_contents_options(&mut self,options:model::ContentsOptions)->Result<(),String> {
-        if options.title.trim().is_empty()||options.title.len()>256||options.title.contains(['\r','\n','\0'])||!(1..=9).contains(&options.max_heading_level){return Err("Choose a one-line contents title and heading depth from 1 to 9".into());}
-        if self.document.review.track_text{return Err("Turn off paragraph-text tracking before rebuilding contents".into());}
-        let mut headings=Vec::new();
-        for section in &self.document.sections {let mut ps=Vec::new();model::visit_paragraphs(&section.blocks,&mut ps);
-            for p in ps {let style=p.style.as_ref().and_then(|id|self.document.styles.get(id));
-                let name=style.map(|s|s.name.to_ascii_lowercase()).unwrap_or_default();
-                let level=self.document.styles.outline_level(p.style.as_ref());
-                if level.is_some_and(|level|level<=options.max_heading_level)&&!self.document.review.contents_paragraphs.contains(&p.id){headings.push((p.id.clone(),inline_text(&p.content),name));}
-            }
-        }
-        if headings.is_empty()&&self.document.review.contents_paragraphs.is_empty(){return Err("Apply a heading style before creating contents".into());}
-        let before=self.document.sections.clone();let review_before=self.document.review.clone();let selection=self.selection.clone();
-        let old=&review_before.contents_paragraphs;
-        let old_paragraphs=document_paragraphs(&self.document).into_iter().filter(|p|old.contains(&p.id)).cloned().collect::<Vec<_>>();
-        let mut existing=old_paragraphs.iter().filter_map(|p|p.content.iter().find_map(|i|if let Inline::Hyperlink(h)=i{h.target.strip_prefix('#').map(|name|(name.to_string(),p.clone()))}else{None})).collect::<BTreeMap<_,_>>();
-        if review_before.revisions.values().any(|r|old.contains(&r.paragraph)){return Err("Resolve pending revisions in the generated contents before rebuilding it".into());}
-        for s in &mut self.document.sections{s.blocks.retain(|b|!matches!(b,Block::Paragraph(p) if old.contains(&p.id)));}
-        let mut review_after=review_before.clone();review_after.contents_paragraphs.clear();review_after.contents_options=options.clone();
-        if old.is_empty() { review_after.automatic_contents=true; }
-        let mut contents=Vec::new();let mut title=Paragraph::plain(&options.title);if let Some(id)=old.first(){title.id=id.clone();}title.properties.keep_with_next=Some(true);
-        review_after.contents_paragraphs.push(title.id.clone());title.content=(vec![Inline::Text(TextRun {properties:CharacterProperties{bold:Some(true),font_size_pt:Some(16.0),..Default::default()},..TextRun::plain(&options.title)})]).into();
-        contents.push(Block::Paragraph(title));
-        for (node,text,name) in headings {
-            let bookmark=if let Some(b)=review_after.bookmarks.values().find(|b|b.range.as_ref().is_some_and(|r|r.start.paragraph==node&&r.start.offset==0)){b.name.clone()}else{
-                let id=NodeId::new();let bookmark=format!("_Impress{}",id.0.replace('-',""));
-                let a=TextAnchor{paragraph:node.clone(),offset:0};review_after.bookmarks.insert(id.clone(),Bookmark{id,name:bookmark.clone(),range:Some(AnchorRange{start:a.clone(),end:a})});bookmark
-            };
-            let mut p=existing.remove(&bookmark).unwrap_or_else(||Paragraph::plain(""));let level=name.strip_prefix("heading ").and_then(|s|s.parse::<u8>().ok()).unwrap_or(1).clamp(1,9);
-            p.properties.left_indent_mm=Some((level-1) as f32*4.0);
-            let geometry=&self.document.sections[0].properties;
-            let right=(geometry.page_width_mm-geometry.margin_left_mm-geometry.margin_right_mm-(level-1)as f32*4.0).max(10.0);
-            p.properties.tabs=Some(vec![model::TabStop{position_mm:right,alignment:model::TabAlignment::Right,leader:model::TabLeader::Dots}]);
-            p.content=(vec![Inline::Hyperlink(model::Hyperlink{id:NodeId::new(),target:format!("#{bookmark}"),content:(vec![
-                Inline::Text(TextRun::plain(text.replace(['\n','\t']," "))),Inline::Tab{id:NodeId::new()},
-                Inline::Field(model::Field{id:NodeId::new(),kind:model::FieldKind::PageReference{bookmark},display_text:None,color:None}),
-            ]).into()})]).into();
-            review_after.contents_paragraphs.push(p.id.clone());contents.push(Block::Paragraph(p));
-        }
-        self.document.sections[0].blocks.splice(0..0,contents);
-        let pairs=old_paragraphs.iter().filter_map(|p|self.paragraph(&p.id).map(|new|(p.clone(),new.clone()))).collect::<Vec<_>>();rebase_ranges(&mut review_after,&pairs);
-        for range in review_after.bookmarks.values_mut().map(|b|&mut b.range).chain(review_after.comments.values_mut().map(|c|&mut c.range)) {
-            if range.as_ref().is_some_and(|r|!valid_range(&self.document,r)){*range=None;}
-        }
-        if self.selection.as_ref().is_some_and(|s|self.paragraph(&s.anchor.node_id).is_none()||self.paragraph(&s.focus.node_id).is_none()) {
-            let id=document_paragraphs(&self.document).first().map(|p|p.id.clone());if let Some(id)=id{self.set_caret(id,0);}
-        }
-        if let Some(selection)=self.selection.clone(){self.selection=Some(Selection{anchor:DocumentPosition::new(selection.anchor.node_id.clone(),self.clamp_offset(&selection.anchor.node_id,selection.anchor.byte_offset)),focus:DocumentPosition::new(selection.focus.node_id.clone(),self.clamp_offset(&selection.focus.node_id,selection.focus.byte_offset))});}
-        self.document.review=review_after.clone();let after=self.document.sections.clone();
-        self.commit("Update contents snapshot",vec![Mutation::SectionsReplaced{index:0,before,after},Mutation::ReviewChanged{before:review_before,after:review_after}],selection,None)
-    }
-
     pub fn insert_footnote(&mut self,text:&str)->Result<(),String> { self.insert_note_with_text(text,model::NoteKind::Footnote) }
     pub fn insert_endnote(&mut self,text:&str)->Result<(),String> { self.insert_note_with_text(text,model::NoteKind::Endnote) }
     fn insert_note_with_text(&mut self,text:&str,kind:model::NoteKind)->Result<(),String> {

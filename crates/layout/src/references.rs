@@ -40,7 +40,28 @@ pub(super) fn update_fields(document:&mut Document,pages:Option<&VectorDocument>
     let mut numbers=BTreeMap::new();let refs=footnote_references(document);
     let mut counts=[0usize;2];
     for (_,note) in &refs {if !numbers.contains_key(note){let k=usize::from(document.review.footnotes.get(note).is_some_and(|n|n.kind==model::NoteKind::Endnote));counts[k]+=1;numbers.insert(note.clone(),counts[k]);}}
-    let bookmark_pages=document.review.bookmarks.values().filter_map(|b|Some((b.name.clone(),pages.and_then(|p|b.range.as_ref().and_then(|r|page_at(p,&r.start.paragraph,r.start.offset)))?))).collect::<BTreeMap<_,_>>();
+    let mut bookmark_pages = BTreeMap::new();
+    if let Some(pages) = pages.filter(|_| !document.review.bookmarks.is_empty()) {
+        // Index just the targeted paragraphs in one pass. A long TOC should
+        // not rescan all the laid-out text once per entry on every field pass.
+        let nodes: BTreeSet<_> = document.review.bookmarks.values()
+            .filter_map(|b| b.range.as_ref().map(|r| r.start.paragraph.0.as_str())).collect();
+        let mut hits: HashMap<&str, Vec<(usize, &TextHitRegion)>> = HashMap::new();
+        for (page, value) in pages.pages.iter().enumerate() {
+            for region in &value.hit_regions {
+                let node = region.node_id.as_str();
+                if nodes.contains(node) { hits.entry(node).or_default().push((page + 1, region)); }
+            }
+        }
+        for bookmark in document.review.bookmarks.values() {
+            let Some(range) = &bookmark.range else { continue; };
+            let Some(regions) = hits.get(range.start.paragraph.0.as_str()) else { continue; };
+            let offset = range.start.offset;
+            let target = regions.iter().find(|(_, hit)| hit.byte_range.contains(&offset))
+                .or_else(|| regions.iter().find(|(_, hit)| hit.caret_stops.iter().any(|stop| stop.byte_offset == offset)));
+            if let Some((page, _)) = target { bookmark_pages.insert(bookmark.name.clone(), *page); }
+        }
+    }
     let mut changed=false;
     fn walk(items:&mut[Inline],node:&NodeId,offset:&mut usize,header:bool,pages:Option<&VectorDocument>,numbers:&BTreeMap<NodeId,usize>,bookmarks:&BTreeMap<String,usize>,changed:&mut bool){
         for i in items{match i {

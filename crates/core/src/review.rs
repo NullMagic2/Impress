@@ -36,9 +36,35 @@ pub struct TextRevision {
     /// the editable final view. This alpha reviews one revision per paragraph.
     pub before: Paragraph,
 }
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContentsTemplate { #[default] Classic, Compact, Modern }
+
 #[derive(Clone,Debug,PartialEq,Serialize,Deserialize)]
-pub struct ContentsOptions { pub title:String, pub max_heading_level:u8 }
-impl Default for ContentsOptions {fn default()->Self{Self{title:"Contents".into(),max_heading_level:3}}}
+#[serde(default)]
+pub struct ContentsOptions {
+    pub title: String,
+    pub max_heading_level: u8,
+    pub template: ContentsTemplate,
+    pub show_page_numbers: bool,
+    pub leader: crate::TabLeader,
+}
+impl Default for ContentsOptions {
+    fn default() -> Self {
+        Self { title: "Contents".into(), max_heading_level: 3, template: ContentsTemplate::Classic,
+            show_page_numbers: true, leader: crate::TabLeader::Dots }
+    }
+}
+impl ContentsOptions {
+    pub fn apply_template(&mut self, template: ContentsTemplate) {
+        self.template = template;
+        self.show_page_numbers = true;
+        self.leader = match template {
+            ContentsTemplate::Classic | ContentsTemplate::Compact => crate::TabLeader::Dots,
+            ContentsTemplate::Modern => crate::TabLeader::None,
+        };
+    }
+}
 #[derive(Clone,Debug,Default,PartialEq,Serialize,Deserialize)]
 pub struct ReviewState {
     #[serde(default)] pub tracked_changes: BTreeMap<NodeId,crate::TrackedChange>,

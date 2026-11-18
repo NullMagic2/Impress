@@ -15,7 +15,17 @@ pub fn queue_save(parent:&impl WxWidget,state:&Rc<RefCell<CanvasState>>,force:bo
   Some((settings,embed))
  }else{None};
  let mut s=state.borrow_mut();if s.editor.revision!=revision||s.file_job.is_some()||s.clipboard_job.is_some(){return Err("Document changed while the save dialog was open; save again".into());}let doc=document_snapshot(&mut s);let formats=s.formats.clone();let(tx,receiver)=mpsc::channel();
- std::thread::Builder::new().name("impress-save".into()).spawn(move||{let result=(if let Some((_,embed))=&font_options {crate::file_io::save_with_font_embedding(&path,&doc,&formats,*embed)}else{save_document(&path,&doc,&formats)}).map(|()|{
+ let docx_contents = !doc.review.contents_paragraphs.is_empty() && formats.for_path(&path).is_some_and(|f| f.id() == "docx");
+ let ready_scene = (docx_contents && s.layout_error.is_none()
+     && s.display_generation == Some(s.layout_generation) && !s.typing_layout_pending
+     && !equation_ui::previewing(&s)).then(|| Arc::clone(&s.vector_document));
+ std::thread::Builder::new().name("impress-save".into()).spawn(move||{
+  let mut doc = doc;
+  if docx_contents {
+   let scene = ready_scene.or_else(|| layout::LayoutEngine::default().layout_document(&doc).ok().map(Arc::new));
+   if let Some(scene) = scene { layout::cache_page_field_labels(Arc::make_mut(&mut doc), &scene); }
+  }
+  let result=(if let Some((_,embed))=&font_options {crate::file_io::save_with_font_embedding(&path,&doc,&formats,*embed)}else{save_document(&path,&doc,&formats)}).map(|()|{
   let warning=font_options.and_then(|(settings,embed)|crate::save_options::store(&settings,embed).err()).map(|e|format!("Could not remember font embedding preference: {e}"));
   let warning=warning.or_else(|| formats.for_path(&path).filter(|format|format.id()=="doc").and_then(|format|{
    let count=format.export_warnings(&doc).len();

@@ -190,7 +190,10 @@ fn document_xml(document: &Document, context: &ExportContext, drawing_id: &mut u
         let mut managed=false;
         for block in &section.blocks {
             let contents=matches!(block,Block::Paragraph(p) if document.review.contents_paragraphs.contains(&p.id));
-            if contents&&!managed{body.push_str("<w:sdt><w:sdtPr><w:tag w:val=\"Impress.Contents.v1\"/></w:sdtPr><w:sdtContent>");}
+            if contents && !managed {
+                let tag = crate::contents_tag(&document.review);
+                body.push_str(&format!("<w:sdt><w:sdtPr><w:tag w:val=\"{tag}\"/></w:sdtPr><w:sdtContent>"));
+            }
             if !contents&&managed{body.push_str("</w:sdtContent></w:sdt>");}
             managed=contents;body.push_str(&block_xml(block, document, context, drawing_id));
         }
@@ -296,6 +299,10 @@ fn paragraph_properties_xml(p: &Paragraph, context: &ExportContext, inherited_ta
             out.push_str(&format!("<w:tab w:val=\"{val}\" w:leader=\"{leader}\" w:pos=\"{}\"/>", twips(tab.position_mm)));
         }
         out.push_str("</w:tabs>");
+    }
+    if let Some(level) = props.outline_level {
+        let word_level = if (1..=9).contains(&level) { level - 1 } else { 9 };
+        out.push_str(&format!("<w:outlineLvl w:val=\"{word_level}\"/>"));
     }
     // Empty runs represent the paragraph mark's typing format. Store it in
     // pPr/rPr as well, so Word and a subsequent import retain the blank's size.

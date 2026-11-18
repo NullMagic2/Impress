@@ -40,6 +40,12 @@ use std::{
 use thiserror::Error;
 use unicode_segmentation::UnicodeSegmentation;
 
+/// Save a copy of the resolved labels for readers of the exported document.
+/// The scene and document must represent the same revision.
+pub fn cache_page_field_labels(document: &mut Document, scene: &VectorDocument) {
+    references::update_fields(document, Some(scene));
+}
+
 const MM_TO_PT: f32 = 72.0 / 25.4;
 const DEFAULT_FONT_FAMILY: &str = "Linux Libertine G";
 const DEFAULT_FONT_SIZE_PT: f32 = 11.0;
@@ -1819,6 +1825,13 @@ fn prepare_paragraph(
     field_context: &FieldContext,
 ) -> Result<PreparedBlock, LayoutError> {
     let mut para_props = styles.resolve_paragraph_with_direct(paragraph.style.as_ref(), &paragraph.properties);
+    if let Some(leader) = para_props.contents_leader {
+        para_props.tabs = Some(vec![model::TabStop {
+            position_mm: available_width / MM_TO_PT,
+            alignment: model::TabAlignment::Right,
+            leader,
+        }]);
+    }
     if para_props.default_tab_mm.is_none() {
         para_props.default_tab_mm = styles.resolve_paragraph(Some(&model::StyleId::from(model::STYLE_NORMAL))).default_tab_mm;
     }
@@ -1877,14 +1890,26 @@ fn prepare_paragraph(
     let mut hard_lines = collect_inline_tokens(paragraph, styles, ctx, resources, &base_char, field_context)?;
     // Resolve directions before discretionary breaks; a syllable boundary is
     // not a shaping-run boundary unless the compositor actually uses it.
-    apply_bidi_levels(&mut hard_lines, &paragraph_plain_text(paragraph), &ctx.fonts)?;
+    let source_text = paragraph_plain_text(paragraph);
+    apply_bidi_levels(&mut hard_lines, &source_text, &ctx.fonts)?;
+    if para_props.contents_leader.is_some() {
+        // A contents entry has separate heading and numeric columns. Keep
+        // the tab and page number on the right even for a Hebrew/Arabic title.
+        for token in hard_lines.iter_mut().flat_map(|line| &mut line.tokens) {
+            if source_text.get(token.start..token.end) == Some("\t") {
+                token.bidi_level = 0;
+                token.width = 0.0;
+            } else if matches!(&token.kind, InlineTokenKind::Field { .. }) {
+                token.bidi_level = 0;
+            }
+        }
+    }
     if para_props.hyphenation.unwrap_or(false) {
         apply_hyphenation(&mut hard_lines, &ctx.fonts)?;
     }
     let mut prepared_lines = Vec::new();
     let mut visual_line_index = 0usize;
 
-    let source_text=paragraph_plain_text(paragraph);
     for hard_line in hard_lines {
         let pagination_break = hard_line.break_after;
         if hard_line.tokens.is_empty() && pagination_break.is_none() {
@@ -3686,7 +3711,7 @@ fn decimal_prefix(tokens:&[InlineToken],source:&str,from:usize)->f32 {
 }
 fn align_tabs(tokens:&mut[InlineToken],source:&str,props:&model::ParagraphProperties,width:f32,indent:f32)->Result<(),LayoutError>{
     let(tabs,suffix)=tab_geometry(tokens,source);if !tabs.iter().any(|b|*b){return Ok(());}
-    if tokens.iter().any(|t|t.bidi_level%2==1){return Err(LayoutError::RenderPreparation("RTL/mixed-direction tab positioning is not implemented".into()));}
+    if props.contents_leader.is_none() && tokens.iter().any(|t|t.bidi_level%2==1){return Err(LayoutError::RenderPreparation("RTL/mixed-direction tab positioning is not implemented".into()));}
     let decimal=tabs.iter().enumerate().map(|(i,is_tab)|if *is_tab{decimal_prefix(tokens,source,i)}else{0.0}).collect::<Vec<_>>();
     let mut x=indent;let len=tokens.len();
     for(i,t)in tokens.iter_mut().enumerate(){if tabs[i]{let(gap,leader)=tab_gap_with_decimal(x,suffix[i],decimal[i],props)?;t.width=gap;t.whitespace=false;

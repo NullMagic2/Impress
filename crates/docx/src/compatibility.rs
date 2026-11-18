@@ -79,7 +79,7 @@ pub fn export_warnings(document:&Document)->Vec<String> {
     if document.review.revisions.values().any(|r|!paragraphs.iter().any(|p|p.id==r.paragraph)){warnings.push("A pending revision belongs to a deleted paragraph and cannot be placed in DOCX. Save a native copy or resolve it first.".into());}
     if document.review.track_text{warnings.push("Paragraph-text tracking is an Impress editing mode. Pending revisions are exported, but Word's track-future-changes setting is not enabled by this mode.".into());}
     if document.review.revisions.values().any(|revision|!document.review.tracked_changes.values().any(|change|change.status==model::RevisionStatus::Pending && change.effects.iter().any(|effect|matches!(effect,model::RevisionEffect::Inline{range,..}if range.start.paragraph==revision.paragraph)))){warnings.push("Pending text revisions are serialized as bounded original/final text differences, not the original sequence of keystrokes, multiple-author events or formatting edits.".into());}
-    if !document.review.contents_paragraphs.is_empty(){warnings.push("Contents entries and page-reference fields are exported, but Impress contents settings are native-only. Reconfigure heading depth after DOCX import.".into());}
+    if !document.review.contents_paragraphs.is_empty(){warnings.push("Contents entries and page-reference fields are exported. To rebuild from headings, update the table in Impress.".into());}
     fn visit(items:&[Inline],document:&Document,warnings:&mut Vec<String>){for i in items{match i{
         Inline::Hyperlink(h)=>visit(&h.content,document,warnings),
         Inline::Field(f)=>match &f.kind{

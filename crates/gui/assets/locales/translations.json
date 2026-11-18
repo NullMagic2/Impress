@@ -1217,12 +1217,6 @@
     "Adicionar texto",
     "Adicionar texto"
   ],
-  "Add text — Not available in this alpha": [
-    "Προσθήκη κειμένου — Δεν διατίθεται σε αυτή την έκδοση άλφα",
-    "Añadir texto — No disponible en esta versión alfa",
-    "Adicionar texto — Não disponível nesta versão alfa",
-    "Adicionar texto — Não disponível nesta versão alfa"
-  ],
   "Add to Dictionary": [
     "Προσθήκη στο λεξικό",
     "Agregar al diccionario",
@@ -2549,6 +2543,12 @@
     "Escolha uma alteração.",
     "Escolha uma alteração."
   ],
+  "Choose a contents level from 1 to 9, or exclude the text.": [
+    "Επιλέξτε επίπεδο περιεχομένων από 1 έως 9 ή εξαιρέστε το κείμενο.",
+    "Elija un nivel del índice del 1 al 9 o excluya el texto.",
+    "Escolha um nível de 1 a 9 no sumário ou exclua o texto.",
+    "Escolha um nível de 1 a 9 no índice ou exclua o texto."
+  ],
   "Choose a difference. Other changes in this paragraph remain pending.": [
     "Επιλέξτε μια διαφορά. Άλλες αλλαγές στην παρούσα παράγραφο εξακολουθούν να εκκρεμούν.",
     "Elija una diferencia. Otros cambios en este párrafo siguen pendientes.",
@@ -2752,6 +2752,12 @@
     "Citas y bibliografía",
     "Citações e bibliografia",
     "Citações e bibliografia"
+  ],
+  "Classic contents": [
+    "Κλασικά περιεχόμενα",
+    "Índice clásico",
+    "Sumário clássico",
+    "Índice clássico"
   ],
   "Clean-up": [
     "Εκκαθάριση",
@@ -3317,6 +3323,12 @@
     "Comentários",
     "Comentários"
   ],
+  "Compact contents": [
+    "Συμπτυγμένα περιεχόμενα",
+    "Índice compacto",
+    "Sumário compacto",
+    "Índice compacto"
+  ],
   "Compare": [
     "Σύγκριση",
     "Comparar",
@@ -3460,6 +3472,18 @@
     "Se exportan las entradas del índice y las referencias de página, pero los ajustes de contenido de Impress solo se conservan en el formato nativo. Reconfigure la profundidad de títulos tras importar DOCX.",
     "As entradas do sumário e as referências de página são exportadas, mas as configurações do sumário do Impress são exclusivas do formato nativo. Reconfigure a profundidade de títulos após importar DOCX.",
     "As entradas do índice e as referências de página são exportadas, mas as definições do índice do Impress são exclusivas do formato nativo. Reconfigure a profundidade dos títulos após importar DOCX."
+  ],
+  "Contents entries and page-reference fields are exported. To rebuild from headings, update the table in Impress.": [
+    "Οι καταχωρίσεις περιεχομένων και τα πεδία αναφοράς σελίδας εξάγονται. Για αναδημιουργία από τις επικεφαλίδες, ενημερώστε τον πίνακα στο Impress.",
+    "Se exportan las entradas del índice y los campos de referencia de página. Para reconstruir el índice a partir de los títulos, actualícelo en Impress.",
+    "As entradas do sumário e os campos de referência de página são exportados. Para reconstruir o sumário a partir dos títulos, atualize-o no Impress.",
+    "As entradas do índice e os campos de referência de página são exportados. Para reconstruir o índice a partir dos títulos, atualize-o no Impress."
+  ],
+  "Contents template:": [
+    "Πρότυπο περιεχομένων:",
+    "Plantilla del índice:",
+    "Modelo de sumário:",
+    "Modelo de índice:"
   ],
   "Contents title": [
     "Τίτλος Περιεχομένου",
@@ -4142,6 +4166,12 @@
   "Dashed": [
     "Με παύλες",
     "Discontinuo",
+    "Tracejado",
+    "Tracejado"
+  ],
+  "Dashes": [
+    "Παύλες",
+    "Guiones",
     "Tracejado",
     "Tracejado"
   ],
@@ -4895,6 +4925,12 @@
     "Ponto, ponto e traço",
     "Ponto, ponto e traço"
   ],
+  "Dots": [
+    "Τελείες",
+    "Puntos",
+    "Pontos",
+    "Pontos"
+  ],
   "Dotted": [
     "Με τελείες",
     "Punteado",
@@ -5446,6 +5482,12 @@
     "Exacto",
     "Exatamente",
     "Exatamente"
+  ],
+  "Exclude from contents": [
+    "Εξαίρεση από τα περιεχόμενα",
+    "Excluir del índice",
+    "Excluir do sumário",
+    "Excluir do índice"
   ],
   "Executable directory not found": [
     "Δεν βρέθηκε εκτελέσιμος κατάλογος",
@@ -9053,6 +9095,12 @@
     "Misto",
     "Misto"
   ],
+  "Modern contents": [
+    "Σύγχρονα περιεχόμενα",
+    "Índice moderno",
+    "Sumário moderno",
+    "Índice moderno"
+  ],
   "Modify": [
     "Τροποποίηση",
     "Modificar",
@@ -9706,6 +9754,12 @@
     "Sin resplandor",
     "Sem brilho",
     "Sem brilho"
+  ],
+  "No headings in the table of contents yet.": [
+    "Δεν υπάρχουν ακόμη επικεφαλίδες στον πίνακα περιεχομένων.",
+    "El índice aún no tiene títulos.",
+    "O sumário ainda não tem títulos.",
+    "O índice ainda não tem títulos."
   ],
   "No importer is registered for {}": [
     "Κανένας εισαγωγέας δεν είναι εγγεγραμμένος για {}",
@@ -10901,6 +10955,12 @@
     "Colocar primeiro o cuidado no documento",
     "Colocar primeiro o cuidado no documento"
   ],
+  "Place the caret in the main text to insert contents.": [
+    "Τοποθετήστε τον δρομέα στο κυρίως κείμενο για να εισαγάγετε τα περιεχόμενα.",
+    "Coloque el cursor en el texto principal para insertar el índice.",
+    "Coloque o cursor no texto principal para inserir o sumário.",
+    "Coloque o cursor no texto principal para inserir o índice."
+  ],
   "Place the caret next to an inline picture first.": [
     "Βάλτε πρώτα την καρφίτσα δίπλα σε μια εικόνα.",
     "Coloque primero el cuidado junto a una imagen en línea.",
@@ -11698,6 +11758,12 @@
     "Eliminar el resaltado (sobrepasar el resaltado heredado)",
     "Remover destaque (sobrepassar destaque herdado)",
     "Remover o realce (sobrecar o realce herdado)"
+  ],
+  "Remove table of contents": [
+    "Αφαίρεση πίνακα περιεχομένων",
+    "Quitar tabla de contenido",
+    "Remover sumário",
+    "Remover índice"
   ],
   "Removed:\n{}\n\nInserted:\n{}": [
     "Αφαιρέθηκε: {} Εισήχθη: {}",
@@ -13007,6 +13073,12 @@
     "Mostrar ou ocultar a área de comandos da faixa de opções",
     "Mostrar ou ocultar a área de comandos do friso"
   ],
+  "Show page numbers": [
+    "Εμφάνιση αριθμών σελίδας",
+    "Mostrar números de página",
+    "Mostrar números de página",
+    "Mostrar números de página"
+  ],
   "Show rule": [
     "Κανόνας show",
     "Regla show",
@@ -13834,6 +13906,12 @@
     "T",
     "T",
     "T"
+  ],
+  "Tab leader:": [
+    "Οδηγός στηλοθέτη:",
+    "Carácter de relleno:",
+    "Preenchimento da tabulação:",
+    "Preenchimento da tabulação:"
   ],
   "Tab moves between cells · the buttons above add rows and columns": [
     "Η καρτέλα κινείται μεταξύ κελιών · τα κουμπιά παραπάνω προσθέτουν σειρές και στήλες",

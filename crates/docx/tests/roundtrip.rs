@@ -89,3 +89,30 @@ fn all_crop_presets_and_adjustments_preserve_geometry_outline_and_original_image
         assert_eq!(reopened.resources[&image.resource].data.as_slice(), original);
     }
 }
+
+#[test]
+fn contents_templates_and_direct_outline_levels_survive_docx() {
+    let mut doc = Document::default();
+    let front = Paragraph::plain("Cover");
+    let front_id = front.id.clone();
+    let heading = Paragraph::plain("Custom chapter");
+    let heading_id = heading.id.clone();
+    doc.sections[0].blocks = vec![Block::Paragraph(front), Block::Paragraph(heading)].into();
+    let mut editor = EditorState::new(doc);
+    editor.set_caret(heading_id, 0);
+    editor.set_contents_level(2).unwrap();
+    editor.set_caret(front_id, "Cover".len());
+    let mut options = ContentsOptions { title: "Roadmap".into(), max_heading_level: 2, ..Default::default() };
+    options.apply_template(ContentsTemplate::Modern);
+    options.leader = TabLeader::Dashes;
+    editor.update_contents_options(options.clone()).unwrap();
+    let reopened = cycle(&editor.document);
+    assert_eq!(reopened.review.contents_options, options);
+    assert!(reopened.review.automatic_contents);
+    let paragraphs = document_paragraphs(&reopened);
+    assert_eq!(inline_text(&paragraphs[0].content), "Cover");
+    assert_eq!(inline_text(&paragraphs[1].content), "Roadmap");
+    assert_eq!(paragraphs[2].properties.contents_leader, Some(TabLeader::Dashes));
+    assert_eq!(paragraphs[3].properties.outline_level, Some(2));
+    assert_eq!(reopened.review.contents_paragraphs, vec![paragraphs[1].id.clone(), paragraphs[2].id.clone()]);
+}

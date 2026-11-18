@@ -141,7 +141,7 @@ fn replace_preserving_runs(p:&mut Paragraph,range:Range<usize>,replacement:&str,
 /// The outline uses semantic style inheritance and all supported heading levels.
 pub fn outline(document:&Document)->Vec<(NodeId,u8,String)>{
     fn level(document:&Document,p:&Paragraph)->Option<u8>{
-        document.styles.outline_level(p.style.as_ref())
+        document.styles.paragraph_outline_level(p)
     }
     let scope=SearchScope{body:true,tables:true,headers:false,footers:false,notes:false};
     scoped_paragraphs(document,scope).into_iter().filter(|(p,_)|!document.review.contents_paragraphs.contains(&p.id))

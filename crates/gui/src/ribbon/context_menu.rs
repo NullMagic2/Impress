@@ -230,7 +230,7 @@ impl Ribbon {
             self.focus_document();
             true
         } else if let Some(item) = ITEMS.get(id.wrapping_sub(EDIT_FIRST_ID) as usize) {
-            if self.table_context_menu.borrow().is_none() { return false; }
+            if self.table_context_menu.borrow().is_none() && !contents_menu::contains_paragraph(self) { return false; }
             item.activate(self);
             self.focus_document();
             true
@@ -243,8 +243,9 @@ impl Ribbon {
 fn show(ribbon: &Ribbon, at: Point, target: Option<TableMenuTarget>) {
     ribbon.table_context_menu.replace(target);
     if !ribbon.show_spelling_context(at) {
-        if ribbon.table_context_menu.borrow().is_some() {
-            show_native_table_menu(ribbon, at);
+        let contents = contents_menu::contains_paragraph(ribbon);
+        if ribbon.table_context_menu.borrow().is_some() || contents {
+            show_native_edit_menu(ribbon, at, contents);
         } else {
             show_edit_menu(ribbon, at);
         }
@@ -252,7 +253,7 @@ fn show(ribbon: &Ribbon, at: Point, target: Option<TableMenuTarget>) {
     ribbon.table_context_menu.take();
 }
 
-fn show_native_table_menu(ribbon: &Ribbon, at: Point) {
+fn show_native_edit_menu(ribbon: &Ribbon, at: Point, contents: bool) {
     let mut menu = Menu::builder().build();
     let has_control = ribbon.selected_content_control().is_some();
     let has_selection = {
@@ -270,6 +271,9 @@ fn show_native_table_menu(ribbon: &Ribbon, at: Point) {
     }
     if let Some(target) = ribbon.table_context_menu.borrow().as_ref() {
         target.append_commands(&menu);
+    }
+    if contents {
+        contents_menu::append_context(&menu);
     }
     ribbon.ui.main_frame.popup_menu(&mut menu, Some(at));
 }

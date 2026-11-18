@@ -32,7 +32,7 @@ fn properties(
     scope: ContentControlScope,
 ) -> Option<ContentControl> {
     let props = node.child("w:sdtPr")?;
-    if value(props, "w:tag") == Some("Impress.Contents.v1") {
+    if value(props, "w:tag").is_some_and(crate::is_contents_tag) {
         return None;
     }
     let kind = if let Some(n) = props.child("w:text") {
