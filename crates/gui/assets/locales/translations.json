@@ -4745,6 +4745,18 @@
     "Distribuir colunas",
     "Distribuir colunas"
   ],
+  "Distribute columns evenly": [
+    "Ομοιόμορφη κατανομή στηλών",
+    "Distribuir columnas uniformemente",
+    "Distribuir colunas uniformemente",
+    "Distribuir colunas uniformemente"
+  ],
+  "Distribute rows evenly": [
+    "Ομοιόμορφη κατανομή γραμμών",
+    "Distribuir filas uniformemente",
+    "Distribuir linhas uniformemente",
+    "Distribuir linhas uniformemente"
+  ],
   "Distribute table columns evenly": [
     "Διανέμετε ομοιόμορφα τις στήλες του πίνακα",
     "Distribuir las columnas de la tabla uniformemente",
@@ -5782,6 +5794,12 @@
     "Ajustar al ancho de página",
     "Ajustar à largura da página",
     "Ajustar à largura da página"
+  ],
+  "Fit table to page margins": [
+    "Προσαρμογή πίνακα στα περιθώρια",
+    "Ajustar tabla a los márgenes",
+    "Ajustar tabela às margens da página",
+    "Ajustar tabela às margens da página"
   ],
   "Fix Position on Page": [
     "Διορθώστε τη θέση στη σελίδα",
@@ -7301,6 +7319,18 @@
     "Inserir coluna aqui",
     "Inserir a coluna aqui"
   ],
+  "Insert column left": [
+    "Εισαγωγή στήλης αριστερά",
+    "Insertar columna a la izquierda",
+    "Inserir coluna à esquerda",
+    "Inserir coluna à esquerda"
+  ],
+  "Insert column right": [
+    "Εισαγωγή στήλης δεξιά",
+    "Insertar columna a la derecha",
+    "Inserir coluna à direita",
+    "Inserir coluna à direita"
+  ],
   "Insert endnote": [
     "Εισαγωγή σημείωσης τέλους",
     "Insertar nota al final",
@@ -7438,6 +7468,18 @@
     "Cinta Insertar",
     "Faixa de opções Inserir",
     "Friso Inserir"
+  ],
+  "Insert row above": [
+    "Εισαγωγή γραμμής πάνω",
+    "Insertar fila encima",
+    "Inserir linha acima",
+    "Inserir linha acima"
+  ],
+  "Insert row below": [
+    "Εισαγωγή γραμμής κάτω",
+    "Insertar fila debajo",
+    "Inserir linha abaixo",
+    "Inserir linha abaixo"
   ],
   "Insert row here": [
     "Εισαγωγή γραμμής εδώ",
@@ -13870,6 +13912,12 @@
     "Cuadro en línea con el texto",
     "Tabela em linha com o texto",
     "Quadro em linha com o texto"
+  ],
+  "Table layout": [
+    "Διάταξη πίνακα",
+    "Diseño de tabla",
+    "Layout da tabela",
+    "Esquema da tabela"
   ],
   "Table nesting exceeds the native DOC limit": [
     "Το βάθος ένθεσης πινάκων υπερβαίνει το εγγενές όριο DOC",

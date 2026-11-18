@@ -19,7 +19,7 @@ use render::{ChromeShape, Color, ObjectKind, Rect, TableCellHit};
 pub enum TableOp {
     InsertRowAbove, InsertRowBelow, InsertColumnLeft, InsertColumnRight, InsertCellsRight, InsertCellsDown,
     DeleteRow, DeleteColumn, DeleteTable, DeleteCellsLeft, DeleteCellsUp,
-    MergeRight, MergeDown, Split, Distribute,
+    MergeRight, MergeDown, Split, Distribute, DistributeRows, FitToMargins,
     /// 0 top, 1 centre, 2 bottom.
     Align(u8),
     HeaderRow,
@@ -656,6 +656,19 @@ pub fn operation(state: &CanvasState, op: TableOp) -> Result<Edit, String> {
         TableOp::MergeDown => Box::new(|e| e.merge_table_cell_down()),
         TableOp::Split => Box::new(|e| e.split_table_cell()),
         TableOp::Distribute => Box::new(|e| e.distribute_table_columns_evenly()),
+        TableOp::DistributeRows | TableOp::FitToMargins => {
+            let context = state.editor.table_cell_context().ok_or("Place the caret in a table first")?;
+            let mut table_cells = (0..state.vector_document.pages.len())
+                .flat_map(|page| cells(state, page, &context.table_id.0));
+            if op == TableOp::DistributeRows {
+                let height = table_cells.map(|(_, info, _)| info.row_height_pt).reduce(f32::max)
+                    .ok_or("Wait for the table layout to finish.")?;
+                Box::new(move |e| e.distribute_table_rows_evenly(height / MM_TO_PT))
+            } else {
+                let widths = table_cells.next().ok_or("Wait for the table layout to finish.")?.1.column_widths_pt.clone();
+                Box::new(move |e| e.fit_table_to_margins(&widths))
+            }
+        }
         TableOp::Align(a) => {
             let align = match a { 0 => CellVerticalAlignment::Top, 1 => CellVerticalAlignment::Center, _ => CellVerticalAlignment::Bottom };
             Box::new(move |e| e.set_table_cell_vertical_alignment(align))

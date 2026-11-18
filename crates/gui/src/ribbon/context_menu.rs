@@ -3,6 +3,7 @@
 //! caret there; inside it (or on selected cells) the selection is kept. Drawn
 //! inside the window like the Ribbon's dropdowns: flat, with a hairline edge.
 use super::*;
+use crate::table_ui::TableOp;
 use wxdragon::{
     dc::AutoBufferedPaintDC,
     event::window_events::WindowEvents,
@@ -27,6 +28,78 @@ const RULE: (u8, u8, u8) = (223, 228, 236);
 enum Item { Cut, Copy, Paste, SelectAll, ContentControl }
 
 const ITEMS: [Item; 5] = [Item::Cut, Item::Copy, Item::Paste, Item::SelectAll, Item::ContentControl];
+const TABLE_FIRST_ID: i32 = 32_200;
+const TABLE_ITEMS: [(TableOp, &str); 7] = [
+    (TableOp::InsertRowAbove, "Insert row above"),
+    (TableOp::InsertRowBelow, "Insert row below"),
+    (TableOp::InsertColumnLeft, "Insert column left"),
+    (TableOp::InsertColumnRight, "Insert column right"),
+    (TableOp::Distribute, "Distribute columns evenly"),
+    (TableOp::DistributeRows, "Distribute rows evenly"),
+    (TableOp::FitToMargins, "Fit table to page margins"),
+];
+const EDIT_FIRST_ID: i32 = TABLE_FIRST_ID + TABLE_ITEMS.len() as i32;
+
+pub(super) struct TableMenuTarget {
+    position: editor::DocumentPosition,
+    revision: u64,
+    table_id: NodeId,
+    cell_id: NodeId,
+    rows: usize,
+    columns: usize,
+    fit_margins: bool,
+}
+
+impl TableMenuTarget {
+    fn at(state: &CanvasState, point: render::Point) -> Option<Self> {
+        if state.display_generation != Some(state.layout_generation) { return None; }
+        let document = &state.vector_document;
+        let hit = state.viewport.hit_test(document, point)?;
+        let node = NodeId::from(hit.node_id.as_str());
+        let (table_id, cell_id) = state.editor.table_cell_of(&node)?;
+        let table = state.editor.table_by_id(&table_id)?;
+        let origin = state.viewport.page_rect_px(document, hit.page_index)?;
+        let scale = state.viewport.points_to_pixels();
+        let x = (point.x - origin.x) / scale;
+        let y = (point.y - origin.y) / scale;
+        let columns = document.pages[hit.page_index].object_regions.iter().find_map(|region| {
+            let render::ObjectKind::TableCell(info) = &region.kind else { return None; };
+            let rect = region.rect;
+            (region.node_id == cell_id.0 && info.table_id == table_id.0
+                && x >= rect.x && x <= rect.max_x() && y >= rect.y && y <= rect.max_y())
+                .then_some(info.column_widths_pt.len())
+        })?;
+        Some(Self {
+            position: editor::DocumentPosition::new(node, hit.byte_offset),
+            revision: state.editor.revision,
+            fit_margins: state.editor.table_margin_width(&table_id).is_some(),
+            table_id, cell_id, rows: table.rows.len(), columns,
+        })
+    }
+
+    fn enabled(&self, op: TableOp) -> bool {
+        match op {
+            TableOp::Distribute => self.columns > 1,
+            TableOp::DistributeRows => self.rows > 1,
+            TableOp::FitToMargins => self.fit_margins,
+            _ => true,
+        }
+    }
+
+    pub(super) fn append_commands(&self, menu: &Menu) {
+        menu.append_separator();
+        for (title, items) in [("Insert", 0..4), ("Table layout", 4..TABLE_ITEMS.len())] {
+            let submenu = Menu::builder().build();
+            for index in items {
+                let (op, label) = TABLE_ITEMS[index];
+                let id = TABLE_FIRST_ID + index as i32;
+                submenu.append(id, &crate::i18n::text(label), "", wxdragon::menus::menuitem::ItemKind::Normal);
+                submenu.enable_item(id, self.enabled(op));
+            }
+            menu.append_submenu(submenu, &crate::i18n::text(title), "");
+        }
+    }
+}
 
 impl Item {
     fn label(self) -> &'static str {
@@ -123,23 +196,85 @@ impl Ribbon {
             let Some(position) = mouse.get_position() else { return; };
             let Some(ribbon) = weak.upgrade() else { return; };
             if ribbon.mode.get() == ViewMode::Typst { event.skip(true); return; }
-            {
+            let target = {
                 let mut state = ribbon.state.borrow_mut();
                 if state.dragging_selection || state.object_drag.is_some() { return; }
-                if !equation_ui::previewing(&state) {
+                if equation_ui::previewing(&state) {
+                    None
+                } else {
                     let view_point = logical_to_view(position, state.pixel_scale);
                     place_caret(&mut state, view_point);
+                    TableMenuTarget::at(&state, view_point)
                 }
-            }
+            };
             canvas.set_focus();
             canvas.refresh(false, None);
-            show(&ribbon, crate::gtk_native::to_screen(&canvas, position));
+            show(&ribbon, crate::gtk_native::to_screen(&canvas, position), target);
         });
+    }
+
+    pub(super) fn handle_table_context_menu(&self, id: i32) -> bool {
+        if let Some(&(op, _)) = TABLE_ITEMS.get(id.wrapping_sub(TABLE_FIRST_ID) as usize) {
+            {
+                let context = self.table_context_menu.borrow();
+                let Some(target) = context.as_ref() else { return false; };
+                let mut state = self.state.borrow_mut();
+                if !target.enabled(op) || state.editor.revision != target.revision { return true; }
+                let same_cell = state.editor.table_cell_context()
+                    .is_some_and(|cell| cell.table_id == target.table_id && cell.cell_id == target.cell_id);
+                if !same_cell {
+                    state.editor.set_caret(target.position.node_id.clone(), target.position.byte_offset);
+                }
+            }
+            self.run(Action::Table(op));
+            self.focus_document();
+            true
+        } else if let Some(item) = ITEMS.get(id.wrapping_sub(EDIT_FIRST_ID) as usize) {
+            if self.table_context_menu.borrow().is_none() { return false; }
+            item.activate(self);
+            self.focus_document();
+            true
+        } else {
+            false
+        }
     }
 }
 
-fn show(ribbon: &Ribbon, at: Point) {
-    if ribbon.show_spelling_context(at) { return; }
+fn show(ribbon: &Ribbon, at: Point, target: Option<TableMenuTarget>) {
+    ribbon.table_context_menu.replace(target);
+    if !ribbon.show_spelling_context(at) {
+        if ribbon.table_context_menu.borrow().is_some() {
+            show_native_table_menu(ribbon, at);
+        } else {
+            show_edit_menu(ribbon, at);
+        }
+    }
+    ribbon.table_context_menu.take();
+}
+
+fn show_native_table_menu(ribbon: &Ribbon, at: Point) {
+    let mut menu = Menu::builder().build();
+    let has_control = ribbon.selected_content_control().is_some();
+    let has_selection = {
+        let state = ribbon.state.borrow();
+        state.selected_object.is_some() || state.editor.selection.as_ref().is_some_and(|s| !s.is_collapsed())
+    };
+    for (index, item) in ITEMS.into_iter().enumerate() {
+        if item == Item::ContentControl && !has_control { continue; }
+        if item == Item::SelectAll { menu.append_separator(); }
+        let id = EDIT_FIRST_ID + index as i32;
+        let label = crate::i18n::text(item.label());
+        let label = if item.shortcut().is_empty() { label } else { format!("{label}\t{}", item.shortcut()) };
+        menu.append(id, &label, "", wxdragon::menus::menuitem::ItemKind::Normal);
+        menu.enable_item(id, has_selection || !matches!(item, Item::Cut | Item::Copy));
+    }
+    if let Some(target) = ribbon.table_context_menu.borrow().as_ref() {
+        target.append_commands(&menu);
+    }
+    ribbon.ui.main_frame.popup_menu(&mut menu, Some(at));
+}
+
+fn show_edit_menu(ribbon: &Ribbon, at: Point) {
     let has_control=ribbon.selected_content_control().is_some();
     let has_selection = {
         let state = ribbon.state.borrow();

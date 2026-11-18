@@ -271,6 +271,7 @@ pub struct Ribbon {
     dictionary_install: RefCell<Option<Rc<dictionary_install_ui::InstallDialog>>>,
     dictionary_manager: RefCell<Option<Rc<dictionary_manager::Manager>>>,
     spelling_context: RefCell<Option<(u64, u64, crate::spelling::Issue)>>,
+    table_context_menu: RefCell<Option<context_menu::TableMenuTarget>>,
 }
 
 impl Ribbon {
@@ -307,7 +308,7 @@ impl Ribbon {
             last_status: RefCell::new(String::new()), last_title: RefCell::new(String::new()),
             last_scroll: Cell::new(None), navigation: RefCell::new(Vec::new()), navigation_revision: Cell::new(None),
             search_options: Cell::new(Default::default()), search_report: RefCell::new(None), search_job: RefCell::new(None), search_due: Cell::new(Instant::now()), search_cursor: Cell::new(None),
-            last_context: RefCell::new(None), context_key: RefCell::new(None), label_text: RefCell::new(HashMap::new()), equation: RefCell::new(None), comments: RefCell::new(None), style_gallery: RefCell::new(None), style_context: RefCell::new(None), tab_strip: RefCell::new(None), tab_ruler: RefCell::new(None), recent_paths: RefCell::new(Vec::new()), recent_settings_open: Rc::new(Cell::new(false)), table_bar: RefCell::new(None), picture_bar: RefCell::new(None), spell_job: RefCell::new(None), spelling_languages: RefCell::new(Vec::new()), output_progress: RefCell::new(None), dictionary_install: RefCell::new(None), dictionary_manager: RefCell::new(None), spelling_context: RefCell::new(None),
+            last_context: RefCell::new(None), context_key: RefCell::new(None), label_text: RefCell::new(HashMap::new()), equation: RefCell::new(None), comments: RefCell::new(None), style_gallery: RefCell::new(None), style_context: RefCell::new(None), tab_strip: RefCell::new(None), tab_ruler: RefCell::new(None), recent_paths: RefCell::new(Vec::new()), recent_settings_open: Rc::new(Cell::new(false)), table_bar: RefCell::new(None), picture_bar: RefCell::new(None), spell_job: RefCell::new(None), spelling_languages: RefCell::new(Vec::new()), output_progress: RefCell::new(None), dictionary_install: RefCell::new(None), dictionary_manager: RefCell::new(None), spelling_context: RefCell::new(None), table_context_menu: RefCell::new(None),
             source_revision: Cell::new(None), source_job: RefCell::new(None), source_copy_pending: Cell::new(false),
         });
         generated::install_group_relief(&this.ui);
@@ -417,6 +418,7 @@ impl Ribbon {
                 if contents_menu::handle(&ribbon, event.get_id()) { return; }
                 if section_break_menu::handle(&ribbon, event.get_id()) { return; }
                 if ribbon.handle_recent_files(event.get_id()) { return; }
+                if ribbon.handle_table_context_menu(event.get_id()) { return; }
                 if ribbon.handle_spelling_menu(event.get_id()) { return; }
                 if let Some(mode) = ligature_mode { ribbon.commit_ligature_mode(mode); }
                 else if let Some(mode) = kerning_mode { ribbon.commit_kerning_mode(mode); }

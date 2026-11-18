@@ -569,7 +569,8 @@ impl EditorState {
             let column_count = table_logical_column_count(&placements).max(1);
             ensure_table_grid_widths(table, column_count);
             let template = table.rows.get(context.row_index).cloned().ok_or("table row not found")?;
-            let insert_at = (context.row_index + usize::from(after_current)).min(table.rows.len());
+            let row_span = placements[context.row_index][context.cell_index].2;
+            let insert_at = (context.row_index + if after_current { row_span } else { 0 }).min(table.rows.len());
 
             // Inserting a physical row through an existing vertical merge must
             // extend that merge. The new row only owns semantic cells for the
@@ -1007,6 +1008,68 @@ impl EditorState {
         Ok(())
     }
 
+    /// Use the tallest laid-out row as the common minimum. Content can
+    /// still grow after further edits or narrower columns.
+    pub fn distribute_table_rows_evenly(&mut self, height_mm: f32) -> Result<(), String> {
+        if !height_mm.is_finite() || height_mm <= 0.0 {
+            return Err("Invalid table row height.".into());
+        }
+        let context = self.table_cell_context().ok_or("Place the caret in a table cell first.")?;
+        let section = &mut self.document.sections[context.section_index];
+        let before = section.clone();
+        let table = find_table_mut_in_section(section, &context.table_id).ok_or("Table not found.")?;
+        for row in &mut table.rows {
+            row.height_mm = Some(height_mm);
+        }
+        let after = section.clone();
+        self.commit("Distribute table rows evenly", vec![Mutation::SectionChanged {
+            section_id: after.id.clone(), before, after,
+        }], self.selection.clone(), None)?;
+        Ok(())
+    }
+
+    /// Fit top-level tables in single-column sections to the left and right
+    /// margins. A floating table keeps its vertical anchor and wrapping.
+    pub fn table_margin_width(&self, id: &NodeId) -> Option<f32> {
+        self.document.sections.iter().find_map(|section| {
+            let contains = |blocks: &[Block]| blocks.iter().any(|block| matches!(block, Block::Table(table) if &table.id == id));
+            let top_level = contains(&section.blocks) || section.header_footers().any(|hf| contains(&hf.stream.blocks));
+            (top_level && section.properties.column_count <= 1).then(|| section.properties.text_width_mm())
+        })
+    }
+
+    pub fn fit_table_to_margins(&mut self, widths: &[f32]) -> Result<(), String> {
+        let context = self.table_cell_context().ok_or("Place the caret in a table cell first.")?;
+        let width_mm = self.table_margin_width(&context.table_id).ok_or("This table cannot span the page margins.")?;
+        let current_width: f32 = widths.iter().sum();
+        if !current_width.is_finite() || widths.iter().any(|width| *width <= 0.0) || widths.is_empty() {
+            return Err("Invalid table column widths.".into());
+        }
+
+        let section = &mut self.document.sections[context.section_index];
+        let before = section.clone();
+        let table = find_table_mut_in_section(section, &context.table_id).ok_or("Table not found.")?;
+        if widths.len() != table_logical_column_count(&table_grid_placements(table)).max(1) {
+            return Err("Table layout changed. Open the table menu again.".into());
+        }
+        table.properties.preferred_width_mm = Some(width_mm);
+        table.properties.grid_column_widths_mm = widths.iter().map(|width| (width / current_width) * width_mm).collect();
+        table.properties.left_indent_mm = None;
+        table.properties.alignment = Some(model::TableAlignment::Left);
+        if let Some(position) = &mut table.properties.position {
+            position.horizontal_from = model::HorizontalFrom::Margin;
+            position.horizontal = model::HorizontalPlacement::Left;
+        }
+        for cell in table.rows.iter_mut().flat_map(|row| &mut row.cells) {
+            cell.width_mm = None;
+        }
+        let after = section.clone();
+        self.commit("Fit table to page margins", vec![Mutation::SectionChanged {
+            section_id: after.id.clone(), before, after,
+        }], self.selection.clone(), None)?;
+        Ok(())
+    }
+
     /// Remove the whole table containing the caret. The caret moves to the
     /// paragraph that followed the table (inserting one if the table ended
     /// the section).
@@ -1437,10 +1500,10 @@ fn find_table_cell_for_paragraph(
         if let Block::Table(table) = block {
             for (row_index, row) in table.rows.iter().enumerate() {
                 for (cell_index, cell) in row.cells.iter().enumerate() {
+                    if let Some(found) = find_table_cell_for_paragraph(&cell.blocks, paragraph_id) { return Some(found); }
                     if find_paragraph_in_blocks(&cell.blocks, paragraph_id).is_some() {
                         return Some((table.id.clone(), row_index, cell_index, cell.id.clone()));
                     }
-                    if let Some(found) = find_table_cell_for_paragraph(&cell.blocks, paragraph_id) { return Some(found); }
                 }
             }
         }

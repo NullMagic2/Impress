@@ -258,9 +258,13 @@ impl Ribbon {
         menu.check_item(TOGGLE_ID, true);
         let has_selection={let s=self.state.borrow();s.selected_object.is_some() || s.editor.selection.as_ref().is_some_and(|v|!v.is_collapsed())};
         menu.enable_item(CUT_ID,has_selection);menu.enable_item(COPY_ID,has_selection);
+        if let Some(target) = self.table_context_menu.borrow().as_ref() {
+            target.append_commands(&menu);
+        }
         self.spelling_context
             .replace(Some((generation, revision, issue)));
         self.ui.main_frame.popup_menu(&mut menu, Some(at));
+        self.spelling_context.take();
         true
     }
 

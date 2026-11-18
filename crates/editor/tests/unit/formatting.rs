@@ -47,6 +47,46 @@ fn table_row_column_merge_split_commands_are_undoable() {
 }
 
 #[test]
+fn table_margin_fit_preserves_proportions_and_equal_row_heights_are_undoable() {
+    let mut e = editor("");
+    e.insert_table(2, 2).unwrap();
+    let id = e.table_cell_context().unwrap().table_id;
+    e.move_table(&id, None, Some(12.0)).unwrap();
+    e.resize_table_grid(&id, vec![30.0, 60.0]).unwrap();
+    let before = e.document.clone();
+    let width = before.sections[0].properties.text_width_mm();
+
+    e.fit_table_to_margins(&[30.0, 60.0]).unwrap();
+    let fitted = e.table_by_id(&id).unwrap();
+    assert_eq!(fitted.properties.left_indent_mm, None);
+    assert_eq!(fitted.properties.preferred_width_mm, Some(width));
+    let columns = &fitted.properties.grid_column_widths_mm;
+    assert!((columns[0] + columns[1] - width).abs() < 0.001);
+    assert!((columns[1] - 2.0 * columns[0]).abs() < 0.001);
+    let after_fit = e.document.clone();
+
+    e.distribute_table_rows_evenly(18.0).unwrap();
+    assert!(e.table_by_id(&id).unwrap().rows.iter().all(|row| row.height_mm == Some(18.0)));
+    assert!(e.undo());
+    assert_eq!(e.document, after_fit);
+    assert!(e.undo());
+    assert_eq!(e.document, before);
+}
+
+#[test]
+fn inserting_a_row_below_a_merged_cell_uses_its_bottom_edge() {
+    let mut e = editor("");
+    e.insert_table(2, 2).unwrap();
+    e.merge_table_cell_down().unwrap();
+    let id = e.table_cell_context().unwrap().table_id;
+    e.insert_table_row(true).unwrap();
+    let table = e.table_by_id(&id).unwrap();
+    assert_eq!(table.rows[0].cells[0].row_span, 2);
+    assert_eq!(table.rows[2].cells.len(), 2);
+    assert_eq!(e.table_cell_context().unwrap().row_index, 2);
+}
+
+#[test]
 fn header_footer_paragraphs_use_normal_typing_and_escape_target() {
     let mut e=editor("body");
     e.enter_header(HeaderFooterVariant::Default).unwrap();
