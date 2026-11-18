@@ -51,11 +51,14 @@ impl Ribbon {
     fn native_history(&self)->Result<(),String>{
         let review=self.state.borrow().editor.document.review.clone();
         let mut items=vec![if review.track_history{"Turn OFF native tracking".into()}else{"Turn ON native tracking…".into()},"Change current author…".into()];
-        items.extend(review.history.iter().rev().map(|e|format!("{:?} · {} · {} · {}",e.status,e.date,e.author,e.label)));
+        items.extend(review.history.iter().rev().map(|e| {
+            format!("{:?} · {} · {} · {}", e.status, e.date, e.author, crate::i18n::text(&e.label))
+        }));
         let Some(index)=self.choose_review("Chronological native history","Newest first. Accept retains the event. Reject is conflict-checked and undoable; overlapping dependent edits must be resolved first. Keep a native .impress file to preserve this journal.",&items)else{return Ok(());};
         if index<2{let enabled=if index==0{!review.track_history}else{review.track_history};let author=if enabled||index==1{let Some(author)=self.text_review("Revision author","Author name:",&review.author,false)else{return Ok(());};author}else{review.author};return self.edit(|e|e.set_revision_history(enabled,&author));}
         let event=&review.history[review.history.len()-(index-2)-1];let choices=["Accept this event".into(),"Reject this event (conflict checked)".into()];
-        if let Some(action)=self.choose_review("Resolve native revision",&format!("{}\n{} · {}\nStatus: {:?}",event.label,event.author,event.date,event.status),&choices){self.edit(|e|e.resolve_history_event(&event.id,action==0))?;}Ok(())
+        let label = crate::i18n::text(&event.label);
+        if let Some(action)=self.choose_review("Resolve native revision",&format!("{label}\n{} · {}\nStatus: {:?}",event.author,event.date,event.status),&choices){self.edit(|e|e.resolve_history_event(&event.id,action==0))?;}Ok(())
     }
     fn review_text_changes(&self,id:&NodeId)->Result<(),String>{
         loop {

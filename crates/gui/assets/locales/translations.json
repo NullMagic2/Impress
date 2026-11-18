@@ -4763,6 +4763,12 @@
     "Distribuir as colunas da tabela uniformemente",
     "Distribuir as colunas da tabela uniformemente"
   ],
+  "Distribute table rows evenly": [
+    "Ομοιόμορφη κατανομή γραμμών πίνακα",
+    "Distribuir las filas de la tabla uniformemente",
+    "Distribuir uniformemente as linhas da tabela",
+    "Distribuir uniformemente as linhas da tabela"
+  ],
   "Divide": [
     "Διαίρεση",
     "División",
@@ -7937,11 +7943,23 @@
     "Larguras da coluna da tabela inválidas",
     "Larguras da coluna da tabela inválidas"
   ],
+  "Invalid table column widths.": [
+    "Μη έγκυρα πλάτη στηλών πίνακα.",
+    "Los anchos de las columnas de la tabla no son válidos.",
+    "As larguras das colunas da tabela são inválidas.",
+    "As larguras das colunas da tabela não são válidas."
+  ],
   "Invalid table position": [
     "Μη έγκυρη θέση πίνακα",
     "Posición de la tabla no válida",
     "Posição da tabela inválida",
     "Posição da tabela inválida"
+  ],
+  "Invalid table row height.": [
+    "Μη έγκυρο ύψος γραμμής πίνακα.",
+    "La altura de la fila de la tabla no es válida.",
+    "A altura da linha da tabela é inválida.",
+    "A altura da linha da tabela não é válida."
   ],
   "Invalid {name}; use #RRGGBB": [
     "Μη έγκυρο {name}; χρήση #RRGGBB",
@@ -13919,6 +13937,12 @@
     "Layout da tabela",
     "Esquema da tabela"
   ],
+  "Table layout changed. Open the table menu again.": [
+    "Η διάταξη του πίνακα άλλαξε. Ανοίξτε ξανά το μενού του πίνακα.",
+    "El diseño de la tabla ha cambiado. Vuelva a abrir el menú de la tabla.",
+    "O layout da tabela mudou. Abra o menu da tabela novamente.",
+    "O esquema da tabela mudou. Volte a abrir o menu da tabela."
+  ],
   "Table nesting exceeds the native DOC limit": [
     "Το βάθος ένθεσης πινάκων υπερβαίνει το εγγενές όριο DOC",
     "El anidamiento de tablas supera el límite DOC nativo",
@@ -13930,6 +13954,12 @@
     "Cuadro no encontrado",
     "Tabela não encontrada",
     "Quadro não encontrado"
+  ],
+  "Table not found.": [
+    "Ο πίνακας δεν βρέθηκε.",
+    "No se encontró la tabla.",
+    "Tabela não encontrada.",
+    "Não foi possível encontrar a tabela."
   ],
   "Table of contents": [
     "Πίνακας περιεχομένων",
@@ -15107,6 +15137,12 @@
     "Este dicionário de sistema já está instalado. Impress não reivindicará a propriedade de uma instalação existente.",
     "Este dicionário de sistema já está instalado. Impress não reivindicará a propriedade de uma instalação existente."
   ],
+  "This table cannot span the page margins.": [
+    "Αυτός ο πίνακας δεν μπορεί να εκτείνεται από το ένα περιθώριο της σελίδας στο άλλο.",
+    "Esta tabla no puede ocupar todo el ancho entre los márgenes de la página.",
+    "Esta tabela não pode ocupar toda a largura entre as margens da página.",
+    "Esta tabela não pode ocupar toda a largura entre as margens da página."
+  ],
   "Three": [
     "Τρεις",
     "Tres",
@@ -16000,6 +16036,12 @@
     "Espera a que el archivo actual, portapapeles o la operación de impresión termine",
     "Aguarde que o arquivo atual, área de transferência ou operação de impressão termine",
     "Aguarde a operação de arquivo, área de transferência ou impressão atual para terminar"
+  ],
+  "Wait for the table layout to finish.": [
+    "Περιμένετε να ολοκληρωθεί η διάταξη του πίνακα.",
+    "Espere a que termine el diseño de la tabla.",
+    "Aguarde a conclusão do layout da tabela.",
+    "Aguarde até que o esquema da tabela esteja concluído."
   ],
   "Waiting for administrator approval and Windows language servicing…": [
     "Αναμονή για έγκριση διαχειριστή και Windows...",

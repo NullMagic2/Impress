@@ -1313,3 +1313,10 @@ Table layout	Διάταξη πίνακα	Diseño de tabla	Layout da tabela	Esque
 Distribute rows evenly	Ομοιόμορφη κατανομή γραμμών	Distribuir filas uniformemente	Distribuir linhas uniformemente	Distribuir linhas uniformemente
 Distribute columns evenly	Ομοιόμορφη κατανομή στηλών	Distribuir columnas uniformemente	Distribuir colunas uniformemente	Distribuir colunas uniformemente
 Fit table to page margins	Προσαρμογή πίνακα στα περιθώρια	Ajustar tabla a los márgenes	Ajustar tabela às margens da página	Ajustar tabela às margens da página
+Distribute table rows evenly	Ομοιόμορφη κατανομή γραμμών πίνακα	Distribuir las filas de la tabla uniformemente	Distribuir uniformemente as linhas da tabela	Distribuir uniformemente as linhas da tabela
+Invalid table column widths.	Μη έγκυρα πλάτη στηλών πίνακα.	Los anchos de las columnas de la tabla no son válidos.	As larguras das colunas da tabela são inválidas.	As larguras das colunas da tabela não são válidas.
+Invalid table row height.	Μη έγκυρο ύψος γραμμής πίνακα.	La altura de la fila de la tabla no es válida.	A altura da linha da tabela é inválida.	A altura da linha da tabela não é válida.
+Table layout changed. Open the table menu again.	Η διάταξη του πίνακα άλλαξε. Ανοίξτε ξανά το μενού του πίνακα.	El diseño de la tabla ha cambiado. Vuelva a abrir el menú de la tabla.	O layout da tabela mudou. Abra o menu da tabela novamente.	O esquema da tabela mudou. Volte a abrir o menu da tabela.
+Table not found.	Ο πίνακας δεν βρέθηκε.	No se encontró la tabla.	Tabela não encontrada.	Não foi possível encontrar a tabela.
+This table cannot span the page margins.	Αυτός ο πίνακας δεν μπορεί να εκτείνεται από το ένα περιθώριο της σελίδας στο άλλο.	Esta tabla no puede ocupar todo el ancho entre los márgenes de la página.	Esta tabela não pode ocupar toda a largura entre as margens da página.	Esta tabela não pode ocupar toda a largura entre as margens da página.
+Wait for the table layout to finish.	Περιμένετε να ολοκληρωθεί η διάταξη του πίνακα.	Espere a que termine el diseño de la tabla.	Aguarde a conclusão do layout da tabela.	Aguarde até que o esquema da tabela esteja concluído.

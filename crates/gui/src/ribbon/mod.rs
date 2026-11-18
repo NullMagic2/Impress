@@ -1503,9 +1503,10 @@ impl Ribbon {
         }
         if *self.last_status.borrow() != status {
             // A long error should not force the status sizer wider than the window.
-            self.ui.status_label.set_tooltip(&crate::i18n::text(&(&status)));
-            let brief=status.chars().take(48).collect::<String>();
-            self.ui.status_label.set_label(&crate::i18n::text(&(&brief)));
+            let translated = crate::i18n::text(&status);
+            self.ui.status_label.set_tooltip(&translated);
+            let brief = translated.chars().take(48).collect::<String>();
+            self.ui.status_label.set_label(&brief);
             self.last_status.replace(status);
             // A label does not move its neighbours; the sizer has to.
             self.ui.status_panel.layout();
