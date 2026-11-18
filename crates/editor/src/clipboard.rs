@@ -62,9 +62,24 @@ fn capture_blocks(blocks:&mut[Block],doc:&Document,resources:&mut BTreeMap<Resou
         Block::Paragraph(p)=>{
             capture_inlines(&mut p.content,p.style.as_ref(),doc,resources,lists);
             p.properties=doc.styles.resolve_paragraph_with_direct(p.style.as_ref(),&p.properties);p.style=None;
-            if let Some(id)=&p.properties.list_id{if let Some(l)=doc.lists.get(id){lists.insert(id.clone(),l.clone());}}
+            if let Some(id)=&p.properties.list_id{if let Some(l)=doc.styles.list_definition(&doc.lists, id){lists.insert(id.clone(),l.clone());}}
         },
-        Block::Table(t)=>for row in &mut t.rows{for c in &mut row.cells{capture_blocks(&mut c.blocks,doc,resources,lists);}},
+        Block::Table(t) => {
+            let fills = t.rows.iter().enumerate().map(|(index, _)| doc.styles.table_style_fill(t, index)).collect::<Vec<_>>();
+            t.properties.borders = doc.styles.table_borders(t).cloned();
+            t.properties.style = None;
+            t.properties.style_first_row = None;
+            t.properties.style_row_banding = None;
+            t.properties.style_overrides_table_borders = None;
+            for (row, fill) in t.rows.iter_mut().zip(fills) {
+                for cell in &mut row.cells {
+                    if cell.shading.is_none() {
+                        cell.shading = fill.map(str::to_owned);
+                    }
+                    capture_blocks(&mut cell.blocks, doc, resources, lists);
+                }
+            }
+        },
         Block::Image(i)=>capture_resource(&i.resource,doc,resources),_=>{}
     }}
 }
@@ -76,7 +91,7 @@ impl ClipboardFragment {
         for p in &mut self.paragraphs {
             capture_inlines(&mut p.content,p.style.as_ref(),document,&mut self.resources,&mut self.lists);
             p.properties=document.styles.resolve_paragraph_with_direct(p.style.as_ref(),&p.properties);p.style=None;
-            if let Some(id)=&p.properties.list_id{if let Some(l)=document.lists.get(id){self.lists.insert(id.clone(),l.clone());}}
+            if let Some(id)=&p.properties.list_id{if let Some(l)=document.styles.list_definition(&document.lists, id){self.lists.insert(id.clone(),l.clone());}}
         }
         if let Some(t)=self.table.take(){let mut bs=vec![Block::Table(t)];capture_blocks(&mut bs,document,&mut self.resources,&mut self.lists);if let Some(Block::Table(t))=bs.pop(){self.table=Some(t);}}
     }

@@ -467,6 +467,14 @@ pub struct Table {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct TableProperties {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<StyleId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style_first_row: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style_row_banding: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style_overrides_table_borders: Option<bool>,
     pub preferred_width_mm: Option<f32>,
     /// Offset from the text area's left edge; DOCX `w:tblInd` may be negative.
     #[serde(default)]

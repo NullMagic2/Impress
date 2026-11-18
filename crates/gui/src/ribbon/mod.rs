@@ -53,6 +53,7 @@ mod spelling_dialog;
 mod dictionary_install_ui;
 mod dictionary_manager;
 mod style_manager;
+mod style_tools;
 mod picture_layout;
 mod layout_dialog;
 mod doc_switcher;

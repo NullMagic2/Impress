@@ -993,7 +993,9 @@ impl Ribbon {
         // Typing changes the document revision but not its style definitions.
         // Rebuilding the list on every key reset its scroll/selection and made
         // the ribbon poll do unnecessary widget work during text input.
-        if self.styles_revision.get().is_some() && self.styles_snapshot.borrow().as_ref().is_some_and(|prior|
+        if self.styles_revision.get().is_some()
+            && crate::i18n::choice_source(&self.ui.styles_filter.get_value(), &["In use"]) != "In use"
+            && self.styles_snapshot.borrow().as_ref().is_some_and(|prior|
             *prior==self.state.borrow().editor.document.styles) {
             self.styles_revision.set(Some(revision));
             return;
@@ -1043,10 +1045,8 @@ impl Ribbon {
             self.edit(|e|e.remove_unused_style(&style.id))?;self.styles_revision.set(None);self.refresh_styles_pane();
         }Ok(())
     }
-    pub(crate) fn inspect_pane_style(&self){
-        let text={let s=self.state.borrow();let summary=s.formatting_summary();
-            format!("Current selection\nParagraph style: {:?}\nCharacter formatting: {:#?}\nAlignment: {:?}\nDirect formatting is identified in the document context strip.",summary.style,summary.character,summary.alignment)};
-        self.review_info("Style inspector",&text);
+    pub(crate) fn inspect_pane_style(&self) {
+        super::style_tools::inspect(self, &self.ui.main_frame);
     }
 }
 }

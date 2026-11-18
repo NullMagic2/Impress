@@ -2,6 +2,8 @@ pub mod document;
 pub mod equation;
 pub mod ids;
 pub mod style;
+mod style_extras;
+pub use style_extras::*;
 pub mod theme_fonts;
 pub use theme_fonts::*;
 

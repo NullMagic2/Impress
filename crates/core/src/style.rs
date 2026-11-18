@@ -18,6 +18,12 @@ const HEADING_COLOR: &str = "#336EC1";
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct StyleSheet {
     pub styles: BTreeMap<StyleId, Style>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub linked_styles: BTreeMap<StyleId, StyleId>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub table_styles: BTreeMap<StyleId, crate::TableStyle>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub list_styles: BTreeMap<NodeId, crate::NamedListStyle>,
 }
 
 impl Default for StyleSheet {
@@ -114,7 +120,7 @@ impl Default for StyleSheet {
             styles.insert(StyleId::from(id), paragraph_style(id, name, character, paragraph));
         }
 
-        Self { styles }
+        Self { styles, linked_styles: BTreeMap::new(), table_styles: BTreeMap::new(), list_styles: BTreeMap::new() }
     }
 }
 
@@ -168,20 +174,34 @@ impl StyleSheet {
     pub fn resolve_character(&self, id: Option<&StyleId>) -> CharacterProperties {
         let Some(id) = id else { return CharacterProperties::default(); };
         let mut visiting = BTreeSet::new();
-        self.resolve_character_inner(id, &mut visiting)
+        let mut result = self.linked_styles.iter().find(|(_, character)| *character == id)
+            .map(|(paragraph, _)| self.resolve_character_inner(paragraph, &mut visiting))
+            .unwrap_or_default();
+        result.overlay(&self.resolve_character_inner(id, &mut visiting));
+        result
     }
 
     pub fn resolve_paragraph(&self, id: Option<&StyleId>) -> ParagraphProperties {
         let Some(id) = id else { return ParagraphProperties::default(); };
         let mut visiting = BTreeSet::new();
-        self.resolve_paragraph_inner(id, &mut visiting)
+        let mut properties = self.resolve_paragraph_inner(id, &mut visiting);
+        if let Some((list, level)) = self.linked_list(id) {
+            properties.list_id = Some(list.clone());
+            properties.list_level = Some(level);
+        }
+        properties
     }
 
     /// Format-dialog settings inherited through the same base-style chain.
     /// A setting recorded on the child replaces the corresponding base value.
     pub fn resolve_formatting(&self, id: Option<&StyleId>) -> BTreeMap<String, String> {
         let Some(id) = id else { return BTreeMap::new(); };
-        self.resolve_formatting_inner(id, &mut BTreeSet::new())
+        let mut visiting = BTreeSet::new();
+        let mut result = self.linked_styles.iter().find(|(_, character)| *character == id)
+            .map(|(paragraph, _)| self.resolve_formatting_inner(paragraph, &mut visiting))
+            .unwrap_or_default();
+        result.extend(self.resolve_formatting_inner(id, &mut visiting));
+        result
     }
 
     fn resolve_formatting_inner(&self, id: &StyleId, visiting: &mut BTreeSet<StyleId>) -> BTreeMap<String, String> {

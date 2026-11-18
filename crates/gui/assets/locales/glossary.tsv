@@ -1365,3 +1365,101 @@ User data folder unavailable.	Ο φάκελος δεδομένων χρήστη 
 Heavy line	Παχιά γραμμή	Línea gruesa	Linha grossa	Linha grossa
 Middle dots	Μεσαίες τελείες	Puntos medios	Pontos médios	Pontos médios
 Template:	Πρότυπο:	Plantilla:	Modelo:	Modelo:
+
+# Style Manager workflows
+Add level…	Προσθήκη επιπέδου…	Añadir nivel…	Adicionar nível…	Adicionar nível…
+Apply to current table	Εφαρμογή στον τρέχοντα πίνακα	Aplicar a la tabla actual	Aplicar à tabela atual	Aplicar à tabela atual
+Apply to selection…	Εφαρμογή στην επιλογή…	Aplicar a la selección…	Aplicar à seleção…	Aplicar à seleção…
+Band fill (#RRGGBB)	Γέμισμα εναλλασσόμενων γραμμών (#RRGGBB)	Relleno de filas alternas (#RRGGBB)	Preenchimento de linhas alternadas (#RRGGBB)	Preenchimento de linhas alternadas (#RRGGBB)
+Body fill (#RRGGBB)	Γέμισμα σώματος (#RRGGBB)	Relleno del cuerpo (#RRGGBB)	Preenchimento do corpo (#RRGGBB)	Preenchimento do corpo (#RRGGBB)
+Border color (#RRGGBB)	Χρώμα περιγράμματος (#RRGGBB)	Color del borde (#RRGGBB)	Cor da borda (#RRGGBB)	Cor do limite (#RRGGBB)
+Border width (pt)	Πλάτος περιγράμματος (pt)	Grosor del borde (pt)	Espessura da borda (pt)	Espessura do limite (pt)
+Choose a list level.	Επιλέξτε επίπεδο λίστας.	Elige un nivel de lista.	Escolha um nível da lista.	Escolha um nível da lista.
+Choose a paragraph style.	Επιλέξτε στυλ παραγράφου.	Elige un estilo de párrafo.	Escolha um estilo de parágrafo.	Escolha um estilo de parágrafo.
+Choose a style to import with its dependencies.	Επιλέξτε στυλ για εισαγωγή μαζί με τις εξαρτήσεις του.	Elige un estilo para importarlo con sus dependencias.	Escolha um estilo para importar com suas dependências.	Escolha um estilo para importar com as suas dependências.
+Choose the replacement style.	Επιλέξτε το στυλ αντικατάστασης.	Elige el estilo de sustitución.	Escolha o estilo de substituição.	Escolha o estilo de substituição.
+Create linked character style…	Δημιουργία συνδεδεμένου στυλ χαρακτήρων…	Crear estilo de carácter vinculado…	Criar estilo de caractere vinculado…	Criar estilo de caráter associado…
+Direct formatting	Άμεση μορφοποίηση	Formato directo	Formatação direta	Formatação direta
+Empty paragraph	Κενή παράγραφος	Párrafo vacío	Parágrafo vazio	Parágrafo vazio
+Enter a border width in points.	Εισαγάγετε το πλάτος του περιγράμματος σε στιγμές.	Escribe el grosor del borde en puntos.	Insira a espessura da borda em pontos.	Introduza a espessura do limite em pontos.
+Enter a number for start and both indents.	Εισαγάγετε έναν αριθμό για την αρχή και για κάθε εσοχή.	Introduce un número de inicio y un valor para cada sangría.	Insira um número inicial e um valor para cada recuo.	Introduza um número inicial e um valor para cada avanço.
+Find and Replace Styles	Εύρεση και αντικατάσταση στυλ	Buscar y reemplazar estilos	Localizar e substituir estilos	Localizar e substituir estilos
+Find and Replace…	Εύρεση και αντικατάσταση…	Buscar y reemplazar…	Localizar e substituir…	Localizar e substituir…
+First-row fill (#RRGGBB)	Γέμισμα πρώτης γραμμής (#RRGGBB)	Relleno de la primera fila (#RRGGBB)	Preenchimento da primeira linha (#RRGGBB)	Preenchimento da primeira linha (#RRGGBB)
+Formatting at the start of the selection	Μορφοποίηση στην αρχή της επιλογής	Formato al inicio de la selección	Formatação no início da seleção	Formatação no início da seleção
+From style	Από το στυλ	Del estilo	Do estilo	Do estilo
+Hanging indent (mm)	Προεξοχή (mm)	Sangría francesa (mm)	Recuo deslocado (mm)	Avanço pendente (mm)
+Import Styles	Εισαγωγή στυλ	Importar estilos	Importar estilos	Importar estilos
+Import a style set…	Εισαγωγή συνόλου στυλ…	Importar conjunto de estilos…	Importar conjunto de estilos…	Importar conjunto de estilos…
+Import one style from a file…	Εισαγωγή ενός στυλ από αρχείο…	Importar un estilo de un archivo…	Importar um estilo de um arquivo…	Importar um estilo de um ficheiro…
+Invalid list level, numbering pattern or indentation.	Μη έγκυρο επίπεδο λίστας, μοτίβο αρίθμησης ή εσοχή.	El nivel de lista, el patrón de numeración o la sangría no es válido.	Nível de lista, padrão de numeração ou recuo inválido.	Nível de lista, padrão de numeração ou avanço inválido.
+Left indent (mm)	Αριστερή εσοχή (mm)	Sangría izquierda (mm)	Recuo à esquerda (mm)	Avanço à esquerda (mm)
+Link to paragraph style	Σύνδεση με στυλ παραγράφου	Vincular a un estilo de párrafo	Vincular a um estilo de parágrafo	Associar a um estilo de parágrafo
+Linked Styles	Συνδεδεμένα στυλ	Estilos vinculados	Estilos vinculados	Estilos associados
+List Level	Επίπεδο λίστας	Nivel de lista	Nível da lista	Nível da lista
+List Style	Στυλ λίστας	Estilo de lista	Estilo de lista	Estilo de lista
+List Styles	Στυλ λίστας	Estilos de lista	Estilos de lista	Estilos de lista
+Lowercase Roman	Πεζοί λατινικοί αριθμοί	Números romanos en minúscula	Algarismos romanos minúsculos	Numeração romana em minúsculas
+Lowercase letters	Πεζά γράμματα	Letras minúsculas	Letras minúsculas	Letras minúsculas
+New Document Styles	Στυλ νέων εγγράφων	Estilos para documentos nuevos	Estilos para novos documentos	Estilos para novos documentos
+New from Selection…	Νέο στυλ από την επιλογή…	Nuevo estilo desde la selección…	Novo estilo a partir da seleção…	Novo estilo a partir da seleção…
+New List Style	Νέο στυλ λίστας	Nuevo estilo de lista	Novo estilo de lista	Novo estilo de lista
+New list style	Νέο στυλ λίστας	Nuevo estilo de lista	Novo estilo de lista	Novo estilo de lista
+New table style	Νέο στυλ πίνακα	Nuevo estilo de tabla	Novo estilo de tabela	Novo estilo de tabela
+No Word importer is available.	Δεν υπάρχει διαθέσιμο εργαλείο εισαγωγής Word.	No hay ningún importador de Word disponible.	Nenhum importador do Word está disponível.	Não está disponível um importador do Word.
+No uses of this style were found.	Δεν βρέθηκαν χρήσεις αυτού του στυλ.	No se encontraron usos de este estilo.	Nenhum uso deste estilo foi encontrado.	Não foram encontradas utilizações deste estilo.
+Number format	Μορφή αριθμών	Formato de numeración	Formato de numeração	Formato de numeração
+Number pattern or bullet	Μοτίβο αρίθμησης ή κουκκίδα	Patrón de numeración o viñeta	Padrão de numeração ou marcador	Padrão de numeração ou marca
+Remove style from current table	Αφαίρεση στυλ από τον τρέχοντα πίνακα	Quitar el estilo de la tabla actual	Remover o estilo da tabela atual	Remover o estilo da tabela atual
+Replace all uses…	Αντικατάσταση όλων των χρήσεων…	Reemplazar todos los usos…	Substituir todos os usos…	Substituir todas as utilizações…
+Replace definitions with matching names and add the new styles?	Να αντικατασταθούν οι ορισμοί με ίδιο όνομα και να προστεθούν τα νέα στυλ;	¿Reemplazar las definiciones con el mismo nombre y añadir los estilos nuevos?	Substituir as definições com o mesmo nome e adicionar os novos estilos?	Substituir as definições com o mesmo nome e adicionar os novos estilos?
+Replace this use…	Αντικατάσταση αυτής της χρήσης…	Reemplazar este uso…	Substituir este uso…	Substituir esta utilização…
+Replace with Style	Αντικατάσταση με στυλ	Reemplazar por un estilo	Substituir por um estilo	Substituir por um estilo
+Replaced matches	Αποτελέσματα που αντικαταστάθηκαν	Coincidencias reemplazadas	Ocorrências substituídas	Ocorrências substituídas
+Restore built-in styles for new documents	Επαναφορά ενσωματωμένων στυλ για νέα έγγραφα	Restaurar los estilos integrados para documentos nuevos	Restaurar os estilos internos para novos documentos	Restaurar os estilos incorporados para novos documentos
+Restore the built-in styles for future documents?	Να επανέλθουν τα ενσωματωμένα στυλ για μελλοντικά έγγραφα;	¿Restaurar los estilos integrados para documentos futuros?	Restaurar os estilos internos para documentos futuros?	Restaurar os estilos incorporados para documentos futuros?
+Save Style Set	Αποθήκευση συνόλου στυλ	Guardar conjunto de estilos	Salvar conjunto de estilos	Guardar conjunto de estilos
+Save document styles as a set…	Αποθήκευση των στυλ εγγράφου ως σύνολο…	Guardar los estilos del documento como conjunto…	Salvar os estilos do documento como conjunto…	Guardar os estilos do documento como conjunto…
+Save selected style…	Αποθήκευση επιλεγμένου στυλ…	Guardar el estilo seleccionado…	Salvar o estilo selecionado…	Guardar o estilo selecionado…
+Select a style first.	Επιλέξτε πρώτα ένα στυλ.	Selecciona primero un estilo.	Selecione primeiro um estilo.	Selecione primeiro um estilo.
+Style Inspector	Επιθεώρηση στυλ	Inspector de estilos	Inspetor de estilos	Inspetor de estilos
+Style Set	Σύνολο στυλ	Conjunto de estilos	Conjunto de estilos	Conjunto de estilos
+Style Sets	Σύνολα στυλ	Conjuntos de estilos	Conjuntos de estilos	Conjuntos de estilos
+Style value	Τιμή στυλ	Valor del estilo	Valor do estilo	Valor do estilo
+Table Style	Στυλ πίνακα	Estilo de tabla	Estilo de tabela	Estilo de tabela
+Table Styles	Στυλ πινάκων	Estilos de tabla	Estilos de tabela	Estilos de tabela
+The style set is too large.	Το σύνολο στυλ είναι υπερβολικά μεγάλο.	El conjunto de estilos es demasiado grande.	O conjunto de estilos é grande demais.	O conjunto de estilos é demasiado grande.
+There is no other style of this type.	Δεν υπάρχει άλλο στυλ αυτού του τύπου.	No hay otro estilo de este tipo.	Não há outro estilo desse tipo.	Não existe outro estilo deste tipo.
+Unlink styles	Αποσύνδεση στυλ	Desvincular estilos	Desvincular estilos	Desassociar estilos
+Uppercase Roman	Κεφαλαίοι λατινικοί αριθμοί	Números romanos en mayúscula	Algarismos romanos maiúsculos	Numeração romana em maiúsculas
+Uppercase letters	Κεφαλαία γράμματα	Letras mayúsculas	Letras maiúsculas	Letras maiúsculas
+Use these styles for new documents	Χρήση αυτών των στυλ για νέα έγγραφα	Usar estos estilos para documentos nuevos	Usar estes estilos em novos documentos	Usar estes estilos em novos documentos
+Use this document's style definitions as the default for new documents?	Να χρησιμοποιηθούν οι ορισμοί στυλ αυτού του εγγράφου ως προεπιλογή για νέα έγγραφα;	¿Usar las definiciones de estilo de este documento como predeterminadas para los documentos nuevos?	Usar as definições de estilo deste documento como padrão para novos documentos?	Usar as definições de estilo deste documento por omissão para novos documentos?
+Apply list style	Εφαρμογή στυλ λίστας	Aplicar estilo de lista	Aplicar estilo de lista	Aplicar estilo de lista
+Apply table style	Εφαρμογή στυλ πίνακα	Aplicar estilo de tabla	Aplicar estilo de tabela	Aplicar estilo de tabela
+Change styles	Αλλαγή στυλ	Cambiar estilos	Alterar estilos	Alterar estilos
+Choose a different style of the same type.	Επιλέξτε διαφορετικό στυλ του ίδιου τύπου.	Elige otro estilo del mismo tipo.	Escolha outro estilo do mesmo tipo.	Escolha outro estilo do mesmo tipo.
+Invalid named list style.	Μη έγκυρο επώνυμο στυλ λίστας.	El estilo de lista con nombre no es válido.	Estilo de lista nomeado inválido.	Estilo de lista com nome inválido.
+Linked styles need one paragraph style and one distinct character style.	Τα συνδεδεμένα στυλ απαιτούν ένα στυλ παραγράφου και ένα ξεχωριστό στυλ χαρακτήρων.	Los estilos vinculados requieren un estilo de párrafo y un estilo de carácter distinto.	Os estilos vinculados exigem um estilo de parágrafo e um estilo de caractere distinto.	Os estilos associados precisam de um estilo de parágrafo e de um estilo de caráter distinto.
+List level does not exist.	Το επίπεδο λίστας δεν υπάρχει.	El nivel de lista no existe.	O nível da lista não existe.	O nível da lista não existe.
+Replace style	Αντικατάσταση στυλ	Reemplazar estilo	Substituir estilo	Substituir estilo
+Table style names must be unique and nonempty.	Τα ονόματα των στυλ πίνακα πρέπει να είναι μοναδικά και μη κενά.	Los nombres de los estilos de tabla deben ser únicos y no pueden estar vacíos.	Os nomes dos estilos de tabela devem ser únicos e não podem estar vazios.	Os nomes dos estilos de tabela têm de ser únicos e não podem estar vazios.
+This list ID is already in use.	Αυτό το αναγνωριστικό λίστας χρησιμοποιείται ήδη.	Este identificador de lista ya está en uso.	Esse identificador de lista já está em uso.	Este identificador de lista já está em utilização.
+Use a border color in #RRGGBB format and a width of 0–24 pt.	Χρησιμοποιήστε χρώμα περιγράμματος σε μορφή #RRGGBB και πλάτος 0–24 pt.	Usa un color de borde en formato #RRGGBB y un grosor entre 0 y 24 pt.	Use uma cor de borda no formato #RRGGBB e uma espessura de 0 a 24 pt.	Use uma cor de limite no formato #RRGGBB e uma espessura de 0 a 24 pt.
+Use a color in #RRGGBB format.	Χρησιμοποιήστε χρώμα σε μορφή #RRGGBB.	Usa un color en formato #RRGGBB.	Use uma cor no formato #RRGGBB.	Use uma cor no formato #RRGGBB.
+The Normal template is too large.	Το πρότυπο Κανονικό είναι υπερβολικά μεγάλο.	La plantilla Normal es demasiado grande.	O modelo Normal é grande demais.	O modelo Normal é demasiado grande.
+A paragraph style can be linked to only one list level.	Ένα στυλ παραγράφου μπορεί να συνδεθεί μόνο με ένα επίπεδο λίστας.	Un estilo de párrafo solo se puede vincular a un nivel de lista.	Um estilo de parágrafo só pode ser vinculado a um nível da lista.	Um estilo de parágrafo só pode ser associado a um nível da lista.
+A style set contains too many styles.	Το σύνολο περιέχει υπερβολικά πολλά στυλ.	El conjunto contiene demasiados estilos.	O conjunto contém estilos demais.	O conjunto contém demasiados estilos.
+A style with the same name has a different type.	Υπάρχει στυλ με το ίδιο όνομα και διαφορετικό τύπο.	Hay un estilo con el mismo nombre y de otro tipo.	Há um estilo com o mesmo nome e de outro tipo.	Existe um estilo com o mesmo nome e de outro tipo.
+Impress style sets	Σύνολα στυλ Impress	Conjuntos de estilos de Impress	Conjuntos de estilos do Impress	Conjuntos de estilos do Impress
+Word documents	Έγγραφα Word	Documentos de Word	Documentos do Word	Documentos do Word
+Matches	Αποτελέσματα	Coincidencias	Ocorrências	Ocorrências
+Characters	Χαρακτήρες	Caracteres	Caracteres	Caracteres
+font family	Οικογένεια γραμματοσειράς	Familia tipográfica	Família da fonte	Família do tipo de letra
+font size pt	Μέγεθος γραμματοσειράς (pt)	Tamaño de fuente (pt)	Tamanho da fonte (pt)	Tamanho do tipo de letra (pt)
+line spacing	Διάστιχο	Interlineado	Espaçamento entre linhas	Espaçamento entre linhas
+space before pt	Διάστημα πριν (pt)	Espacio anterior (pt)	Espaço antes (pt)	Espaço antes (pt)
+space after pt	Διάστημα μετά (pt)	Espacio posterior (pt)	Espaço depois (pt)	Espaço depois (pt)
+left indent mm	Αριστερή εσοχή (mm)	Sangría izquierda (mm)	Recuo à esquerda (mm)	Avanço à esquerda (mm)
+right indent mm	Δεξιά εσοχή (mm)	Sangría derecha (mm)	Recuo à direita (mm)	Avanço à direita (mm)
+first line indent mm	Εσοχή πρώτης γραμμής (mm)	Sangría de primera línea (mm)	Recuo da primeira linha (mm)	Avanço da primeira linha (mm)

@@ -274,9 +274,15 @@ fn generated_style(
             xml_escape(&next.0)
         ));
     }
+    let linked = document.styles.linked_styles.get(&style.id).or_else(|| {
+        document.styles.linked_styles.iter().find(|(_, character)| *character == &style.id).map(|(paragraph, _)| paragraph)
+    });
+    if let Some(link) = linked {
+        result.push_str(&format!(r#"<w:link xmlns:w="{WORD_NAMESPACE}" w:val="{}"/>"#, xml_escape(&link.0)));
+    }
     if let Some(old) = &old {
         for (name, xml) in &old.children {
-            if !["name", "basedOn", "next", "pPr", "rPr"].contains(name) {
+            if !["name", "basedOn", "next", "link", "pPr", "rPr"].contains(name) {
                 result.push_str(xml);
             }
         }
@@ -284,6 +290,10 @@ fn generated_style(
     let mut paragraph = Paragraph::plain("");
     paragraph.style = None;
     paragraph.properties = style.paragraph.clone();
+    if let Some((list, level)) = document.styles.linked_list(&style.id) {
+        paragraph.properties.list_id = Some(list.clone());
+        paragraph.properties.list_level = Some(level);
+    }
     let inherited_tabs = document
         .styles
         .resolve_paragraph(style.based_on.as_ref())
@@ -296,9 +306,11 @@ fn generated_style(
         "pPr",
         &scope,
     ));
+    let linked_character = (style.kind == model::StyleKind::Character && linked.is_some())
+        .then(|| document.styles.resolve_character(Some(&style.id)));
     result.push_str(&merge_properties(
         original_property("rPr"),
-        &run_props_xml(&style.character),
+        &run_props_xml(linked_character.as_ref().unwrap_or(&style.character)),
         RUN_PROPERTIES,
         "rPr",
         &scope,
@@ -310,6 +322,64 @@ fn generated_style(
     );
     result
 }
+fn table_style_xml(id: &model::StyleId, style: &model::TableStyle, original: Option<&str>) -> String {
+    fn fill(color: Option<&str>) -> String {
+        color.map(|color| format!(r#"<w:shd w:val="clear" w:fill="{}"/>"#,
+            xml_escape(color.trim_start_matches('#')))).unwrap_or_default()
+    }
+    let old = original.and_then(element);
+    let property = |name: &str, original: Option<&Element<'_>>, generated: String, owns: &[&str]| {
+        let previous = original.and_then(|e| e.children.iter().find(|(n, _)| *n == name))
+            .and_then(|(_, xml)| element(xml));
+        let mut content = generated;
+        if let Some(p) = previous {
+            for (tag, xml) in p.children { if !owns.contains(&tag) { content.push_str(xml); } }
+        }
+        if content.is_empty() { String::new() } else { format!("<w:{name}>{content}</w:{name}>") }
+    };
+    let mut result = old.as_ref().map(opening).unwrap_or_else(|| format!(r#"<w:style xmlns:w="{WORD_NAMESPACE}" w:type="table" w:styleId="{}">"#, xml_escape(&id.0)));
+    result.push_str(&format!(r#"<w:name xmlns:w="{WORD_NAMESPACE}" w:val="{}"/>"#, xml_escape(&style.name)));
+    let borders = style.borders.as_ref().map(|value| super::borders_xml("w:tblBorders", value)).unwrap_or_default();
+    let mut other_regions = String::new();
+    let mut regions = BTreeMap::new();
+    if let Some(old) = &old {
+        for (name, xml) in &old.children {
+            match *name {
+                "name" | "tblPr" | "tcPr" => (),
+                "tblStylePr" => {
+                    let mut reader = Reader::from_str(xml);
+                    let kind = match reader.read_event() {
+                        Ok(Event::Start(e)) | Ok(Event::Empty(e)) => e.attributes().flatten()
+                            .find(|a| local_name(a.key.as_ref()) == "type").map(|a| a.value.into_owned()),
+                        _ => None,
+                    };
+                    if let Some(kind @ ("firstRow" | "band1Horz")) = kind.as_deref() {
+                        regions.insert(kind.to_owned(), element(xml));
+                    } else {
+                        other_regions.push_str(xml);
+                    }
+                }
+                _ => result.push_str(xml),
+            }
+        }
+    }
+    result.push_str(&property("tblPr", old.as_ref(), borders, &["tblBorders"]));
+    result.push_str(&property("tcPr", old.as_ref(), fill(style.body_fill.as_deref()), &["shd"]));
+    for (name, color) in [("firstRow", &style.header_fill), ("band1Horz", &style.band_fill)] {
+        let previous = regions.get(name).and_then(Option::as_ref);
+        let mut properties = property("tcPr", previous, fill(color.as_deref()), &["shd"]);
+        if let Some(old) = previous {
+            for (tag, xml) in &old.children { if *tag != "tcPr" { properties.push_str(xml); } }
+        }
+        if !properties.is_empty() {
+            result.push_str(&format!(r#"<w:tblStylePr w:type="{name}">{properties}</w:tblStylePr>"#));
+        }
+    }
+    result.push_str(&other_regions);
+    result.push_str(old.as_ref().map(|e| e.closing.as_str()).unwrap_or("</w:style>"));
+    result
+}
+
 pub(super) fn styles_xml(document: &Document, context: &ExportContext) -> String {
     let original = preserved_text(document, "word/styles.xml");
     let root = original.as_deref().and_then(element);
@@ -319,6 +389,8 @@ pub(super) fn styles_xml(document: &Document, context: &ExportContext) -> String
         .map(|element| namespace_scope(&BTreeMap::new(), &opening(element)))
         .unwrap_or_default();
     let mut written = BTreeSet::new();
+    let mut written_tables = BTreeSet::new();
+    let generated_lists = document.styles.list_styles.keys().map(super::list_style_id).collect::<BTreeSet<_>>();
     if let Some(root) = &root {
         for (name, xml) in &root.children {
             if *name != "style" {
@@ -350,7 +422,11 @@ pub(super) fn styles_xml(document: &Document, context: &ExportContext) -> String
                     &scope,
                 ));
                 written.insert(style.id.clone());
-            } else {
+            } else if let Some((id, style)) = id.as_deref()
+                .and_then(|id| document.styles.table_styles.get_key_value(&model::StyleId(id.to_owned()))) {
+                result.push_str(&table_style_xml(id, style, Some(xml)));
+                written_tables.insert(id.clone());
+            } else if id.as_ref().is_none_or(|id| !generated_lists.contains(id)) {
                 result.push_str(xml);
             }
         }
@@ -358,6 +434,15 @@ pub(super) fn styles_xml(document: &Document, context: &ExportContext) -> String
     for style in document.styles.styles.values() {
         if !written.contains(&style.id) {
             result.push_str(&generated_style(style, document, context, None, &scope));
+        }
+    }
+    for (id, style) in &document.styles.table_styles {
+        if !written_tables.contains(id) { result.push_str(&table_style_xml(id, style, None)); }
+    }
+    for (id, list) in &document.styles.list_styles {
+        if let Some(num) = context.list_num_id(id) {
+            result.push_str(&format!(r#"<w:style xmlns:w="{WORD_NAMESPACE}" w:type="numbering" w:styleId="{}"><w:name w:val="{}"/><w:pPr><w:numPr><w:numId w:val="{num}"/></w:numPr></w:pPr></w:style>"#,
+                super::list_style_id(id), xml_escape(&list.name)));
         }
     }
     result.push_str(

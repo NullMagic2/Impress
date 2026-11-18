@@ -11,7 +11,7 @@ use wxdragon::{
 const WIDTH_DIP: i32 = 640;
 const HEIGHT_DIP: i32 = 420;
 const GAP_DIP: i32 = 12;
-const BUTTON_WIDTH_DIP: i32 = 165;
+const BUTTON_WIDTH_DIP: i32 = 206;
 const DETAILS_HEIGHT_DIP: i32 = 70;
 
 struct Manager {
@@ -22,6 +22,7 @@ struct Manager {
     modify: Button,
     delete: Button,
     styles: RefCell<Vec<Style>>,
+    navigate_to: RefCell<Option<editor::StyleMatch>>,
 }
 
 pub(super) fn show(ribbon: &Ribbon) {
@@ -36,7 +37,9 @@ pub(super) fn show(ribbon: &Ribbon) {
     manager.window.destroy();
     owner.styles_revision.set(None);
     owner.refresh_styles_pane();
-    owner.focus_document();
+    let target = manager.navigate_to.borrow_mut().take();
+    if let Some(target) = target { super::style_tools::navigate(&owner, target); }
+    else { owner.focus_document(); }
 }
 
 impl Manager {
@@ -57,23 +60,30 @@ impl Manager {
         body.add(&list, 1, SizerFlag::Expand | SizerFlag::Right, dip(GAP_DIP));
         let actions = BoxSizer::builder(Orientation::Vertical).build();
         let mut buttons = Vec::new();
-        for label in [
+        let tools_top = BoxSizer::builder(Orientation::Horizontal).build();
+        let tools_bottom = BoxSizer::builder(Orientation::Horizontal).build();
+        for (index, label) in [
             "New paragraph style…",
             "New character style…",
             "Modify…",
             "Delete…",
             "Defaults…",
-        ] {
-            let button = Button::builder(&window)
-                .with_label(&crate::i18n::text(&(label)))
-                .with_size(Size::new(dip(BUTTON_WIDTH_DIP), -1))
-                .build();
-            actions.add(
-                &button,
-                0,
-                SizerFlag::Expand | SizerFlag::Bottom,
-                dip(GAP_DIP),
-            );
+            "New from Selection…",
+            "Find and Replace…",
+            "Style Sets…",
+            "Linked Styles…",
+            "Table Styles…",
+            "List Styles…",
+            "Inspect…",
+        ].into_iter().enumerate() {
+            let mut builder = Button::builder(&window).with_label(&crate::i18n::text(label));
+            if index < 5 { builder = builder.with_size(Size::new(dip(BUTTON_WIDTH_DIP), -1)); }
+            let button = builder.build();
+            match index {
+                0..=4 => actions.add(&button, 0, SizerFlag::Expand | SizerFlag::Bottom, dip(GAP_DIP)),
+                5..=7 => tools_top.add(&button, 1, SizerFlag::Expand | SizerFlag::Right, dip(5)),
+                _ => tools_bottom.add(&button, 1, SizerFlag::Expand | SizerFlag::Right, dip(5)),
+            };
             buttons.push(button);
         }
         body.add_sizer(&actions, 0, SizerFlag::Expand, 0);
@@ -93,6 +103,9 @@ impl Manager {
             SizerFlag::Expand | SizerFlag::All,
             dip(GAP_DIP),
         );
+        for tools in [tools_top, tools_bottom] {
+            root.add_sizer(&tools, 0, SizerFlag::Expand | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom, dip(8));
+        }
         let close = Button::builder(&window)
             .with_id(ID_CANCEL)
             .with_label(&crate::i18n::text(&("Close")))
@@ -117,6 +130,7 @@ impl Manager {
             modify: buttons[2],
             delete: buttons[3],
             styles: RefCell::new(Vec::new()),
+            navigate_to: RefCell::new(None),
         });
         for (button, kind) in [
             (buttons[0], StyleKind::Paragraph),
@@ -147,6 +161,13 @@ impl Manager {
                 manager.defaults();
             }
         });
+        for (index, button) in buttons.into_iter().enumerate().skip(5) {
+            let weak = Rc::downgrade(&manager);
+            button.on_click(move |_| {
+                let Some(manager) = weak.upgrade() else { return };
+                manager.run_tool(index);
+            });
+        }
         let weak = Rc::downgrade(&manager);
         list.on_selection_changed(move |_| {
             if let Some(manager) = weak.upgrade() {
@@ -161,6 +182,32 @@ impl Manager {
         });
         close.on_click(move |_| window.end_modal(ID_CANCEL));
         manager
+    }
+
+    fn run_tool(&self, action: usize) {
+        let Some(ribbon) = self.ribbon.upgrade() else { return };
+        let selected = self.selected().map(|style| style.id);
+        let result = match action {
+            5 => super::style_tools::new_style(&ribbon, &self.window, true),
+            6 => match selected.as_ref().ok_or_else(|| "Select a style first.".to_owned())
+                .and_then(|id| super::style_tools::find_replace(&ribbon, &self.window, id)) {
+                Ok(Some(target)) => {
+                    self.navigate_to.replace(Some(target));
+                    self.window.end_modal(ID_CANCEL);
+                    return;
+                }
+                Ok(None) => Ok(()),
+                Err(error) => Err(error),
+            },
+            7 => super::style_tools::style_sets(&ribbon, &self.window, selected.as_ref()),
+            8 => super::style_tools::linked_styles(&ribbon, &self.window, selected.as_ref()),
+            9 => super::style_tools::table_styles(&ribbon, &self.window),
+            10 => super::style_tools::list_styles(&ribbon, &self.window),
+            11 => { super::style_tools::inspect(&ribbon, &self.window); Ok(()) }
+            _ => return,
+        };
+        self.refresh(selected.as_ref());
+        if let Err(error) = result { self.message(&error); }
     }
 
     fn selected(&self) -> Option<Style> {

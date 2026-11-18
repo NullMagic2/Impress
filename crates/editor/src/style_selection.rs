@@ -8,8 +8,13 @@ impl EditorState {
     /// identity, inheritance, following style, shortcuts or paragraph membership.
     /// Mixed properties keep the style's existing value.
     pub fn update_style_from_selection(&mut self,id:&StyleId)->Result<(),String> {
-        let selection=self.selection.as_ref().ok_or("Select text or place the caret first")?;
         let mut style=self.document.styles.get(id).cloned().ok_or("Style not found")?;
+        self.populate_style_from_selection(&mut style)?;
+        self.put_style(style)
+    }
+
+    pub fn populate_style_from_selection(&self, style: &mut model::Style) -> Result<(), String> {
+        let selection=self.selection.as_ref().ok_or("Select text or place the caret first")?;
         let mut characters=Vec::new();
         if selection.is_collapsed() {
             let mut properties=self.formatting_summary().character;
@@ -35,7 +40,7 @@ impl EditorState {
                 paragraph_fields!(common);
             }
         }
-        self.put_style(style)
+        Ok(())
     }
 
     pub(super) fn style_selection_mutations(&self,before:&StyleSheet,after:&StyleSheet)->Result<Vec<Mutation>,String> {

@@ -911,6 +911,12 @@
     "Um parágrafo ou uma linha de tabela excede o limite de formatação DOC nativa. Use DOCX para este documento.",
     "Um parágrafo ou uma linha de tabela excede o limite de formatação DOC nativa. Utilize DOCX para este documento."
   ],
+  "A paragraph style can be linked to only one list level.": [
+    "Ένα στυλ παραγράφου μπορεί να συνδεθεί μόνο με ένα επίπεδο λίστας.",
+    "Un estilo de párrafo solo se puede vincular a un nivel de lista.",
+    "Um estilo de parágrafo só pode ser vinculado a um nível da lista.",
+    "Um estilo de parágrafo só pode ser associado a um nível da lista."
+  ],
   "A paragraph style index is missing": [
     "Λείπει ένας δείκτης στυλ παραγράφου",
     "Falta un índice de estilo de párrafo",
@@ -964,6 +970,18 @@
     "Un estilo hace referencia a un estilo base que falta",
     "Um estilo faz referência a um estilo base ausente",
     "Um estilo faz referência a um estilo base em falta"
+  ],
+  "A style set contains too many styles.": [
+    "Το σύνολο περιέχει υπερβολικά πολλά στυλ.",
+    "El conjunto contiene demasiados estilos.",
+    "O conjunto contém estilos demais.",
+    "O conjunto contém demasiados estilos."
+  ],
+  "A style with the same name has a different type.": [
+    "Υπάρχει στυλ με το ίδιο όνομα και διαφορετικό τύπο.",
+    "Hay un estilo con el mismo nombre y de otro tipo.",
+    "Há um estilo com o mesmo nome e de outro tipo.",
+    "Existe um estilo com o mesmo nome e de outro tipo."
   ],
   "A table merge extends beyond the native DOC table grid": [
     "Μια συγχώνευση κελιών εκτείνεται πέρα από το πλέγμα του πίνακα εγγενούς DOC",
@@ -1180,6 +1198,12 @@
     "Añadir comentario",
     "Adicionar comentário",
     "Adicionar comentário"
+  ],
+  "Add level…": [
+    "Προσθήκη επιπέδου…",
+    "Añadir nivel…",
+    "Adicionar nível…",
+    "Adicionar nível…"
   ],
   "Add or delete spelling dictionaries": [
     "Προσθήκη ή διαγραφή λεξικών ορθογραφίας",
@@ -1499,6 +1523,12 @@
     "Aplicar cores",
     "Aplicar cores"
   ],
+  "Apply list style": [
+    "Εφαρμογή στυλ λίστας",
+    "Aplicar estilo de lista",
+    "Aplicar estilo de lista",
+    "Aplicar estilo de lista"
+  ],
   "Apply named style": [
     "Εφαρμογή name style",
     "Aplicar el estilo llamado",
@@ -1511,11 +1541,29 @@
     "Aplicar estilo",
     "Aplicar estilo"
   ],
+  "Apply table style": [
+    "Εφαρμογή στυλ πίνακα",
+    "Aplicar estilo de tabla",
+    "Aplicar estilo de tabela",
+    "Aplicar estilo de tabela"
+  ],
   "Apply to": [
     "Εφαρμογή σε",
     "Aplicar a",
     "Aplicar a",
     "Aplicar a"
+  ],
+  "Apply to current table": [
+    "Εφαρμογή στον τρέχοντα πίνακα",
+    "Aplicar a la tabla actual",
+    "Aplicar à tabela atual",
+    "Aplicar à tabela atual"
+  ],
+  "Apply to selection…": [
+    "Εφαρμογή στην επιλογή…",
+    "Aplicar a la selección…",
+    "Aplicar à seleção…",
+    "Aplicar à seleção…"
   ],
   "Apply to:": [
     "Εφαρμογή σε:",
@@ -1715,6 +1763,12 @@
     "Equilibrado",
     "Equilibrado"
   ],
+  "Band fill (#RRGGBB)": [
+    "Γέμισμα εναλλασσόμενων γραμμών (#RRGGBB)",
+    "Relleno de filas alternas (#RRGGBB)",
+    "Preenchimento de linhas alternadas (#RRGGBB)",
+    "Preenchimento de linhas alternadas (#RRGGBB)"
+  ],
   "Bar": [
     "Γραμμή",
     "Barra",
@@ -1853,6 +1907,12 @@
     "Corpo de Texto",
     "Corpo de Texto"
   ],
+  "Body fill (#RRGGBB)": [
+    "Γέμισμα σώματος (#RRGGBB)",
+    "Relleno del cuerpo (#RRGGBB)",
+    "Preenchimento do corpo (#RRGGBB)",
+    "Preenchimento do corpo (#RRGGBB)"
+  ],
   "Body text": [
     "Κείμενο εγγράφου",
     "Texto del cuerpo",
@@ -1942,6 +2002,18 @@
     "Llamada con borde 3",
     "Texto explicativo com contorno 3",
     "Texto explicativo com contorno 3"
+  ],
+  "Border color (#RRGGBB)": [
+    "Χρώμα περιγράμματος (#RRGGBB)",
+    "Color del borde (#RRGGBB)",
+    "Cor da borda (#RRGGBB)",
+    "Cor do limite (#RRGGBB)"
+  ],
+  "Border width (pt)": [
+    "Πλάτος περιγράμματος (pt)",
+    "Grosor del borde (pt)",
+    "Espessura da borda (pt)",
+    "Espessura do limite (pt)"
   ],
   "Borders": [
     "Περιγράμματα",
@@ -2375,6 +2447,12 @@
     "A mudança já não existe",
     "A mudança já não existe"
   ],
+  "Change styles": [
+    "Αλλαγή στυλ",
+    "Cambiar estilos",
+    "Alterar estilos",
+    "Alterar estilos"
+  ],
   "Change value…": [
     "Αλλαγή τιμής…",
     "Cambiar valor…",
@@ -2428,6 +2506,12 @@
     "Estilos de carácter",
     "Estilos de caractere",
     "Estilos de caráter"
+  ],
+  "Characters": [
+    "Χαρακτήρες",
+    "Caracteres",
+    "Caracteres",
+    "Caracteres"
   ],
   "Chart": [
     "Γράφημα",
@@ -2585,6 +2669,12 @@
     "Escolha um nome diferente dos modelos internos.",
     "Escolha um nome diferente dos modelos incluídos."
   ],
+  "Choose a different style of the same type.": [
+    "Επιλέξτε διαφορετικό στυλ του ίδιου τύπου.",
+    "Elige otro estilo del mismo tipo.",
+    "Escolha outro estilo do mesmo tipo.",
+    "Escolha outro estilo do mesmo tipo."
+  ],
   "Choose a following paragraph style": [
     "Επιλέξτε ένα ακόλουθο στυλ παραγράφου",
     "Elija un siguiente estilo de párrafo",
@@ -2596,6 +2686,12 @@
     "Elija un color de fuente o pulse Escape para cancelar",
     "Escolha uma cor de fonte ou pressione Escape para cancelar",
     "Escolha uma cor de tipo de letra ou prima Escape para cancelar"
+  ],
+  "Choose a list level.": [
+    "Επιλέξτε επίπεδο λίστας.",
+    "Elige un nivel de lista.",
+    "Escolha um nível da lista.",
+    "Escolha um nível da lista."
   ],
   "Choose a margin preset.": [
     "Επιλέξτε ένα προκαθορισμένο περιθώριο.",
@@ -2615,6 +2711,12 @@
     "Escolha um tamanho de papel predefinido para a seção atual",
     "Escolha um tamanho de papel predefinido para a secção atual"
   ],
+  "Choose a paragraph style.": [
+    "Επιλέξτε στυλ παραγράφου.",
+    "Elige un estilo de párrafo.",
+    "Escolha um estilo de parágrafo.",
+    "Escolha um estilo de parágrafo."
+  ],
   "Choose a preset for all four margins in the current section": [
     "Επιλέξτε προρύθμιση για τα τέσσερα περιθώρια της τρέχουσας ενότητας",
     "Elija un preajuste para los cuatro márgenes de la sección actual",
@@ -2632,6 +2734,12 @@
     "Elija una fuente y un estilo de cita.",
     "Escolha uma fonte e um estilo de citação.",
     "Escolha uma fonte e um estilo de citação."
+  ],
+  "Choose a style to import with its dependencies.": [
+    "Επιλέξτε στυλ για εισαγωγή μαζί με τις εξαρτήσεις του.",
+    "Elige un estilo para importarlo con sus dependencias.",
+    "Escolha um estilo para importar com suas dependências.",
+    "Escolha um estilo para importar com as suas dependências."
   ],
   "Choose a supported dictionary language.": [
     "Επιλέξτε μια υποστηριζόμενη γλώσσα λεξικού.",
@@ -2704,6 +2812,12 @@
     "Elija las páginas que existen en el documento.",
     "Escolha as páginas que existem no documento.",
     "Escolha as páginas que existem no documento."
+  ],
+  "Choose the replacement style.": [
+    "Επιλέξτε το στυλ αντικατάστασης.",
+    "Elige el estilo de sustitución.",
+    "Escolha o estilo de substituição.",
+    "Escolha o estilo de substituição."
   ],
   "Choose the style type:": [
     "Επιλέξτε τον τύπο στυλ:",
@@ -3863,6 +3977,12 @@
     "Criar cabeçalho",
     "Criar cabeçalho"
   ],
+  "Create linked character style…": [
+    "Δημιουργία συνδεδεμένου στυλ χαρακτήρων…",
+    "Crear estilo de carácter vinculado…",
+    "Criar estilo de caractere vinculado…",
+    "Criar estilo de caráter associado…"
+  ],
   "Crescent": [
     "Ημισέληνος",
     "Luna creciente",
@@ -4757,6 +4877,12 @@
     "Diferente & até mesmo",
     "Diferentes ímpares & até mesmo"
   ],
+  "Direct formatting": [
+    "Άμεση μορφοποίηση",
+    "Formato directo",
+    "Formatação direta",
+    "Formatação direta"
+  ],
   "Direction": [
     "Κατεύθυνση",
     "Dirección",
@@ -5267,6 +5393,12 @@
     "Imagem incorporada é muito grande",
     "Imagem incorporada é muito grande"
   ],
+  "Empty paragraph": [
+    "Κενή παράγραφος",
+    "Párrafo vacío",
+    "Parágrafo vazio",
+    "Parágrafo vazio"
+  ],
   "Encoded clipboard image exceeds 32 MiB": [
     "Κωδικοποιημένη εικόνα προχείρου υπερβαίνει τα 32 MiB",
     "La imagen del portapapeles codificada supera los 32 MiB",
@@ -5351,6 +5483,12 @@
     "Digite 1–8192 bytes de texto pesquisable; os objetos incorporados não são correspondências de texto",
     "Digite 1–8192 bytes de texto pesquisable; os objetos incorporados não são correspondências de texto"
   ],
+  "Enter a border width in points.": [
+    "Εισαγάγετε το πλάτος του περιγράμματος σε στιγμές.",
+    "Escribe el grosor del borde en puntos.",
+    "Insira a espessura da borda em pontos.",
+    "Introduza a espessura do limite em pontos."
+  ],
   "Enter a comment of at most 64 KiB": [
     "Εισάγετε ένα σχόλιο από το πολύ 64 KiB",
     "Introduzca un comentario de 64 KiB como máximo",
@@ -5386,6 +5524,12 @@
     "Introduzca primero un encabezado o pie de página",
     "Digite primeiro um cabeçalho ou rodapé",
     "Digite primeiro um cabeçalho ou pé de página"
+  ],
+  "Enter a number for start and both indents.": [
+    "Εισαγάγετε έναν αριθμό για την αρχή και για κάθε εσοχή.",
+    "Introduce un número de inicio y un valor para cada sangría.",
+    "Insira um número inicial e um valor para cada recuo.",
+    "Introduza um número inicial e um valor para cada avanço."
   ],
   "Enter a number from 1 to 20.": [
     "Εισαγάγετε έναν αριθμό από 1 έως 20.",
@@ -5789,6 +5933,18 @@
     "Localizar e Substituir",
     "Localizar e Substituir"
   ],
+  "Find and Replace Styles": [
+    "Εύρεση και αντικατάσταση στυλ",
+    "Buscar y reemplazar estilos",
+    "Localizar e substituir estilos",
+    "Localizar e substituir estilos"
+  ],
+  "Find and Replace…": [
+    "Εύρεση και αντικατάσταση…",
+    "Buscar y reemplazar…",
+    "Localizar e substituir…",
+    "Localizar e substituir…"
+  ],
   "Find text first": [
     "Βρείτε πρώτα το κείμενο",
     "Buscar texto primero",
@@ -5914,6 +6070,12 @@
     "Sangría de primera línea",
     "Recuo da primeira linha",
     "Avanço da primeira linha"
+  ],
+  "First-row fill (#RRGGBB)": [
+    "Γέμισμα πρώτης γραμμής (#RRGGBB)",
+    "Relleno de la primera fila (#RRGGBB)",
+    "Preenchimento da primeira linha (#RRGGBB)",
+    "Preenchimento da primeira linha (#RRGGBB)"
   ],
   "Fit each page to the paper": [
     "Προσαρμογή κάθε σελίδας στο χαρτί",
@@ -6299,6 +6461,12 @@
     "Formatação",
     "Formatação"
   ],
+  "Formatting at the start of the selection": [
+    "Μορφοποίηση στην αρχή της επιλογής",
+    "Formato al inicio de la selección",
+    "Formatação no início da seleção",
+    "Formatação no início da seleção"
+  ],
   "Formatting cannot fit in a native DOC page": [
     "Η μορφοποίηση δεν χωρά σε εγγενή σελίδα DOC",
     "El formato no cabe en una página DOC nativa",
@@ -6382,6 +6550,12 @@
     "Francés (France)",
     "Francês (France)",
     "Francês (France)"
+  ],
+  "From style": [
+    "Από το στυλ",
+    "Del estilo",
+    "Do estilo",
+    "Do estilo"
   ],
   "Full, touching": [
     "Πλήρης, σε επαφή",
@@ -6676,6 +6850,12 @@
     "Sangría francesa",
     "Recuo deslocado",
     "Avanço pendente"
+  ],
+  "Hanging indent (mm)": [
+    "Προεξοχή (mm)",
+    "Sangría francesa (mm)",
+    "Recuo deslocado (mm)",
+    "Avanço pendente (mm)"
   ],
   "Hanging punctuation": [
     "Προεξέχουσα στίξη",
@@ -7055,6 +7235,24 @@
     "Importar PDF",
     "Importar PDF"
   ],
+  "Import Styles": [
+    "Εισαγωγή στυλ",
+    "Importar estilos",
+    "Importar estilos",
+    "Importar estilos"
+  ],
+  "Import a style set…": [
+    "Εισαγωγή συνόλου στυλ…",
+    "Importar conjunto de estilos…",
+    "Importar conjunto de estilos…",
+    "Importar conjunto de estilos…"
+  ],
+  "Import one style from a file…": [
+    "Εισαγωγή ενός στυλ από αρχείο…",
+    "Importar un estilo de un archivo…",
+    "Importar um estilo de um arquivo…",
+    "Importar um estilo de um ficheiro…"
+  ],
   "Imported author": [
     "Εισαγόμενος συγγραφέας",
     "Autor importado",
@@ -7120,6 +7318,12 @@
     "Impress conservó copias de los documentos que no se guardaron.",
     "O Impress manteve cópias dos documentos que não foram salvos.",
     "O Impress manteve cópias dos documentos que não foram guardados."
+  ],
+  "Impress style sets": [
+    "Σύνολα στυλ Impress",
+    "Conjuntos de estilos de Impress",
+    "Conjuntos de estilos do Impress",
+    "Conjuntos de estilos do Impress"
   ],
   "Impress — Untitled": [
     "Impress — Χωρίς τίτλο",
@@ -8009,6 +8213,18 @@
     "Indentação inválida.",
     "Indentação inválida."
   ],
+  "Invalid list level, numbering pattern or indentation.": [
+    "Μη έγκυρο επίπεδο λίστας, μοτίβο αρίθμησης ή εσοχή.",
+    "El nivel de lista, el patrón de numeración o la sangría no es válido.",
+    "Nível de lista, padrão de numeração ou recuo inválido.",
+    "Nível de lista, padrão de numeração ou avanço inválido."
+  ],
+  "Invalid named list style.": [
+    "Μη έγκυρο επώνυμο στυλ λίστας.",
+    "El estilo de lista con nombre no es válido.",
+    "Estilo de lista nomeado inválido.",
+    "Estilo de lista com nome inválido."
+  ],
   "Invalid native history operation count": [
     "Μη έγκυρος αριθμός λειτουργίας ιστορικού",
     "Conteo de operaciones de historial nativo inválido",
@@ -8489,6 +8705,12 @@
     "Recuo à esquerda",
     "Avanço à esquerda"
   ],
+  "Left indent (mm)": [
+    "Αριστερή εσοχή (mm)",
+    "Sangría izquierda (mm)",
+    "Recuo à esquerda (mm)",
+    "Avanço à esquerda (mm)"
+  ],
   "Left right arrow": [
     "Βέλος αριστερά-δεξιά",
     "Flecha izquierda-derecha",
@@ -8741,6 +8963,30 @@
     "Alinhados",
     "Alinhados"
   ],
+  "Link to paragraph style": [
+    "Σύνδεση με στυλ παραγράφου",
+    "Vincular a un estilo de párrafo",
+    "Vincular a um estilo de parágrafo",
+    "Associar a um estilo de parágrafo"
+  ],
+  "Linked Styles": [
+    "Συνδεδεμένα στυλ",
+    "Estilos vinculados",
+    "Estilos vinculados",
+    "Estilos associados"
+  ],
+  "Linked Styles…": [
+    "Συνδεδεμένα στυλ…",
+    "Estilos vinculados…",
+    "Estilos vinculados…",
+    "Estilos associados…"
+  ],
+  "Linked styles need one paragraph style and one distinct character style.": [
+    "Τα συνδεδεμένα στυλ απαιτούν ένα στυλ παραγράφου και ένα ξεχωριστό στυλ χαρακτήρων.",
+    "Los estilos vinculados requieren un estilo de párrafo y un estilo de carácter distinto.",
+    "Os estilos vinculados exigem um estilo de parágrafo e um estilo de caractere distinto.",
+    "Os estilos associados precisam de um estilo de parágrafo e de um estilo de caráter distinto."
+  ],
   "Links": [
     "Σύνδεσμοι",
     "Vínculos",
@@ -8765,11 +9011,41 @@
     "Lista",
     "Lista"
   ],
+  "List Level": [
+    "Επίπεδο λίστας",
+    "Nivel de lista",
+    "Nível da lista",
+    "Nível da lista"
+  ],
+  "List Style": [
+    "Στυλ λίστας",
+    "Estilo de lista",
+    "Estilo de lista",
+    "Estilo de lista"
+  ],
+  "List Styles": [
+    "Στυλ λίστας",
+    "Estilos de lista",
+    "Estilos de lista",
+    "Estilos de lista"
+  ],
+  "List Styles…": [
+    "Στυλ λίστας…",
+    "Estilos de lista…",
+    "Estilos de lista…",
+    "Estilos de lista…"
+  ],
   "List definitions exceed the native DOC numbering limits": [
     "Οι ορισμοί λιστών υπερβαίνουν τα εγγενή όρια αρίθμησης DOC",
     "Las definiciones de lista superan los límites de numeración DOC nativa",
     "As definições de lista excedem os limites de numeração DOC nativa",
     "As definições de lista excedem os limites de numeração DOC nativa"
+  ],
+  "List level does not exist.": [
+    "Το επίπεδο λίστας δεν υπάρχει.",
+    "El nivel de lista no existe.",
+    "O nível da lista não existe.",
+    "O nível da lista não existe."
   ],
   "Literal Unicode search. Leave empty for the multilevel outline.": [
     "Κυριολεκτική αναζήτηση Unicode. Αφήστε κενό για την πολυεπίπεδη διάρθρωση.",
@@ -8842,6 +9118,18 @@
     "Minúsculas",
     "Minúsculas",
     "Minúsculas"
+  ],
+  "Lowercase Roman": [
+    "Πεζοί λατινικοί αριθμοί",
+    "Números romanos en minúscula",
+    "Algarismos romanos minúsculos",
+    "Numeração romana em minúsculas"
+  ],
+  "Lowercase letters": [
+    "Πεζά γράμματα",
+    "Letras minúsculas",
+    "Letras minúsculas",
+    "Letras minúsculas"
   ],
   "Lowered": [
     "Χαμηλωμένο",
@@ -8992,6 +9280,12 @@
     "Parámetro/partida {} de {}",
     "Correspondência/posição {} de {}",
     "Colocação/posição {} de {}"
+  ],
+  "Matches": [
+    "Αποτελέσματα",
+    "Coincidencias",
+    "Ocorrências",
+    "Ocorrências"
   ],
   "Material": [
     "Υλικό",
@@ -9623,6 +9917,18 @@
     "Novo",
     "Novo"
   ],
+  "New Document Styles": [
+    "Στυλ νέων εγγράφων",
+    "Estilos para documentos nuevos",
+    "Estilos para novos documentos",
+    "Estilos para novos documentos"
+  ],
+  "New List Style": [
+    "Νέο στυλ λίστας",
+    "Nuevo estilo de lista",
+    "Novo estilo de lista",
+    "Novo estilo de lista"
+  ],
   "New character style": [
     "Νέο στυλ χαρακτήρα",
     "Nuevo estilo de carácter",
@@ -9658,6 +9964,24 @@
     "Nuevo documento listo",
     "Novo documento pronto",
     "Novo documento pronto"
+  ],
+  "New from Selection…": [
+    "Νέο στυλ από την επιλογή…",
+    "Nuevo estilo desde la selección…",
+    "Novo estilo a partir da seleção…",
+    "Novo estilo a partir da seleção…"
+  ],
+  "New list style": [
+    "Νέο στυλ λίστας",
+    "Nuevo estilo de lista",
+    "Novo estilo de lista",
+    "Novo estilo de lista"
+  ],
+  "New list style…": [
+    "Νέο στυλ λίστας…",
+    "Nuevo estilo de lista…",
+    "Novo estilo de lista…",
+    "Novo estilo de lista…"
   ],
   "New note paragraph": [
     "Νέα παράγραφος σημείωση",
@@ -9706,6 +10030,18 @@
     "Nuevo estilo {number}",
     "Novo estilo {number}",
     "Novo estilo {number}"
+  ],
+  "New table style": [
+    "Νέο στυλ πίνακα",
+    "Nuevo estilo de tabla",
+    "Novo estilo de tabela",
+    "Novo estilo de tabela"
+  ],
+  "New table style…": [
+    "Νέο στυλ πίνακα…",
+    "Nuevo estilo de tabla…",
+    "Novo estilo de tabela…",
+    "Novo estilo de tabela…"
   ],
   "New window": [
     "Νέο παράθυρο",
@@ -9778,6 +10114,12 @@
     "No se encontró ningún fragmento HTML",
     "Nenhum fragmento HTML foi encontrado",
     "Não foi encontrado nenhum fragmento HTML"
+  ],
+  "No Word importer is available.": [
+    "Δεν υπάρχει διαθέσιμο εργαλείο εισαγωγής Word.",
+    "No hay ningún importador de Word disponible.",
+    "Nenhum importador do Word está disponível.",
+    "Não está disponível um importador do Word."
   ],
   "No active caret": [
     "Δεν υπάρχει ενεργή φροντίδα",
@@ -9965,6 +10307,12 @@
     "Nenhum diretório de configuração do usuário está disponível",
     "Nenhum diretório de configuração do usuário está disponível"
   ],
+  "No uses of this style were found.": [
+    "Δεν βρέθηκαν χρήσεις αυτού του στυλ.",
+    "No se encontraron usos de este estilo.",
+    "Nenhum uso deste estilo foi encontrado.",
+    "Não foram encontradas utilizações deste estilo."
+  ],
   "None": [
     "Κανένα",
     "Ninguno",
@@ -10103,6 +10451,12 @@
     "Nada a copiar ou colar",
     "Nada a copiar ou colar"
   ],
+  "Number format": [
+    "Μορφή αριθμών",
+    "Formato de numeración",
+    "Formato de numeração",
+    "Formato de numeração"
+  ],
   "Number format (use %1 for the number):": [
     "Μορφή αριθμού (χρησιμοποιήστε το% 1 για τον αριθμό):",
     "Formato del número (utilice %1 para el número):",
@@ -10138,6 +10492,12 @@
     "Número de archivos:",
     "Número de arquivos:",
     "Número de ficheiros:"
+  ],
+  "Number pattern or bullet": [
+    "Μοτίβο αρίθμησης ή κουκκίδα",
+    "Patrón de numeración o viñeta",
+    "Padrão de numeração ou marcador",
+    "Padrão de numeração ou marca"
   ],
   "Number spacing": [
     "Απόσταση αριθμών",
@@ -11873,6 +12233,12 @@
     "Remover destaque (sobrepassar destaque herdado)",
     "Remover o realce (sobrecar o realce herdado)"
   ],
+  "Remove style from current table": [
+    "Αφαίρεση στυλ από τον τρέχοντα πίνακα",
+    "Quitar el estilo de la tabla actual",
+    "Remover o estilo da tabela atual",
+    "Remover o estilo da tabela atual"
+  ],
   "Remove table of contents": [
     "Αφαίρεση πίνακα περιεχομένων",
     "Quitar tabla de contenido",
@@ -11945,6 +12311,18 @@
     "Substituir tudo",
     "Substituir tudo"
   ],
+  "Replace all uses…": [
+    "Αντικατάσταση όλων των χρήσεων…",
+    "Reemplazar todos los usos…",
+    "Substituir todos os usos…",
+    "Substituir todas as utilizações…"
+  ],
+  "Replace definitions with matching names and add the new styles?": [
+    "Να αντικατασταθούν οι ορισμοί με ίδιο όνομα και να προστεθούν τα νέα στυλ;",
+    "¿Reemplazar las definiciones con el mismo nombre y añadir los estilos nuevos?",
+    "Substituir as definições com o mesmo nome e adicionar os novos estilos?",
+    "Substituir as definições com o mesmo nome e adicionar os novos estilos?"
+  ],
   "Replace footer": [
     "Αντικατάσταση υποσέλιδου",
     "Reemplazar pie de página",
@@ -11962,6 +12340,12 @@
     "Reemplace una coincidencia o todas en una operación que se puede deshacer.",
     "Substitua uma ocorrência ou todas em uma edição que pode ser desfeita.",
     "Substitua uma ocorrência ou todas numa edição que pode ser anulada."
+  ],
+  "Replace style": [
+    "Αντικατάσταση στυλ",
+    "Reemplazar estilo",
+    "Substituir estilo",
+    "Substituir estilo"
   ],
   "Replace template?": [
     "Αντικατάσταση προτύπου;",
@@ -11987,11 +12371,23 @@
     "Substituir a palavra mal escrita",
     "Substituir a palavra mal escrita"
   ],
+  "Replace this use…": [
+    "Αντικατάσταση αυτής της χρήσης…",
+    "Reemplazar este uso…",
+    "Substituir este uso…",
+    "Substituir esta utilização…"
+  ],
   "Replace with": [
     "Αντικατάσταση με",
     "Reemplazar con",
     "Substituir por",
     "Substituir por"
+  ],
+  "Replace with Style": [
+    "Αντικατάσταση με στυλ",
+    "Reemplazar por un estilo",
+    "Substituir por um estilo",
+    "Substituir por um estilo"
   ],
   "Replace with:": [
     "Αντικατάσταση με:",
@@ -12004,6 +12400,12 @@
     "Sustitúyase {} coincidencias",
     "Substituir {} partidas",
     "Substituir {} fósforos"
+  ],
+  "Replaced matches": [
+    "Αποτελέσματα που αντικαταστάθηκαν",
+    "Coincidencias reemplazadas",
+    "Ocorrências substituídas",
+    "Ocorrências substituídas"
   ],
   "Replaced {count} match(es)": [
     "Αντικαταστάθηκε {count} αγώνας (es)",
@@ -12148,6 +12550,18 @@
     "Restaurar",
     "Restaurar",
     "Restaurar"
+  ],
+  "Restore built-in styles for new documents": [
+    "Επαναφορά ενσωματωμένων στυλ για νέα έγγραφα",
+    "Restaurar los estilos integrados para documentos nuevos",
+    "Restaurar os estilos internos para novos documentos",
+    "Restaurar os estilos incorporados para novos documentos"
+  ],
+  "Restore the built-in styles for future documents?": [
+    "Να επανέλθουν τα ενσωματωμένα στυλ για μελλοντικά έγγραφα;",
+    "¿Restaurar los estilos integrados para documentos futuros?",
+    "Restaurar os estilos internos para documentos futuros?",
+    "Restaurar os estilos incorporados para documentos futuros?"
   ],
   "Restrict editing": [
     "Περιορισμός επεξεργασίας",
@@ -12551,6 +12965,12 @@
     "Salvar",
     "Guardar"
   ],
+  "Save Style Set": [
+    "Αποθήκευση συνόλου στυλ",
+    "Guardar conjunto de estilos",
+    "Salvar conjunto de estilos",
+    "Guardar conjunto de estilos"
+  ],
   "Save and close": [
     "Αποθήκευση και κλείσιμο",
     "Guardar y cerrar",
@@ -12592,6 +13012,18 @@
     "Guardar documento como",
     "Salvar documento como",
     "Guardar documento como"
+  ],
+  "Save document styles as a set…": [
+    "Αποθήκευση των στυλ εγγράφου ως σύνολο…",
+    "Guardar los estilos del documento como conjunto…",
+    "Salvar os estilos do documento como conjunto…",
+    "Guardar os estilos do documento como conjunto…"
+  ],
+  "Save selected style…": [
+    "Αποθήκευση επιλεγμένου στυλ…",
+    "Guardar el estilo seleccionado…",
+    "Salvar o estilo selecionado…",
+    "Guardar o estilo selecionado…"
   ],
   "Save source": [
     "Αποθήκευση πηγής",
@@ -12940,6 +13372,12 @@
     "Seleccione una fuente para previsualizar su entrada de cita y bibliografía.",
     "Selecione uma fonte para visualizar a sua entrada de citação e bibliografia.",
     "Selecione uma fonte para visualizar sua entrada de citação e bibliografia."
+  ],
+  "Select a style first.": [
+    "Επιλέξτε πρώτα ένα στυλ.",
+    "Selecciona primero un estilo.",
+    "Selecione primeiro um estilo.",
+    "Selecione primeiro um estilo."
   ],
   "Select a style in the Styles pane first": [
     "Επιλέξτε ένα στυλ στο τζάμι Styles πρώτα",
@@ -13823,6 +14261,30 @@
     "Os IDs de estilo devem concordar e os nomes devem ser 1-256 bytes em uma linha",
     "Os ID de estilo devem concordar e os nomes devem ser 1-256 bytes em uma linha"
   ],
+  "Style Inspector": [
+    "Επιθεώρηση στυλ",
+    "Inspector de estilos",
+    "Inspetor de estilos",
+    "Inspetor de estilos"
+  ],
+  "Style Set": [
+    "Σύνολο στυλ",
+    "Conjunto de estilos",
+    "Conjunto de estilos",
+    "Conjunto de estilos"
+  ],
+  "Style Sets": [
+    "Σύνολα στυλ",
+    "Conjuntos de estilos",
+    "Conjuntos de estilos",
+    "Conjuntos de estilos"
+  ],
+  "Style Sets…": [
+    "Σύνολα στυλ…",
+    "Conjuntos de estilos…",
+    "Conjuntos de estilos…",
+    "Conjuntos de estilos…"
+  ],
   "Style based on": [
     "Στυλ βάσης",
     "Estilo basado en",
@@ -13894,6 +14356,12 @@
     "Tipo de estilo:",
     "Tipo de estilo:",
     "Tipo de estilo:"
+  ],
+  "Style value": [
+    "Τιμή στυλ",
+    "Valor del estilo",
+    "Valor do estilo",
+    "Valor do estilo"
   ],
   "Style:": [
     "Στυλ:",
@@ -14123,6 +14591,24 @@
     "Posição da Tabela",
     "Posição da Tabela"
   ],
+  "Table Style": [
+    "Στυλ πίνακα",
+    "Estilo de tabla",
+    "Estilo de tabela",
+    "Estilo de tabela"
+  ],
+  "Table Styles": [
+    "Στυλ πινάκων",
+    "Estilos de tabla",
+    "Estilos de tabela",
+    "Estilos de tabela"
+  ],
+  "Table Styles…": [
+    "Στυλ πινάκων…",
+    "Estilos de tabla…",
+    "Estilos de tabela…",
+    "Estilos de tabela…"
+  ],
   "Table cell vertical alignment": [
     "Κατακόρυφη ευθυγράμμιση του κυττάρου",
     "Alineación vertical de las celdas de la tabla",
@@ -14242,6 +14728,12 @@
     "El tamaño de la mesa está fuera de alcance.",
     "O tamanho da tabela está fora de alcance.",
     "O tamanho da mesa está fora de alcance."
+  ],
+  "Table style names must be unique and nonempty.": [
+    "Τα ονόματα των στυλ πίνακα πρέπει να είναι μοναδικά και μη κενά.",
+    "Los nombres de los estilos de tabla deben ser únicos y no pueden estar vacíos.",
+    "Os nomes dos estilos de tabela devem ser únicos e não podem estar vazios.",
+    "Os nomes dos estilos de tabela têm de ser únicos e não podem estar vazios."
   ],
   "Table: {width:.1} × {height:.1} mm — Shift keeps proportions; Escape cancels": [
     "Πίνακας: {width:.1} × {height:.1} mm Η βάρδια διατηρεί τις αναλογίες της.",
@@ -14494,6 +14986,12 @@
     "Esa parte de la mesa todavía no está dispuesta.",
     "Essa parte da tabela ainda não está estabelecida.",
     "Essa parte da mesa ainda não está preparada."
+  ],
+  "The Normal template is too large.": [
+    "Το πρότυπο Κανονικό είναι υπερβολικά μεγάλο.",
+    "La plantilla Normal es demasiado grande.",
+    "O modelo Normal é grande demais.",
+    "O modelo Normal é demasiado grande."
   ],
   "The OLE payload and preview are imported and can be exported, but the embedded application cannot be activated or edited inside Impress.": [
     "Το φορτίο OLE και προεπισκόπηση εισάγονται και μπορούν να εξαχθούν, αλλά η ενσωματωμένη εφαρμογή δεν μπορεί να ενεργοποιηθεί ή να επεξεργαστεί εντός Impress.",
@@ -15047,6 +15545,12 @@
     "O grafo de herança de estilos contém um ciclo",
     "O grafo de herança de estilos contém um ciclo"
   ],
+  "The style set is too large.": [
+    "Το σύνολο στυλ είναι υπερβολικά μεγάλο.",
+    "El conjunto de estilos es demasiado grande.",
+    "O conjunto de estilos é grande demais.",
+    "O conjunto de estilos é demasiado grande."
+  ],
   "The table is not laid out yet.": [
     "Το τραπέζι δεν έχει στρώσει ακόμα.",
     "La mesa todavía no está dispuesta.",
@@ -15112,6 +15616,12 @@
     "No hay ninguna celda a la derecha para fusionarse.",
     "Não há nenhuma célula à direita para se fundir.",
     "Não há nenhuma célula ao direito de se fundir."
+  ],
+  "There is no other style of this type.": [
+    "Δεν υπάρχει άλλο στυλ αυτού του τύπου.",
+    "No hay otro estilo de este tipo.",
+    "Não há outro estilo desse tipo.",
+    "Não existe outro estilo deste tipo."
   ],
   "Thesaurus": [
     "Θησαυρός",
@@ -15310,6 +15820,12 @@
     "Este dibujo VML legado no tiene cuadro de texto o previsualización de imagen compatibles; compruebe su apariencia.",
     "Este desenho VML legado não tem caixa de texto ou visualização de imagem suportada; verifique sua aparência.",
     "Este desenho VML legado não tem caixa de texto ou visualização de imagem suportada; verifique a sua aparência."
+  ],
+  "This list ID is already in use.": [
+    "Αυτό το αναγνωριστικό λίστας χρησιμοποιείται ήδη.",
+    "Este identificador de lista ya está en uso.",
+    "Esse identificador de lista já está em uso.",
+    "Este identificador de lista já está em utilização."
   ],
   "This local dictionary already exists. Impress will not claim ownership of it.": [
     "Αυτό το τοπικό λεξικό υπάρχει ήδη. Impress δεν θα διεκδικήσει ιδιοκτησία του.",
@@ -15971,6 +16487,12 @@
     "Caracteres Unicode, incluindo espaços",
     "Caracteres Unicode, incluindo espaços"
   ],
+  "Unlink styles": [
+    "Αποσύνδεση στυλ",
+    "Desvincular estilos",
+    "Desvincular estilos",
+    "Desassociar estilos"
+  ],
   "Unlock this picture's anchor before attaching it to another paragraph": [
     "Ξεκλειδώστε την άγκυρα αυτής της εικόνας πριν την συνδέσετε σε άλλη παράγραφο",
     "Desbloquee el anclaje de esta imagen antes de conectarla a otro párrafo",
@@ -16157,6 +16679,18 @@
     "Maiúsculas",
     "Maiúsculas"
   ],
+  "Uppercase Roman": [
+    "Κεφαλαίοι λατινικοί αριθμοί",
+    "Números romanos en mayúscula",
+    "Algarismos romanos maiúsculos",
+    "Numeração romana em maiúsculas"
+  ],
+  "Uppercase letters": [
+    "Κεφαλαία γράμματα",
+    "Letras mayúsculas",
+    "Letras maiúsculas",
+    "Letras maiúsculas"
+  ],
   "Upsilon": [
     "Ύψιλον",
     "Ípsilon",
@@ -16180,6 +16714,18 @@
     "Utilice Insertar la ecuación para abrir el editor de ecuaciones.",
     "Use Inserir a equação para abrir o editor de equações.",
     "Use Inserir a equação para abrir o editor de equações."
+  ],
+  "Use a border color in #RRGGBB format and a width of 0–24 pt.": [
+    "Χρησιμοποιήστε χρώμα περιγράμματος σε μορφή #RRGGBB και πλάτος 0–24 pt.",
+    "Usa un color de borde en formato #RRGGBB y un grosor entre 0 y 24 pt.",
+    "Use uma cor de borda no formato #RRGGBB e uma espessura de 0 a 24 pt.",
+    "Use uma cor de limite no formato #RRGGBB e uma espessura de 0 a 24 pt."
+  ],
+  "Use a color in #RRGGBB format.": [
+    "Χρησιμοποιήστε χρώμα σε μορφή #RRGGBB.",
+    "Usa un color en formato #RRGGBB.",
+    "Use uma cor no formato #RRGGBB.",
+    "Use uma cor no formato #RRGGBB."
   ],
   "Use a line break inside this inline content control, or move the control to its own paragraph": [
     "Χρησιμοποιήστε αλλαγή γραμμής μέσα σε αυτό το ενσωματωμένο στοιχείο ελέγχου ή μετακινήστε το σε δική του παράγραφο",
@@ -16210,6 +16756,18 @@
     "Utilice la casilla para cambiar su valor",
     "Use a caixa de seleção para alterar o valor",
     "Utilize a caixa de verificação para alterar o valor"
+  ],
+  "Use these styles for new documents": [
+    "Χρήση αυτών των στυλ για νέα έγγραφα",
+    "Usar estos estilos para documentos nuevos",
+    "Usar estes estilos em novos documentos",
+    "Usar estes estilos em novos documentos"
+  ],
+  "Use this document's style definitions as the default for new documents?": [
+    "Να χρησιμοποιηθούν οι ορισμοί στυλ αυτού του εγγράφου ως προεπιλογή για νέα έγγραφα;",
+    "¿Usar las definiciones de estilo de este documento como predeterminadas para los documentos nuevos?",
+    "Usar as definições de estilo deste documento como padrão para novos documentos?",
+    "Usar as definições de estilo deste documento por omissão para novos documentos?"
   ],
   "Use this language for the document's Normal style": [
     "Χρησιμοποιήστε αυτή τη γλώσσα για το κανονικό στυλ του εγγράφου",
@@ -16547,6 +17105,12 @@
     "Os fluxos do documento do Word excedem o limite de tamanho",
     "Os fluxos do documento do Word excedem o limite de tamanho"
   ],
+  "Word documents": [
+    "Έγγραφα Word",
+    "Documentos de Word",
+    "Documentos do Word",
+    "Documentos do Word"
+  ],
   "Word revision history is not fully preserved": [
     "Το ιστορικό αναθεωρήσεων Word δεν διατηρείται πλήρως",
     "El historial de revisiones de Word no se conserva por completo",
@@ -16871,11 +17435,29 @@
     "trabalho concluído",
     "Trabalho concluído"
   ],
+  "first line indent mm": [
+    "Εσοχή πρώτης γραμμής (mm)",
+    "Sangría de primera línea (mm)",
+    "Recuo da primeira linha (mm)",
+    "Avanço da primeira linha (mm)"
+  ],
   "font color": [
     "χρώμα γραμματοσειράς",
     "Color de la fuente",
     "cor da fonte",
     "cor da fonte"
+  ],
+  "font family": [
+    "Οικογένεια γραμματοσειράς",
+    "Familia tipográfica",
+    "Família da fonte",
+    "Família do tipo de letra"
+  ],
+  "font size pt": [
+    "Μέγεθος γραμματοσειράς (pt)",
+    "Tamaño de fuente (pt)",
+    "Tamanho da fonte (pt)",
+    "Tamanho do tipo de letra (pt)"
   ],
   "font-family:'{}';": [
     "font-family: \"{}\"·",
@@ -16966,6 +17548,18 @@
     "sendero conocido",
     "caminho conhecido",
     "caminho conhecido"
+  ],
+  "left indent mm": [
+    "Αριστερή εσοχή (mm)",
+    "Sangría izquierda (mm)",
+    "Recuo à esquerda (mm)",
+    "Avanço à esquerda (mm)"
+  ],
+  "line spacing": [
+    "Διάστιχο",
+    "Interlineado",
+    "Espaçamento entre linhas",
+    "Espaçamento entre linhas"
   ],
   "lines": [
     "γραμμές",
@@ -17171,6 +17765,12 @@
     "a tabela restante não tem célula editável",
     "a tabela restante não tem célula editável"
   ],
+  "right indent mm": [
+    "Δεξιά εσοχή (mm)",
+    "Sangría derecha (mm)",
+    "Recuo à direita (mm)",
+    "Avanço à direita (mm)"
+  ],
   "section not found": [
     "τμήμα που δεν βρέθηκε",
     "sección no encontrada",
@@ -17212,6 +17812,18 @@
     "ajustes cerrar",
     "configurações fechar",
     "configurações fechar"
+  ],
+  "space after pt": [
+    "Διάστημα μετά (pt)",
+    "Espacio posterior (pt)",
+    "Espaço depois (pt)",
+    "Espaço depois (pt)"
+  ],
+  "space before pt": [
+    "Διάστημα πριν (pt)",
+    "Espacio anterior (pt)",
+    "Espaço antes (pt)",
+    "Espaço antes (pt)"
   ],
   "still open": [
     "Ακόμα ανοιχτό",

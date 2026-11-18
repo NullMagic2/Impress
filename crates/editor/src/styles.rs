@@ -10,7 +10,11 @@ pub fn validate_styles(sheet:&StyleSheet)->Result<(),String>{
     for (id,style) in &sheet.styles{
         if &style.id!=id || style.name.trim().is_empty() || style.name.len()>256 || style.name.contains(['\0','\r','\n']){
             return Err("Style IDs must agree and names must be 1–256 bytes on one line".into());}
-        if !names.insert(style.name.trim().to_lowercase()){return Err("Style names must be unique (ignoring case)".into());}
+        let fallback = matches!((id.0.as_str(), style.name.as_str()),
+            (STYLE_NORMAL, "Normal") | (STYLE_HEADING_1, "Heading 1") | (STYLE_TITLE, "Title"));
+        if !fallback && !names.insert(style.name.trim().to_lowercase()) {
+            return Err("Style names must be unique (ignoring case)".into());
+        }
         let mut seen=BTreeSet::new();let mut current=Some(id);
         while let Some(k)=current{
             if !seen.insert(k.clone()){return Err(format!("Style inheritance cycle at {}",style.name));}
@@ -59,6 +63,11 @@ impl EditorState{
             if let Some(old)=before.get(&style.id){if old.kind!=style.kind{return Err("An existing style's kind cannot change".into());}}
             after.styles.insert(style.id.clone(),style);
         }
+        for style in after.styles.values().filter(|style| before.get(&style.id).is_none_or(|old| old.name != style.name)) {
+            if after.styles.values().any(|other| other.id != style.id && other.name.trim().to_lowercase() == style.name.trim().to_lowercase()) {
+                return Err("Style names must be unique (ignoring case)".into());
+            }
+        }
         validate_styles(&after)?;
         if after==before{return Ok(());}
         let mut changes=vec![Mutation::StylesChanged{before:before.clone(),after:after.clone()}];
@@ -72,15 +81,24 @@ impl EditorState{
     pub fn remove_unused_style(&mut self,id:&StyleId)->Result<(),String>{
         if [STYLE_NORMAL,STYLE_HEADING_1,STYLE_TITLE].contains(&id.0.as_str()){return Err("Built-in Ribbon styles cannot be deleted".into());}
         fn uses(items:&[Inline],id:&StyleId)->bool{items.iter().any(|i|match i{Inline::Text(t)=>t.style.as_ref()==Some(id),Inline::Hyperlink(h)=>uses(&h.content,id),_=>false})}
-        if self.typing_style.as_ref()==Some(id) || self.document.styles.styles.values().any(|s|s.based_on.as_ref()==Some(id)||s.next_style.as_ref()==Some(id))
+        if self.typing_style.as_ref()==Some(id)
+            || self.document.styles.linked_styles.iter().any(|(paragraph, character)| paragraph == id || character == id)
+            || self.document.styles.linked_list(id).is_some()
+            || self.document.styles.styles.values().any(|s|s.based_on.as_ref()==Some(id)||s.next_style.as_ref()==Some(id))
             || model::document_paragraphs(&self.document).iter().any(|p|p.style.as_ref()==Some(id)||uses(&p.content,id)){
             return Err("This style is in use. Apply another style and change dependent base styles before deleting it.".into());}
         let before=self.document.styles.clone();let mut after=before.clone();after.styles.remove(id).ok_or("Style not found")?;
         self.document.styles=after.clone();self.commit("Delete style",vec![Mutation::StylesChanged{before,after}],self.selection.clone(),None)
     }
     pub fn apply_named_style(&mut self,id:&StyleId,clear_direct:bool)->Result<(),String>{
-        let kind=self.document.styles.get(id).ok_or("Style not found")?.kind;
         let before_selection=self.selection.clone().ok_or("Select text or place the caret first")?;
+        let id = self.document.styles.linked_styles.get(id).filter(|_| {
+            if self.table_formatting_spans.is_some() || before_selection.is_collapsed() { return false; }
+            let spans = self.character_formatting_spans();
+            matches!(spans.as_slice(), [(node, start, end)] if self.paragraph(node)
+                .is_some_and(|paragraph| *start > 0 || *end < paragraph_flat_text(paragraph).len()))
+        }).unwrap_or(id);
+        let kind=self.document.styles.get(id).ok_or("Style not found")?.kind;
         if kind==StyleKind::Character && before_selection.is_collapsed() && self.table_formatting_spans.is_none(){
             self.typing_style=Some(id.clone());if clear_direct{self.typing_properties=CharacterProperties::default();}self.break_coalescing();return Ok(());
         }

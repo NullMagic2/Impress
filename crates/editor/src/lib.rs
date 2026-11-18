@@ -6,6 +6,8 @@
 mod formatting;
 pub mod search;
 mod styles;
+mod style_tools;
+pub use style_tools::*;
 mod style_selection;
 mod multiline;
 mod paragraph_break;

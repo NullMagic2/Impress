@@ -1072,11 +1072,15 @@ fn block_node_id(block: &Block) -> Option<&NodeId> {
 }
 
 fn compute_list_markers(section: &Section, lists: &BTreeMap<NodeId, ListDefinition>, styles: &StyleSheet) -> BTreeMap<NodeId, String> {
+    list_markers_for_blocks(&section.blocks, lists, styles)
+}
+
+fn list_markers_for_blocks(blocks: &[Block], lists: &BTreeMap<NodeId, ListDefinition>, styles: &StyleSheet) -> BTreeMap<NodeId, String> {
     let mut result = BTreeMap::new();
     let mut counters: HashMap<NodeId, Vec<i32>> = HashMap::new();
     let mut style_counters: HashMap<model::StyleId, i32> = HashMap::new();
     let mut previous_numbered_style: Option<model::StyleId> = None;
-    for block in &section.blocks {
+    for block in blocks {
         let Block::Paragraph(paragraph) = block else { continue; };
         let properties = styles.resolve_paragraph_with_direct(paragraph.style.as_ref(), &paragraph.properties);
         let style_id = paragraph.style.as_ref().cloned().unwrap_or_else(|| model::StyleId::from(model::STYLE_NORMAL));
@@ -1121,7 +1125,7 @@ fn compute_list_markers(section: &Section, lists: &BTreeMap<NodeId, ListDefiniti
             continue;
         };
         previous_numbered_style = None;
-        let Some(definition) = lists.get(list_id) else { continue; };
+        let Some(definition) = styles.list_definition(lists, list_id) else { continue; };
         let level_index = usize::from(properties.list_level.unwrap_or(0));
         if level_index >= 9 { continue; } // Untrusted native/DOCX metadata must not index past counters.
         let Some(level) = definition.levels.iter().find(|l| usize::from(l.level) == level_index)
@@ -1137,7 +1141,7 @@ fn compute_list_markers(section: &Section, lists: &BTreeMap<NodeId, ListDefiniti
                 let mut text = level.text.clone();
                 if text.is_empty() { text = format!("%{}.", level_index + 1); }
                 for (idx, value) in list_counters.iter().enumerate().take(level_index + 1) {
-                    let formatted = format_list_number(*value, definition.levels.get(idx).map(|l| l.format).unwrap_or(ListFormat::Decimal));
+                    let formatted = format_list_number(*value, definition.levels.iter().find(|level| usize::from(level.level) == idx).map(|l| l.format).unwrap_or(ListFormat::Decimal));
                     text = text.replace(&format!("%{}", idx + 1), &formatted);
                 }
                 text
@@ -1825,6 +1829,12 @@ fn prepare_paragraph(
     field_context: &FieldContext,
 ) -> Result<PreparedBlock, LayoutError> {
     let mut para_props = styles.resolve_paragraph_with_direct(paragraph.style.as_ref(), &paragraph.properties);
+    let named_list_level = para_props.list_id.as_ref().and_then(|id| styles.list_styles.get(id))
+        .and_then(|list| list.definition.levels.iter().find(|level| level.level == para_props.list_level.unwrap_or(0)));
+    if let Some(level) = named_list_level.filter(|_| list_marker.is_some()) {
+        if paragraph.properties.left_indent_mm.is_none() { para_props.left_indent_mm = Some(level.left_indent_mm); }
+        if paragraph.properties.first_line_indent_mm.is_none() { para_props.first_line_indent_mm = Some(-level.hanging_indent_mm); }
+    }
     if let Some(leader) = para_props.contents_leader {
         para_props.tabs = Some(vec![model::TabStop {
             position_mm: available_width / MM_TO_PT,
@@ -1859,7 +1869,7 @@ fn prepare_paragraph(
     let mut after = para_props.space_after_pt.unwrap_or(base_size * 0.3);
     let mut left_indent = para_props.left_indent_mm.unwrap_or(0.0) * MM_TO_PT;
     let right_indent = para_props.right_indent_mm.unwrap_or(0.0) * MM_TO_PT;
-    if list_marker.is_some() {
+    if list_marker.is_some() && named_list_level.is_none() {
         let level = format.get("num_level").and_then(|v| v.split_whitespace().last()).and_then(|v| v.parse::<f32>().ok()).unwrap_or(1.0).clamp(1.0, 9.0);
         left_indent = left_indent.max(18.0 + (level - 1.0) * 12.0);
     }
@@ -2379,8 +2389,10 @@ fn prepare_table(
                 content_bottom: vertical + fragment.height,
                 commands,
                 hit_regions,
-                shading: cell.shading.as_deref().and_then(|s| parse_color(Some(s))),
-                borders: merged_cell_borders(cell, table),
+                shading: cell.shading.as_deref()
+                    .or_else(|| styles.table_style_fill(table, row_index))
+                    .and_then(|s| parse_color(Some(s))),
+                borders: merged_cell_borders(cell, table, styles),
             });
         }
         rows.push(PreparedTableRow {
@@ -2394,8 +2406,8 @@ fn prepare_table(
     Ok(PreparedTable { x_offset, rows, repeating_header_rows })
 }
 
-fn merged_cell_borders(cell: &TableCell, table: &Table) -> BorderSet {
-    let mut borders = table.properties.borders.clone().unwrap_or_default();
+fn merged_cell_borders(cell: &TableCell, table: &Table, styles: &StyleSheet) -> BorderSet {
+    let mut borders = styles.table_borders(table).cloned().unwrap_or_default();
     if let Some(cell_borders) = &cell.borders {
         if cell_borders.top.is_some() { borders.top = cell_borders.top.clone(); }
         if cell_borders.right.is_some() { borders.right = cell_borders.right.clone(); }
@@ -2417,8 +2429,11 @@ fn prepare_block_fragment(
     let mut commands = Vec::new();
     let mut hit_regions = Vec::new();
     let mut object_regions = Vec::new();
+    let markers = if styles.list_styles.is_empty() { BTreeMap::new() }
+        else { list_markers_for_blocks(blocks, &BTreeMap::new(), styles) };
     for block in blocks {
-        let prepared = prepare_block(block, width, styles, ctx, resources, None, field_context)?;
+        let marker = block_node_id(block).and_then(|id| markers.get(id));
+        let prepared = prepare_block(block, width, styles, ctx, resources, marker, field_context)?;
         match prepared {
             PreparedBlock::Paragraph { lines, space_before, space_after, left_indent, marker, decoration, .. } => {
                 y += space_before;

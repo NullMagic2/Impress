@@ -1,7 +1,7 @@
 use crate::omml::node_to_omml;
 use model::{
     Block, Border, BorderSet, BorderStyle, CharacterProperties, Document, FieldKind, HeaderFooter,
-    ImageAlignment, Inline, ListFormat, NodeId, Paragraph, ParagraphAlignment, ParagraphDirection,
+    ImageAlignment, Inline, ListDefinition, ListFormat, NodeId, Paragraph, ParagraphAlignment, ParagraphDirection,
     ResourceId, Section, Table, TableAlignment, TableCell, TextRun,
 };
 use format::{FormatError, FormatResult, WriteSeek};
@@ -58,7 +58,7 @@ impl ExportContext {
         let embedded=document.resources.iter().filter(|(_,resource)|resource.media_type=="application/vnd.openxmlformats-officedocument.oleObject"
             ||resource.media_type=="application/vnd.openxmlformats-officedocument.package")
             .enumerate().map(|(index,(id,_))|(id.clone(),(format!("rIdEmbedded{}",index+1),format!("embeddings/impressObject{}.bin",index+1)))).collect();
-        let lists = document.lists.keys().enumerate().map(|(index, id)| (id.clone(), index + 1)).collect();
+        let lists = all_lists(document).keys().enumerate().map(|(index, id)| ((*id).clone(), index + 1)).collect();
         let mut header_footer_parts = Vec::new();
         let mut header_index = 0usize;
         let mut footer_index = 0usize;
@@ -119,7 +119,7 @@ pub fn export_docx(document: &Document, output: &mut dyn WriteSeek) -> FormatRes
     write_member(&mut zip, "word/styles.xml", &styles, options)?;
     fonts.write(&mut zip,options)?;
     write_member(&mut zip,"word/settings.xml",&review::settings_xml(document),options)?;
-    if !document.lists.is_empty() {
+    if has_numbering(document) {
         write_member(&mut zip, "word/numbering.xml", &numbering_xml(document), options)?;
     }
 
@@ -365,7 +365,9 @@ fn table_xml(table: &Table, document: &Document, context: &ExportContext, drawin
     let width = table.properties.preferred_width_mm.map(|v| format!("<w:tblW w:w=\"{}\" w:type=\"dxa\"/>", twips(v))).unwrap_or_else(|| "<w:tblW w:w=\"0\" w:type=\"auto\"/>".into());
     let indent = table.properties.left_indent_mm.map(|v| format!("<w:tblInd w:w=\"{}\" w:type=\"dxa\"/>", twips(v))).unwrap_or_default();
     let align = match table.properties.alignment.unwrap_or(TableAlignment::Left) { TableAlignment::Left => "left", TableAlignment::Center => "center", TableAlignment::Right => "right" };
-    let borders = table.properties.borders.as_ref().map(|b| borders_xml("w:tblBorders", b)).unwrap_or_default();
+    let borders = if table.properties.style_overrides_table_borders == Some(true)
+        && document.styles.table_style(table).is_some_and(|style| style.borders.is_some()) { String::new() }
+        else { table.properties.borders.as_ref().map(|b| borders_xml("w:tblBorders", b)).unwrap_or_default() };
     let spacing = table.properties.cell_spacing_mm.map(|v| format!("<w:tblCellSpacing w:w=\"{}\" w:type=\"dxa\"/>", twips(v))).unwrap_or_default();
     let column_count = placements.iter().flat_map(|row| row.iter())
         .map(|(start, span, _)| start + span).max().unwrap_or(1);
@@ -374,7 +376,15 @@ fn table_xml(table: &Table, document: &Document, context: &ExportContext, drawin
         .map(|width_mm| format!("<w:gridCol w:w=\"{}\"/>", twips(*width_mm)))
         .collect::<String>());
     let position = table.properties.position.as_ref().map(table_position_xml).unwrap_or_default();
-    format!("<w:tbl><w:tblPr>{position}{width}{indent}<w:jc w:val=\"{align}\"/>{spacing}{borders}</w:tblPr>{grid}{rows}</w:tbl>")
+    let style_tag = table.properties.style.as_ref()
+        .map(|id| format!(r#"<w:tblStyle w:val="{}"/>"#, xml_escape(&id.0))).unwrap_or_default();
+    let look = if style_tag.is_empty() { String::new() } else {
+        let first = table.properties.style_first_row.unwrap_or(true);
+        let no_bands = !table.properties.style_row_banding.unwrap_or(true);
+        let flags = 0x400 | if first { 0x20 } else { 0 } | if no_bands { 0x200 } else { 0 };
+        format!(r#"<w:tblLook w:val="{flags:04X}" w:firstRow="{}" w:noHBand="{}" w:noVBand="1"/>"#, u8::from(first), u8::from(no_bands))
+    };
+    format!("<w:tbl><w:tblPr>{style_tag}{position}{width}{indent}<w:jc w:val=\"{align}\"/>{spacing}{borders}{look}</w:tblPr>{grid}{rows}</w:tbl>")
 }
 
 fn docx_table_grid_widths(
@@ -628,28 +638,45 @@ fn section_properties_xml(section: &Section, section_index: usize, context: &Exp
     format!("<w:sectPr>{inner}</w:sectPr>")
 }
 
+fn has_numbering(document: &Document) -> bool {
+    !document.lists.is_empty() || !document.styles.list_styles.is_empty()
+}
+
+fn all_lists(document: &Document) -> BTreeMap<&NodeId, &ListDefinition> {
+    document.lists.iter().chain(document.styles.list_styles.iter().map(|(id, style)| (id, &style.definition))).collect()
+}
+
 fn numbering_xml(document: &Document) -> String {
     let mut abstracts = String::new();
     let mut nums = String::new();
-    for (index, list) in document.lists.values().enumerate() {
+    for (index, list) in all_lists(document).values().enumerate() {
         let abstract_id = index + 1;
+        let named = document.styles.list_styles.get(&list.id);
+        let name = named.map(|style| format!(r#"<w:multiLevelType w:val="multilevel"/><w:name w:val="{}"/><w:styleLink w:val="{}"/>"#,
+            xml_escape(&style.name), list_style_id(&list.id))).unwrap_or_default();
         let mut levels = String::new();
         for level in &list.levels {
             let fmt = match level.format { ListFormat::Bullet => "bullet", ListFormat::Decimal => "decimal", ListFormat::LowerLetter => "lowerLetter", ListFormat::UpperLetter => "upperLetter", ListFormat::LowerRoman => "lowerRoman", ListFormat::UpperRoman => "upperRoman" };
             let run_props = if level.format == ListFormat::Bullet { "<w:rPr><w:rFonts w:ascii=\"Symbol\" w:hAnsi=\"Symbol\"/></w:rPr>" } else { "" };
-            levels.push_str(&format!("<w:lvl w:ilvl=\"{}\"><w:start w:val=\"{}\"/><w:numFmt w:val=\"{}\"/><w:lvlText w:val=\"{}\"/><w:pPr><w:ind w:left=\"{}\" w:hanging=\"{}\"/></w:pPr>{run_props}</w:lvl>", level.level, level.start_at, fmt, xml_escape(&level.text), twips(level.left_indent_mm), twips(level.hanging_indent_mm)));
+            let heading = named.and_then(|style| style.headings.get(&level.level))
+                .map(|id| format!(r#"<w:pStyle w:val="{}"/>"#, xml_escape(&id.0))).unwrap_or_default();
+            levels.push_str(&format!("<w:lvl w:ilvl=\"{}\"><w:start w:val=\"{}\"/><w:numFmt w:val=\"{}\"/>{heading}<w:lvlText w:val=\"{}\"/><w:pPr><w:ind w:left=\"{}\" w:hanging=\"{}\"/></w:pPr>{run_props}</w:lvl>", level.level, level.start_at, fmt, xml_escape(&level.text), twips(level.left_indent_mm), twips(level.hanging_indent_mm)));
         }
-        abstracts.push_str(&format!("<w:abstractNum w:abstractNumId=\"{abstract_id}\">{levels}</w:abstractNum>"));
+        abstracts.push_str(&format!("<w:abstractNum w:abstractNumId=\"{abstract_id}\">{name}{levels}</w:abstractNum>"));
         nums.push_str(&format!("<w:num w:numId=\"{abstract_id}\"><w:abstractNumId w:val=\"{abstract_id}\"/></w:num>"));
     }
     format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:numbering xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">{abstracts}{nums}</w:numbering>"#)
+}
+
+fn list_style_id(id: &NodeId) -> String {
+    format!("ImpressList{}", xml_escape(&id.0))
 }
 
 fn document_relationships(document: &Document, context: &ExportContext) -> String {
     let mut body = String::from("<Relationship Id=\"rIdStyles\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>");
     body.push_str("<Relationship Id=\"rIdImpressFontTable\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/fontTable\" Target=\"fontTable.xml\"/>");
     let mut reserved = BTreeSet::from(["rIdStyles".to_owned(),"rIdImpressFontTable".to_owned()]);
-    if !document.lists.is_empty() {
+    if has_numbering(document) {
         body.push_str("<Relationship Id=\"rIdNumbering\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering\" Target=\"numbering.xml\"/>");
         reserved.insert("rIdNumbering".to_owned());
     }
@@ -705,7 +732,7 @@ fn header_footer_relationships(context: &ExportContext,document:&Document) -> St
 }
 
 fn content_types(document: &Document, context: &ExportContext) -> String {
-    let numbering = if document.lists.is_empty() { "" } else { "<Override PartName=\"/word/numbering.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml\"/>" };
+    let numbering = if !has_numbering(document) { "" } else { "<Override PartName=\"/word/numbering.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.numbering+xml\"/>" };
     let mut headers = String::new();
     for part in &context.header_footer_parts {
         let content_type = if part.header { "application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml" } else { "application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml" };

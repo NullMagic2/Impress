@@ -99,6 +99,7 @@ struct ImportContext {
     resources: BTreeMap<ResourceId, Resource>,
     lists: BTreeMap<NodeId, ListDefinition>,
     num_to_list: BTreeMap<i32, NodeId>,
+    named_lists: BTreeMap<NodeId, model::NamedListStyle>,
     headers: BTreeMap<String, HeaderFooter>,
     footers: BTreeMap<String, HeaderFooter>,
 }
@@ -125,9 +126,10 @@ pub fn import_docx(input: &mut dyn ReadSeek) -> FormatResult<Document> {
     let font_parts=fonts::load(&mut zip,&relationships,&mut context)?;
 
     if let Some(numbering_xml) = read_optional_text(&mut zip, "word/numbering.xml")? {
-        let (lists, num_to_list) = parse_numbering(&numbering_xml)?;
-        context.lists = lists;
-        context.num_to_list = num_to_list;
+        let parsed = parse_numbering(&numbering_xml)?;
+        context.lists = parsed.lists;
+        context.num_to_list = parsed.instances;
+        context.named_lists = parsed.named;
     }
 
     for (stem,kind,prefix) in [("footnote",model::NoteKind::Footnote,""),("endnote",model::NoteKind::Endnote,"end:")] {
@@ -187,6 +189,13 @@ pub fn import_docx(input: &mut dyn ReadSeek) -> FormatResult<Document> {
             if let Some(id)=root.children_named("w:style").find(|style|style.attr("w:type")==Some("paragraph")&&style.attr("w:default").is_some_and(|value|matches!(value,"1"|"true"|"on"))).and_then(|style|style.attr("w:styleId")){default_style=model::StyleId(id.into());}
         }
         import_styles(&tree, &mut document, &context);
+    }
+    for (id, mut named) in std::mem::take(&mut context.named_lists) {
+        named.headings.retain(|_, heading| document.styles.get(heading).is_some_and(|style| {
+            style.kind == model::StyleKind::Paragraph && style.paragraph.list_id.as_ref() == Some(&id)
+        }));
+        context.lists.remove(&id);
+        document.styles.list_styles.insert(id, named);
     }
     resolve_paragraph_tabs(&mut document, &context);
     tracked::finish(&mut document,&context,&default_style);
@@ -878,6 +887,14 @@ fn parse_table(node: &XmlNode, context: &ImportContext) -> Table {
     let mut local=context.clone();local.in_table=true;let context=&local;
     let mut table = Table { id: NodeId::new(), properties: TableProperties::default(), rows: Vec::new() };
     if let Some(pr) = node.child("w:tblPr") {
+        table.properties.style = pr.child("w:tblStyle").and_then(|node| node.attr("w:val")).map(|id| model::StyleId(id.into()));
+        if let Some(look) = pr.child("w:tblLook") {
+            let flags = look.attr("w:val").and_then(|value| u16::from_str_radix(value, 16).ok());
+            let flag = |name, bit| look.attr(name).map(|value| matches!(value, "1" | "true" | "on"))
+                .or_else(|| flags.map(|value| value & bit != 0));
+            table.properties.style_first_row = flag("w:firstRow", 0x20);
+            table.properties.style_row_banding = flag("w:noHBand", 0x200).map(|value| !value);
+        }
         table.properties.preferred_width_mm = pr.child("w:tblW")
             .filter(|n| matches!(n.attr("w:type"), None | Some("dxa")))
             .and_then(|n| n.attr("w:w")).and_then(parse_twips_mm)
@@ -1059,13 +1076,21 @@ fn apply_section_properties(section: &mut Section, node: &XmlNode, context: &Imp
     tracked::section(node,section,context);
 }
 
-fn parse_numbering(xml: &str) -> FormatResult<(BTreeMap<NodeId, ListDefinition>, BTreeMap<i32, NodeId>)> {
+struct ImportedNumbering {
+    lists: BTreeMap<NodeId, ListDefinition>,
+    instances: BTreeMap<i32, NodeId>,
+    named: BTreeMap<NodeId, model::NamedListStyle>,
+}
+
+fn parse_numbering(xml: &str) -> FormatResult<ImportedNumbering> {
     let tree = parse_supported_tree(xml)?;
     let root = find_descendant(&tree, "w:numbering").ok_or_else(|| invalid("numbering.xml has no w:numbering"))?;
-    let mut abstracts: BTreeMap<i32, Vec<ListLevel>> = BTreeMap::new();
+    let mut abstracts = BTreeMap::new();
     for abstract_node in root.children_named("w:abstractNum") {
         let abstract_id = abstract_node.attr("w:abstractNumId").and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
         let mut levels = Vec::new();
+        let mut headings = BTreeMap::new();
+        let name = abstract_node.child("w:name").and_then(|n| n.attr("w:val")).filter(|s| !s.trim().is_empty());
         for level_node in abstract_node.children_named("w:lvl") {
             let level = level_node.attr("w:ilvl").and_then(|v| v.parse::<u8>().ok()).unwrap_or(0);
             let format = match level_node.child("w:numFmt").and_then(|n| n.attr("w:val")) { Some("bullet") => ListFormat::Bullet, Some("lowerLetter") => ListFormat::LowerLetter, Some("upperLetter") => ListFormat::UpperLetter, Some("lowerRoman") => ListFormat::LowerRoman, Some("upperRoman") => ListFormat::UpperRoman, _ => ListFormat::Decimal };
@@ -1074,22 +1099,39 @@ fn parse_numbering(xml: &str) -> FormatResult<(BTreeMap<NodeId, ListDefinition>,
             let ind = level_node.child("w:pPr").and_then(|p| p.child("w:ind"));
             let left_indent_mm = ind.and_then(|n| n.attr("w:left").or_else(|| n.attr("w:start"))).and_then(parse_twips_mm).unwrap_or(6.35);
             let hanging_indent_mm = ind.and_then(|n| n.attr("w:hanging")).and_then(parse_twips_mm).unwrap_or(3.18);
+            if level > 8 { continue; }
+            if let Some(heading) = level_node.child("w:pStyle").and_then(|n| n.attr("w:val")) {
+                headings.insert(level, model::StyleId(heading.to_owned()));
+            }
             levels.push(ListLevel { level, format, text, start_at, left_indent_mm, hanging_indent_mm });
         }
-        abstracts.insert(abstract_id, levels);
+        levels.sort_by_key(|level| level.level);
+        levels.dedup_by_key(|level| level.level);
+        let stable_id = abstract_node.child("w:styleLink").and_then(|n| n.attr("w:val"))
+            .and_then(|id| id.strip_prefix("ImpressList")).filter(|id| !id.is_empty());
+        abstracts.insert(abstract_id, (levels, name, headings, stable_id));
     }
     let mut lists = BTreeMap::new();
     let mut num_to_list = BTreeMap::new();
+    let mut named = BTreeMap::new();
+    let mut named_abstracts = std::collections::BTreeSet::new();
+    let mut names = std::collections::BTreeSet::new();
     for num_node in root.children_named("w:num") {
         let num_id = num_node.attr("w:numId").and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
         let abstract_id = num_node.child("w:abstractNumId").and_then(|n| n.attr("w:val")).and_then(|v| v.parse::<i32>().ok()).unwrap_or(0);
-        if let Some(levels) = abstracts.get(&abstract_id) {
-            let id = NodeId::new();
-            lists.insert(id.clone(), ListDefinition { id: id.clone(), levels: levels.clone() });
+        if let Some((levels, name, headings, stable_id)) = abstracts.get(&abstract_id) {
+            let is_named = name.is_some() && !levels.is_empty() && named_abstracts.insert(abstract_id);
+            let id = stable_id.filter(|_| is_named).map(|id| NodeId(id.to_owned()))
+                .filter(|id| !lists.contains_key(id)).unwrap_or_else(NodeId::new);
+            let definition = ListDefinition { id: id.clone(), levels: levels.clone() };
+            if let Some(name) = name.filter(|_| is_named && names.insert(name.unwrap_or_default().to_lowercase())) {
+                named.insert(id.clone(), model::NamedListStyle { name: name.to_owned(), definition: definition.clone(), headings: headings.clone() });
+            }
+            lists.insert(id.clone(), definition);
             num_to_list.insert(num_id, id);
         }
     }
-    Ok((lists, num_to_list))
+    Ok(ImportedNumbering { lists, instances: num_to_list, named })
 }
 
 /// A floating table's `w:tblpPr` (and `w:tblOverlap`).
@@ -1317,6 +1359,22 @@ fn import_styles(tree:&XmlNode,document:&mut Document,context:&ImportContext) {
     let mut style_tab_edits = BTreeMap::new();
     for style in root.children_named("w:style") {
         let Some(id)=style.attr("w:styleId") else{continue;};
+        if style.attr("w:type") == Some("table") {
+            let fill = |properties: Option<&XmlNode>| properties.and_then(|p| p.child("w:shd"))
+                .and_then(|n| n.attr("w:fill")).filter(|value| value.len() == 6 && value.bytes().all(|c| c.is_ascii_hexdigit()))
+                .map(|color| format!("#{color}"));
+            let region = |name| style.children_named("w:tblStylePr")
+                .find(|n| n.attr("w:type") == Some(name)).and_then(|n| n.child("w:tcPr"));
+            let table = model::TableStyle {
+                name: style.child("w:name").and_then(|n| n.attr("w:val")).unwrap_or(id).to_owned(),
+                body_fill: fill(style.child("w:tcPr")).or_else(|| fill(style.child("w:tblPr"))),
+                header_fill: fill(region("firstRow")),
+                band_fill: fill(region("band1Horz")),
+                borders: style.child("w:tblPr").and_then(|p| p.child("w:tblBorders")).map(parse_border_set),
+            };
+            base.table_styles.insert(model::StyleId(id.to_owned()), table);
+            continue;
+        }
         let kind=match style.attr("w:type"){Some("character")=>model::StyleKind::Character,Some("paragraph")|None=>model::StyleKind::Paragraph,_=>continue};
         let based_on=style.child("w:basedOn").and_then(|n|n.attr("w:val")).map(|v|model::StyleId(v.into()));
         let next_style=style.child("w:next").and_then(|n|n.attr("w:val")).map(|v|model::StyleId(v.into()));
@@ -1331,6 +1389,27 @@ fn import_styles(tree:&XmlNode,document:&mut Document,context:&ImportContext) {
         let id=model::StyleId::from(builtin);
         let Some(name)=base.styles.get(&id).map(|s|s.name.to_lowercase()) else{continue;};
         if base.styles.values().any(|s|s.id!=id&&s.name.to_lowercase()==name){base.styles.remove(&id);}
+    }
+    let mut linked_characters = std::collections::BTreeSet::new();
+    for node in root.children_named("w:style") {
+        let Some(id) = node.attr("w:styleId").map(|id| model::StyleId(id.to_owned())) else { continue; };
+        let Some(link) = node.child("w:link").and_then(|n| n.attr("w:val")).map(|id| model::StyleId(id.to_owned())) else { continue; };
+        let pair = match (base.get(&id).map(|s| s.kind), base.get(&link).map(|s| s.kind)) {
+            (Some(model::StyleKind::Paragraph), Some(model::StyleKind::Character)) => (id, link),
+            (Some(model::StyleKind::Character), Some(model::StyleKind::Paragraph)) => (link, id),
+            _ => continue,
+        };
+        if !base.linked_styles.contains_key(&pair.0) && linked_characters.insert(pair.1.clone()) {
+            let inherited = base.resolve_character(Some(&pair.0));
+            if let Some(style) = base.styles.get_mut(&pair.1) {
+                let c = &mut style.character;
+                macro_rules! remove_equal {
+                    ($($field:ident),* $(,)?) => { $(if c.$field == inherited.$field { c.$field = None; })* };
+                }
+                remove_equal!(font_family, font_slots, font_size_pt, bold, italic, underline, color, highlight, language, right_to_left, typography);
+            }
+            base.linked_styles.insert(pair.0, pair.1);
+        }
     }
     let default=root.children_named("w:style").find(|s|s.attr("w:type")==Some("paragraph")&&s.attr("w:default").is_some_and(|v|matches!(v,"1"|"true"|"on")))
         .and_then(|s|s.attr("w:styleId")).map(|v|model::StyleId(v.into())).unwrap_or_else(||model::StyleId::from(model::STYLE_NORMAL));

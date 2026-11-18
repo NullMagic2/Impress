@@ -317,7 +317,7 @@ impl EditorState {
             let Some(p) = self.paragraph(id) else { return false; };
             let Some(list_id) = p.properties.list_id.as_ref() else { return false; };
             let level = p.properties.list_level.unwrap_or(0);
-            self.document.lists.get(list_id)
+            self.document.styles.list_definition(&self.document.lists, list_id)
                 .and_then(|d| d.levels.iter().find(|l| l.level == level))
                 .is_some_and(|l| l.format == format)
         });
@@ -482,8 +482,8 @@ impl EditorState {
         let table = Table {
             id: NodeId::new(),
             properties: TableProperties {
-                preferred_width_mm: None, left_indent_mm: None, alignment: None, borders: Some(borders), cell_spacing_mm: None,
-                grid_column_widths_mm: Vec::new(), position: None,
+                style: None, preferred_width_mm: None, left_indent_mm: None, alignment: None, borders: Some(borders), cell_spacing_mm: None,
+                ..TableProperties::default()
             },
             rows: (0..rows).map(|row| TableRow {
                 id: NodeId::new(), repeat_as_header: row == 0, allow_break_across_pages: true, height_mm: None,
@@ -962,6 +962,23 @@ impl EditorState {
             section_id: after.id.clone(), before, after,
         }], before_selection, None)?;
         Ok(())
+    }
+
+    pub fn apply_table_style(&mut self, id: Option<&StyleId>) -> Result<(), String> {
+        if id.is_some_and(|id| !self.document.styles.table_styles.contains_key(id)) {
+            return Err("Style not found".into());
+        }
+        let context = self.table_cell_context().ok_or("Place the caret in a table cell first.")?;
+        let before = self.document.sections[context.section_index].clone();
+        let mut after = before.clone();
+        let table = find_table_mut_in_section(&mut after, &context.table_id).ok_or("Table not found")?;
+        table.properties.style = id.cloned();
+        table.properties.style_overrides_table_borders = id.map(|_| true);
+        table.properties.style_first_row = None;
+        table.properties.style_row_banding = None;
+        if before == after { return Ok(()); }
+        let mutation = Mutation::SectionChanged { section_id: after.id.clone(), before, after };
+        self.commit_style_work("Apply table style", vec![mutation])
     }
 
     pub fn set_table_row_height(&mut self, height_mm: Option<f32>) -> Result<(), String> {
