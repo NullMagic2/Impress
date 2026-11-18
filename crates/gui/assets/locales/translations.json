@@ -1343,6 +1343,12 @@
     "Todos os arquivos",
     "Todos os ficheiros"
   ],
+  "All levels": [
+    "Όλα τα επίπεδα",
+    "Todos los niveles",
+    "Todos os níveis",
+    "Todos os níveis"
+  ],
   "All markup": [
     "Όλες οι σημάνσεις",
     "Todas las marcas",
@@ -2380,6 +2386,12 @@
     "Cambios",
     "Alterações",
     "Alterações"
+  ],
+  "Chapter guide": [
+    "Οδηγός κεφαλαίων",
+    "Guía de capítulos",
+    "Guia de capítulos",
+    "Guia de capítulos"
   ],
   "Character": [
     "Χαρακτήρας",
@@ -7198,6 +7210,12 @@
     "Ecuación en línea",
     "Equação em linha",
     "Equação em linha"
+  ],
+  "Inline page numbers": [
+    "Αριθμοί σελίδων δίπλα στο κείμενο",
+    "Números de página junto al texto",
+    "Números de página junto ao texto",
+    "Números de página junto ao texto"
   ],
   "Inline spelling shows a bounded result set; use Spelling for a correction session.": [
     "Η ορθογραφία δείχνει ένα καθορισμένο σύνολο αποτελεσμάτων· χρησιμοποιείστε την ορθογραφία για μια συνεδρία διόρθωσης.",
@@ -12281,6 +12299,12 @@
     "Triângulo retângulo",
     "Triângulo retângulo"
   ],
+  "Right-align page numbers": [
+    "Στοίχιση αριθμών σελίδων δεξιά",
+    "Alinear los números de página a la derecha",
+    "Alinhar números de página à direita",
+    "Alinhar números de página à direita"
+  ],
   "Right-to-left": [
     "Από δεξιά προς τα αριστερά",
     "De derecha a izquierda",
@@ -12298,6 +12322,12 @@
     "Flecha derecha",
     "Seta para a direita",
     "Seta para a direita"
+  ],
+  "River crossings": [
+    "Διαβάσεις ποταμών",
+    "Cruces de ríos",
+    "Travessias de rios",
+    "Travessias de rios"
   ],
   "Rivers and valleys": [
     "Ποτάμια και κοιλάδες",
@@ -13126,6 +13156,12 @@
     "Mostrar números de página",
     "Mostrar números de página",
     "Mostrar números de página"
+  ],
+  "Show page numbers on:": [
+    "Αριθμοί σελίδων στα επίπεδα:",
+    "Mostrar números de página en:",
+    "Mostrar números de página em:",
+    "Mostrar números de página em:"
   ],
   "Show rule": [
     "Κανόνας show",

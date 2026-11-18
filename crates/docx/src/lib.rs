@@ -40,14 +40,21 @@ fn contents_tag(review: &model::ReviewState) -> String {
         model::ContentsTemplate::Technical => "technical",
         model::ContentsTemplate::Atlas => "atlas",
         model::ContentsTemplate::Book => "book",
+        model::ContentsTemplate::InlinePages => "inline_pages",
+        model::ContentsTemplate::ChapterGuide => "chapter_guide",
     };
     let leader = match options.leader {
         model::TabLeader::None => "none", model::TabLeader::Dots => "dots",
         model::TabLeader::Dashes => "dashes", model::TabLeader::Line => "line",
         model::TabLeader::Heavy => "heavy", model::TabLeader::MiddleDots => "middle",
     };
-    format!("Impress.Contents.v2:{template}:{}:{}:{leader}:{}", options.max_heading_level,
-        u8::from(options.show_page_numbers), u8::from(review.automatic_contents))
+    let settings = format!("{template}:{}:{}:{leader}:{}", options.max_heading_level,
+        u8::from(options.show_page_numbers), u8::from(review.automatic_contents));
+    if options.right_align_page_numbers && options.max_numbered_level == 9 {
+        format!("Impress.Contents.v2:{settings}")
+    } else {
+        format!("Impress.Contents.v3:{settings}:{}:{}", u8::from(options.right_align_page_numbers), options.max_numbered_level)
+    }
 }
 
 fn is_contents_tag(tag: &str) -> bool {
@@ -55,7 +62,8 @@ fn is_contents_tag(tag: &str) -> bool {
 }
 
 fn parse_contents_tag(tag: &str) -> Option<(model::ContentsOptions, bool)> {
-    let mut fields = tag.strip_prefix("Impress.Contents.v2:")?.split(':');
+    let (version, settings) = tag.strip_prefix("Impress.Contents.")?.split_once(':')?;
+    let mut fields = settings.split(':');
     let template = match fields.next()? {
         "classic" => model::ContentsTemplate::Classic,
         "compact" => model::ContentsTemplate::Compact,
@@ -65,6 +73,8 @@ fn parse_contents_tag(tag: &str) -> Option<(model::ContentsOptions, bool)> {
         "technical" => model::ContentsTemplate::Technical,
         "atlas" => model::ContentsTemplate::Atlas,
         "book" => model::ContentsTemplate::Book,
+        "inline_pages" => model::ContentsTemplate::InlinePages,
+        "chapter_guide" => model::ContentsTemplate::ChapterGuide,
         _ => return None,
     };
     let max_heading_level = fields.next()?.parse::<u8>().ok()?;
@@ -78,6 +88,11 @@ fn parse_contents_tag(tag: &str) -> Option<(model::ContentsOptions, bool)> {
         _ => return None,
     };
     let automatic = binary(fields.next()?)?;
-    if fields.next().is_some() { return None; }
-    Some((model::ContentsOptions { max_heading_level, template, show_page_numbers, leader, ..Default::default() }, automatic))
+    let (right_align_page_numbers, max_numbered_level) = match version {
+        "v2" => (true, 9),
+        "v3" => (binary(fields.next()?)?, fields.next()?.parse::<u8>().ok()?),
+        _ => return None,
+    };
+    if !(1..=9).contains(&max_numbered_level) || fields.next().is_some() { return None; }
+    Some((model::ContentsOptions { max_heading_level, template, show_page_numbers, leader, right_align_page_numbers, max_numbered_level, ..Default::default() }, automatic))
 }

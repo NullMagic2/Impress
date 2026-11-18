@@ -129,7 +129,7 @@ fn gallery_designs_survive_docx_with_their_distinctive_formatting() {
     doc.sections[0].blocks = vec![Block::Paragraph(chapter), Block::Paragraph(section)].into();
     let mut editor = EditorState::new(doc);
     editor.set_caret(first, 0);
-    for design in [Classic, Compact, Modern, Book, Atlas, Technical, Formal, ReadingOutline] {
+    for design in [Classic, Compact, Modern, Book, Atlas, Technical, Formal, ReadingOutline, InlinePages, ChapterGuide] {
         let mut options = ContentsOptions::default();
         options.apply_template(design);
         editor.update_contents_options(options.clone()).unwrap();
@@ -140,13 +140,19 @@ fn gallery_designs_survive_docx_with_their_distinctive_formatting() {
         let entry = body[1];
         let Inline::Hyperlink(link) = &entry.content[0] else { panic!("Missing chapter link") };
         let Inline::Text(run) = &link.content[0] else { panic!("Missing chapter title") };
-        assert_eq!(run.text, "Chapter one");
-        assert_eq!(entry.properties.contents_leader, options.show_page_numbers.then_some(options.leader));
+        assert_eq!(run.text, if design == InlinePages { "Chapter one,\u{a0}" } else { "Chapter one" });
+        assert_eq!(entry.properties.contents_leader, (options.show_page_numbers && options.right_align_page_numbers).then_some(options.leader));
         match design {
             Book => assert_eq!(title.properties.alignment, Some(ParagraphAlignment::Center)),
             Atlas => assert_eq!(entry.properties.shading.as_deref(), Some("#D9EEE9")),
             Technical => assert_eq!(run.properties.font_family.as_deref(), Some("Liberation Mono")),
             Formal => assert_eq!(title.properties.borders.as_ref().unwrap().bottom.as_ref().unwrap().style, BorderStyle::Double),
+            InlinePages => assert!(matches!(&link.content[..], [Inline::Text(_), Inline::Field(Field { kind: FieldKind::PageReference { .. }, .. })])),
+            ChapterGuide => {
+                let Inline::Hyperlink(sub) = &body[2].content[0] else { panic!("Missing subsection link") };
+                assert_eq!(sub.content.len(), 1);
+                assert!(matches!(link.content.last(), Some(Inline::Field(_))));
+            }
             ReadingOutline => assert_eq!(link.content.len(), 1),
             _ => {}
         }

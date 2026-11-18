@@ -4,6 +4,7 @@ use crate::formatting::first_paragraph_id;
 use model::{AnchorRange, Bookmark, ContentsOptions, ContentsTemplate, TabAlignment, TabStop, TextAnchor};
 use std::collections::{BTreeMap, BTreeSet};
 
+const INLINE_SEPARATOR: &str = ",\u{a0}";
 const UPDATE: &str = "Update table of contents";
 const REMOVE: &str = "Remove table of contents";
 
@@ -60,6 +61,8 @@ fn contents_title(options: &ContentsOptions) -> Paragraph {
         Atlas => (22.0, Some("#145D58"), 10.0),
         Technical => (16.0, Some("#283B4F"), 7.0),
         Formal => (18.0, None, 12.0),
+        InlinePages => (18.0, None, 9.0),
+        ChapterGuide => (22.0, Some("#263D50"), 12.0),
         ReadingOutline => (19.0, Some("#663D32"), 10.0),
     };
     let font = &mut run.properties;
@@ -107,6 +110,12 @@ fn format_entry(template: ContentsTemplate, level: u8, paragraph: &mut model::Pa
             font.font_size_pt = Some(10.0);
             font.bold = Some(major);
         }
+        ChapterGuide if major => {
+            font.bold = Some(true);
+            font.font_size_pt = Some(13.0);
+            paragraph.space_before_pt = Some(6.0);
+        }
+        InlinePages if level > 1 => { font.italic = Some(true); }
         Formal if major => { font.bold = Some(true); }
         ReadingOutline if major => {
             paragraph.space_before_pt = Some(6.0);
@@ -130,16 +139,24 @@ fn current(editor: &EditorState, wanted: &[Heading]) -> bool {
         let Some(p) = editor.paragraph(id) else { return false; };
         let Some((link, name)) = entry_parts(p) else { return false; };
         let Some(Inline::Text(run)) = link.content.first() else { return false; };
-        let leader = options.show_page_numbers.then_some(options.leader);
+        let numbered = options.number_level(heading.level);
+        let aligned = numbered && options.right_align_page_numbers;
+        let leader = aligned.then_some(options.leader);
+        let entry_text = if numbered && !aligned { run.text.strip_suffix(INLINE_SEPARATOR) } else { Some(run.text.as_str()) };
+        let parts = &link.content[1..];
+        let field_matches = |part: &Inline| matches!(part, Inline::Field(model::Field {
+            kind: model::FieldKind::PageReference { bookmark }, ..
+        }) if bookmark == name);
+        let correct_parts = match parts {
+            [] => !numbered,
+            [field] => numbered && !aligned && field_matches(field),
+            [Inline::Tab { .. }, field] => aligned && field_matches(field),
+            _ => false,
+        };
         if !bookmarks.get(name).is_some_and(|start| start.paragraph == heading.node && start.offset == 0)
-            || run.text != heading.text
+            || entry_text != Some(heading.text.as_str()) || !correct_parts
             || p.properties.left_indent_mm != Some(indentation(heading.level, options.template))
             || p.properties.contents_leader != leader
-            || (if options.show_page_numbers {
-                !matches!(&link.content[..], [Inline::Text(_), Inline::Tab { .. }, Inline::Field(model::Field {
-                    kind: model::FieldKind::PageReference { bookmark }, ..
-                })] if bookmark == name)
-            } else { link.content.len() != 1 })
         {
             return false;
         }
@@ -154,7 +171,7 @@ impl EditorState {
 
     pub fn update_contents_options(&mut self, options: ContentsOptions) -> Result<(), String> {
         if options.title.trim().is_empty() || options.title.len() > 256 || options.title.contains(['\r', '\n', '\0'])
-            || !(1..=9).contains(&options.max_heading_level)
+            || !(1..=9).contains(&options.max_heading_level) || !(1..=9).contains(&options.max_numbered_level)
         {
             return Err("Choose a one-line contents title and heading depth from 1 to 9".into());
         }
@@ -283,11 +300,15 @@ impl EditorState {
             paragraph.properties.outline_level = Some(0);
             let mut run = TextRun::plain(&heading.text);
             format_entry(options.template, heading.level, &mut paragraph.properties, &mut run.properties);
+            let numbered = options.number_level(heading.level);
+            if numbered && !options.right_align_page_numbers { run.text.push_str(INLINE_SEPARATOR); }
             let mut link_content = vec![Inline::Text(run)];
-            if options.show_page_numbers {
+            if numbered && options.right_align_page_numbers {
                 paragraph.properties.contents_leader = Some(options.leader);
                 paragraph.properties.tabs = Some(vec![TabStop { position_mm: width, alignment: TabAlignment::Right, leader: options.leader }]);
                 link_content.push(Inline::Tab { id: NodeId::new() });
+            }
+            if numbered {
                 link_content.push(Inline::Field(model::Field { id: NodeId::new(),
                     kind: model::FieldKind::PageReference { bookmark: name.clone() }, display_text: None, color: None }));
             }

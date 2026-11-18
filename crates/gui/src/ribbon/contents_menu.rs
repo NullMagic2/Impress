@@ -4,6 +4,7 @@ use crate::i18n::text;
 use model::{ContentsOptions, ContentsTemplate, TabLeader};
 use wxdragon::{
     dialogs::DialogBuilder,
+    event::WindowEvents, window::BackgroundStyle, widgets::panel::Panel,
     geometry::Point,
     id::ID_CANCEL,
     sizers::{BoxSizer, Orientation, SizerFlag},
@@ -20,7 +21,7 @@ const REMOVE: i32 = 32_683;
 const GALLERY: i32 = 32_684;
 const FIRST_LEVEL: i32 = 32_688;
 
-const TEMPLATES: [(ContentsTemplate, &str); 8] = [
+const TEMPLATES: [(ContentsTemplate, &str); 10] = [
     (ContentsTemplate::Classic, "Classic contents"),
     (ContentsTemplate::Compact, "Compact contents"),
     (ContentsTemplate::Modern, "Modern contents"),
@@ -29,6 +30,8 @@ const TEMPLATES: [(ContentsTemplate, &str); 8] = [
     (ContentsTemplate::Technical, "Technical contents"),
     (ContentsTemplate::Formal, "Formal contents"),
     (ContentsTemplate::ReadingOutline, "Reading outline"),
+    (ContentsTemplate::InlinePages, "Inline page numbers"),
+    (ContentsTemplate::ChapterGuide, "Chapter guide"),
 ];
 const LEADERS: [(TabLeader, &str); 4] = [
     (TabLeader::None, "None"),
@@ -194,6 +197,19 @@ fn settings(
     let page_numbers = CheckBox::builder(&window).with_label(&text("Show page numbers")).build();
     page_numbers.set_value(options.show_page_numbers);
     form.add(&page_numbers, 0, SizerFlag::Bottom, gap);
+    let align = CheckBox::builder(&window).with_label(&text("Right-align page numbers")).build();
+    align.set_value(options.right_align_page_numbers);
+    form.add(&align, 0, SizerFlag::Bottom, gap);
+    let numbered_label = StaticText::builder(&window).with_label(&text("Show page numbers on:")).build();
+    let numbered = Choice::builder(&window).with_choices((1..=9).map(|level| match level {
+        1 => text("Level 1"),
+        9 => text("All levels"),
+        _ => format!("1–{level}"),
+    }).collect::<Vec<_>>()).build();
+    numbered.set_name(&text("Show page numbers on:"));
+    numbered.set_selection(u32::from(options.max_numbered_level.clamp(1, 9) - 1));
+    form.add(&numbered_label, 0, SizerFlag::Bottom, gap);
+    form.add(&numbered, 0, SizerFlag::Expand | SizerFlag::Bottom, gap);
     let leader_label = StaticText::builder(&window).with_label(&text("Tab leader:")).build();
     let leader = Choice::builder(&window)
         .with_choices(LEADERS.iter().map(|item| text(item.1)).collect::<Vec<_>>())
@@ -203,15 +219,58 @@ fn settings(
     leader.enable(options.show_page_numbers);
     form.add(&leader_label, 0, SizerFlag::Bottom, gap);
     form.add(&leader, 0, SizerFlag::Expand, 0);
-    page_numbers.on_toggled(move |_| leader.enable(page_numbers.is_checked()));
+    let read = move || ContentsOptions {
+        title: title.get_value(), max_heading_level: levels.value() as u8,
+        template: TEMPLATES[template.get_selection().unwrap_or(0) as usize].0,
+        show_page_numbers: page_numbers.is_checked(),
+        right_align_page_numbers: align.is_checked(),
+        max_numbered_level: numbered.get_selection().unwrap_or(8) as u8 + 1,
+        leader: LEADERS[leader.get_selection().unwrap_or(0) as usize].0,
+    };
+    let preview = Panel::builder(&window).build();
+    preview.set_min_size(Size::new(window.from_dip_int(280), window.from_dip_int(215)));
+    preview.set_background_style(BackgroundStyle::Paint);
+    preview.set_name(&text("Preview"));
+    let fragment = Rc::new(RefCell::new(Err(String::new())));
+    let painted = fragment.clone();
+    let renderer = RefCell::new(output::raster::BandRenderer::default());
+    preview.on_paint(move |_| super::header_footer_gallery::paint_preview(preview, &painted.borrow(), &mut renderer.borrow_mut()));
+    let refresh = Rc::new(move || {
+        let options = read();
+        numbered.enable(options.show_page_numbers);
+        align.enable(options.show_page_numbers);
+        leader.enable(options.show_page_numbers && options.right_align_page_numbers);
+        *fragment.borrow_mut() = gallery::sample_fragment(options).ok_or_else(String::new);
+        preview.refresh(false, None);
+    });
+    let changed = refresh.clone();
     template.on_selection_changed(move |_| {
-        let mut options = ContentsOptions::default();
-        options.apply_template(TEMPLATES[template.get_selection().unwrap_or(0) as usize].0);
+        let mut options = read();
+        options.apply_template(options.template);
         leader.set_selection(LEADERS.iter().position(|item| item.0 == options.leader).unwrap_or(0) as u32);
         page_numbers.set_value(options.show_page_numbers);
-        leader.enable(options.show_page_numbers);
+        align.set_value(options.right_align_page_numbers);
+        numbered.set_selection(u32::from(options.max_numbered_level - 1));
+        changed();
     });
-    root.add_sizer(&form, 0, SizerFlag::All | SizerFlag::Expand, margin);
+    for check in [page_numbers, align] {
+        let changed = refresh.clone();
+        check.on_toggled(move |_| changed());
+    }
+    for choice in [numbered, leader] {
+        let changed = refresh.clone();
+        choice.on_selection_changed(move |_| changed());
+    }
+    let changed = refresh.clone();
+    levels.on_value_changed(move |_| changed());
+    let body = BoxSizer::builder(Orientation::Horizontal).build();
+    body.add_sizer(&form, 0, SizerFlag::Right, margin);
+    let sample = BoxSizer::builder(Orientation::Vertical).build();
+    let label = StaticText::builder(&window).with_label(&text("Preview")).build();
+    sample.add(&label, 0, SizerFlag::Bottom, gap);
+    sample.add(&preview, 1, SizerFlag::Expand, 0);
+    body.add_sizer(&sample, 1, SizerFlag::Expand, 0);
+    root.add_sizer(&body, 1, SizerFlag::All | SizerFlag::Expand, margin);
     dialog_actions::divider(&window, &root, margin);
     let footer = BoxSizer::builder(Orientation::Horizontal).build();
     let ok = Button::builder(&window)
@@ -232,20 +291,15 @@ fn settings(
         );
     };
     validate();
-    title.on_text_updated(move |_| validate());
+    refresh();
+    title.on_text_updated(move |_| { validate(); refresh(); });
     ok.set_default();
     window.set_escape_id(ID_CANCEL);
     ok.on_click(move |_| window.end_modal(ID_OK));
     cancel.on_click(move |_| window.end_modal(ID_CANCEL));
     crate::placement::centre(&window);
     title.set_focus();
-    let result = (window.show_modal() == ID_OK).then(|| model::ContentsOptions {
-        title: title.get_value(),
-        max_heading_level: levels.value() as u8,
-        template: TEMPLATES[template.get_selection().unwrap_or(0) as usize].0,
-        show_page_numbers: page_numbers.is_checked(),
-        leader: LEADERS[leader.get_selection().unwrap_or(0) as usize].0,
-    });
+    let result = (window.show_modal() == ID_OK).then(read);
     window.destroy();
     result
 }

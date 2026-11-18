@@ -17,7 +17,7 @@ fn sample_editor() -> EditorState {
     let section = &mut doc.sections[0];
     section.properties.page_width_mm = TEXT_WIDTH_MM
         + section.properties.margin_left_mm + section.properties.margin_right_mm;
-    section.blocks = [("The landscape", 1), ("Rivers and valleys", 2), ("Field notes", 1)]
+    section.blocks = [("The landscape", 1), ("Rivers and valleys", 2), ("River crossings", 3), ("Field notes", 1)]
         .into_iter().map(|(label, level)| {
             let mut paragraph = Paragraph::plain(&text(label));
             paragraph.properties.outline_level = Some(level);
@@ -29,9 +29,11 @@ fn sample_editor() -> EditorState {
     editor
 }
 
-fn sample_fragment(editor: &mut EditorState, template: ContentsTemplate) -> Option<render::VectorFragment> {
-    let mut options = ContentsOptions { title: text("Contents"), ..Default::default() };
-    options.apply_template(template);
+pub(super) fn sample_fragment(options: ContentsOptions) -> Option<render::VectorFragment> {
+    let mut editor = sample_editor();
+    let pages: Vec<_> = [(1, 1), (2, 3), (3, 7), (1, 17)].into_iter()
+        .filter(|(level, _)| *level <= options.max_heading_level)
+        .map(|(_, page)| page).collect();
     editor.update_contents_options(options).ok()?;
     let mut stream = HeaderFooter::default();
     let paragraphs = model::document_paragraphs(&editor.document);
@@ -39,7 +41,7 @@ fn sample_fragment(editor: &mut EditorState, template: ContentsTemplate) -> Opti
         let mut paragraph = (*paragraphs.iter().find(|p| &p.id == id)?).clone();
         if let Some(Inline::Hyperlink(link)) = paragraph.content.first_mut() {
             if let Some(Inline::Field(field)) = link.content.last_mut() {
-                field.display_text = Some([1, 3, 17][index - 1].to_string());
+                field.display_text = Some(pages[index - 1].to_string());
             }
         }
         stream.blocks.push(Block::Paragraph(paragraph));
@@ -72,10 +74,11 @@ pub(super) fn choose(ribbon: &Ribbon, options: &ContentsOptions, insert: bool) -
     let dialog = DialogBuilder::new(&ribbon.ui.main_frame, &text("Contents gallery")).build();
     let gap = dialog.from_dip_int(8);
     let root = BoxSizer::builder(Orientation::Vertical).build();
-    let columns = if ribbon.ui.main_frame.get_size().width >= dialog.from_dip_int(800) { 4 } else { 3 };
+    let available = ribbon.ui.main_frame.get_size().width;
+    let columns = if available >= dialog.from_dip_int(1000) { 5 }
+        else if available >= dialog.from_dip_int(800) { 4 } else { 3 };
     let grid = FlexGridSizer::builder(0, columns).with_gap(Size::new(gap, gap)).build();
     let choice = Rc::new(Cell::new(None));
-    let mut editor = sample_editor();
     let mut initial = None;
     for (template, name) in TEMPLATES {
         let label = text(name);
@@ -84,7 +87,9 @@ pub(super) fn choose(ribbon: &Ribbon, options: &ContentsOptions, insert: bool) -
             selected.set(Some(template));
             dialog.end_modal(ID_OK);
         };
-        let bitmap = sample_fragment(&mut editor, template).as_ref()
+        let mut sample = ContentsOptions { title: text("Contents"), ..Default::default() };
+        sample.apply_template(template);
+        let bitmap = sample_fragment(sample).as_ref()
             .and_then(thumbnail).and_then(|bundle| bundle.get_bitmap_for(&dialog));
         if let Some(bitmap) = bitmap {
             let card = BoxSizer::builder(Orientation::Vertical).build();

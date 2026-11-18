@@ -401,7 +401,7 @@ fn make_stream(
     }
 }
 
-fn paint_preview(
+pub(super) fn paint_preview(
     panel: Panel,
     fragment: &Result<VectorFragment, String>,
     renderer: &mut output::raster::BandRenderer,

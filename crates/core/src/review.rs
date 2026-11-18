@@ -38,7 +38,7 @@ pub struct TextRevision {
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ContentsTemplate { #[default] Classic, Compact, Modern, Book, Atlas, Technical, Formal, ReadingOutline }
+pub enum ContentsTemplate { #[default] Classic, Compact, Modern, Book, Atlas, Technical, Formal, ReadingOutline, InlinePages, ChapterGuide }
 
 #[derive(Clone,Debug,PartialEq,Serialize,Deserialize)]
 #[serde(default)]
@@ -48,19 +48,27 @@ pub struct ContentsOptions {
     pub template: ContentsTemplate,
     pub show_page_numbers: bool,
     pub leader: crate::TabLeader,
+    pub right_align_page_numbers: bool,
+    pub max_numbered_level: u8,
 }
 impl Default for ContentsOptions {
     fn default() -> Self {
         Self { title: "Contents".into(), max_heading_level: 3, template: ContentsTemplate::Classic,
-            show_page_numbers: true, leader: crate::TabLeader::Dots }
+            show_page_numbers: true, right_align_page_numbers: true, max_numbered_level: 9, leader: crate::TabLeader::Dots }
     }
 }
 impl ContentsOptions {
+    pub fn number_level(&self, level: u8) -> bool {
+        self.show_page_numbers && level <= self.max_numbered_level
+    }
+
     pub fn apply_template(&mut self, template: ContentsTemplate) {
         self.template = template;
+        self.right_align_page_numbers = template != ContentsTemplate::InlinePages;
+        self.max_numbered_level = if template == ContentsTemplate::ChapterGuide { 1 } else { 9 };
         self.show_page_numbers = template != ContentsTemplate::ReadingOutline;
         self.leader = match template {
-            ContentsTemplate::Classic | ContentsTemplate::Compact | ContentsTemplate::Formal => crate::TabLeader::Dots,
+            ContentsTemplate::Classic | ContentsTemplate::Compact | ContentsTemplate::Formal | ContentsTemplate::ChapterGuide => crate::TabLeader::Dots,
             ContentsTemplate::Technical => crate::TabLeader::Dashes,
             _ => crate::TabLeader::None,
         };
