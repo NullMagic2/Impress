@@ -2575,8 +2575,8 @@
                                               <object class="wxButton" name="toc_button">
                                                 <label></label>
                                                 <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
-                                                <minsize>62,78</minsize>
-                                                <tooltip>Insert table of contents</tooltip>
+                                                <minsize>78,78</minsize>
+                                                <tooltip>Table of contents</tooltip>
                                               </object>
                                             </object>
                                             <object class="spacer">

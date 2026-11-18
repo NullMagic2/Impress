@@ -3959,6 +3959,12 @@
     "Os dados XML personalizados excedem o limite de tamanho ou contêm um tipo de documento não permitido",
     "Os dados XML personalizados excedem o limite de tamanho ou contêm um tipo de documento não permitido"
   ],
+  "Custom table of contents…": [
+    "Προσαρμοσμένος πίνακας περιεχομένων…",
+    "Tabla de contenido personalizada…",
+    "Sumário personalizado…",
+    "Índice personalizado…"
+  ],
   "Custom {}": [
     "Προσαρμοσμένο {}",
     "Personalizado {}",
@@ -6606,10 +6612,10 @@
     "Título 3"
   ],
   "Heading levels:": [
-    "Επίπεδα πορείας:",
-    "Niveles de encabezamiento:",
-    "Níveis de cabeça:",
-    "Níveis da rubrica:"
+    "Επίπεδα επικεφαλίδων:",
+    "Niveles de título:",
+    "Níveis de título:",
+    "Níveis de título:"
   ],
   "Headings · click to navigate": [
     "Επικεφαλίδες · κλικ για πλοήγηση",
@@ -15737,6 +15743,12 @@
     "Texto explicativo com seta cima-baixo",
     "Texto explicativo com seta cima-baixo"
   ],
+  "Update automatically": [
+    "Αυτόματη ενημέρωση",
+    "Actualizar automáticamente",
+    "Atualizar automaticamente",
+    "Atualizar automaticamente"
+  ],
   "Update contents snapshot": [
     "Ενημέρωση στιγμιότυπου περιεχομένου",
     "Actualizar instantáneas de contenido",
@@ -15766,6 +15778,12 @@
     "Actualizar tabla",
     "Atualizar tabela",
     "Atualizar tabela"
+  ],
+  "Update table of contents": [
+    "Ενημέρωση πίνακα περιεχομένων",
+    "Actualizar tabla de contenido",
+    "Atualizar sumário",
+    "Atualizar índice"
   ],
   "Update table — Not available in this alpha": [
     "Ενημέρωση πίνακα — Δεν διατίθεται σε αυτή την έκδοση άλφα",

@@ -947,9 +947,9 @@
             {
               "kind": "button",
               "name": "toc_button",
-              "style": "big-button",
+              "style": "file-menu",
               "label": "Contents",
-              "tip": "Insert table of contents",
+              "tip": "Table of contents",
               "icon": "toc"
             },
             {

@@ -69,13 +69,6 @@ impl Ribbon {
             }
         }
     }
-    pub(super) fn contents(&self)->Result<(),String>{
-        let options=self.state.borrow().editor.document.review.contents_options.clone();let automatic=self.state.borrow().editor.document.review.automatic_contents;let choices=["Update contents using saved settings".into(),"Configure title and heading depth…".into(),if automatic{"Turn OFF automatic synchronization".into()}else{"Turn ON automatic synchronization".into()}];
-        let Some(choice)=self.choose_review("Contents","Contents can follow heading edits automatically; updates share the originating undo transaction. Right-aligned dotted leaders are generated at layout time.",&choices)else{return Ok(());};
-        if choice==0{return self.edit(|e|e.update_contents(&std::collections::BTreeMap::new()));}if choice==2{return self.edit(|e|e.set_automatic_contents(!automatic));}
-        let Some(title)=self.text_review("Contents title","Title:",&options.title,false)else{return Ok(());};let levels=(1..=9).map(|n|format!("Include heading levels 1 through {n}")).collect::<Vec<_>>();let Some(level)=self.choose_review("Contents depth","Heading levels:",&levels)else{return Ok(());};
-        self.edit(|e|e.update_contents_options(model::ContentsOptions{title,max_heading_level:(level+1)as u8}))
-    }
     pub(super) fn compatibility(&self){
         let native_issues={
             let state=self.state.borrow();

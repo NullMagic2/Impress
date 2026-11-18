@@ -71,7 +71,7 @@ pub fn buttons(ui: &MainUi) -> Vec<ButtonSpec> {
         ButtonSpec { button: ui.landscape_button, name: "landscape_button", label: "Landscape", icon: "landscape", action: Action::Landscape(true), segment: "single", kind: "large", tip: "Landscape", disabled: false, width_dip: 68, height_dip: 66, art_width_dip: 30, art_height_dip: 30 },
         ButtonSpec { button: ui.columns_button, name: "columns_button", label: "Columns", icon: "columns", action: Action::Columns, segment: "single", kind: "large", tip: "Columns", disabled: false, width_dip: 62, height_dip: 78, art_width_dip: 32, art_height_dip: 32 },
         ButtonSpec { button: ui.outline_button, name: "outline_button", label: "Headings", icon: "navigation", action: Action::ShowNavigation, segment: "single", kind: "wide", tip: "Show the heading navigation pane", disabled: false, width_dip: 98, height_dip: 66, art_width_dip: 30, art_height_dip: 30 },
-        ButtonSpec { button: ui.toc_button, name: "toc_button", label: "Contents", icon: "toc", action: Action::Contents, segment: "single", kind: "large", tip: "Insert table of contents", disabled: false, width_dip: 62, height_dip: 78, art_width_dip: 32, art_height_dip: 32 },
+        ButtonSpec { button: ui.toc_button, name: "toc_button", label: "Contents", icon: "toc", action: Action::Contents, segment: "single", kind: "file-menu", tip: "Table of contents", disabled: false, width_dip: 78, height_dip: 78, art_width_dip: 32, art_height_dip: 32 },
         ButtonSpec { button: ui.footnote_button, name: "footnote_button", label: "Footnotes", icon: "references", action: Action::Footnotes, segment: "single", kind: "wide", tip: "Footnotes", disabled: false, width_dip: 98, height_dip: 66, art_width_dip: 30, art_height_dip: 30 },
         ButtonSpec { button: ui.bookmark_button, name: "bookmark_button", label: "Bookmark", icon: "bookmark", action: Action::Bookmarks, segment: "single", kind: "small", tip: "Bookmark", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.compatibility_button, name: "compatibility_button", label: "Compatibility", icon: "review", action: Action::Compatibility, segment: "single", kind: "small", tip: "Review document format limitations", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
@@ -301,7 +301,7 @@ pub fn scale_controls(ui: &MainUi) {
     ui.columns_button.set_min_size(ui.columns_button.from_dip(Size::new(62, 78)));
     ui.ribbon_references.set_min_size(ui.ribbon_references.from_dip(Size::new(1, 118)));
     ui.outline_button.set_min_size(ui.outline_button.from_dip(Size::new(98, 66)));
-    ui.toc_button.set_min_size(ui.toc_button.from_dip(Size::new(62, 78)));
+    ui.toc_button.set_min_size(ui.toc_button.from_dip(Size::new(78, 78)));
     ui.footnote_button.set_min_size(ui.footnote_button.from_dip(Size::new(98, 66)));
     ui.bookmark_button.set_min_size(ui.bookmark_button.from_dip(Size::new(68, 24)));
     ui.compatibility_button.set_min_size(ui.compatibility_button.from_dip(Size::new(68, 24)));

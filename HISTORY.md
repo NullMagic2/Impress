@@ -1,3 +1,7 @@
+## 0.8.6-67 — Table of contents menu
+
+- Open References → Contents to insert or update the table, customize its title and heading levels, or toggle automatic updates. Manual refreshes respect that choice.
+
 ## 0.8.6-66 — Dialog layout
 
 - Size column preset captions to the interface font and show units in the table headings. Update the scroll range when the column count changes.

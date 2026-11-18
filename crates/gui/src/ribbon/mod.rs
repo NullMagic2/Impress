@@ -33,6 +33,7 @@ mod note_dialog;
 mod column_art;
 mod columns_menu;
 mod section_break_menu;
+mod contents_menu;
 mod recent_files_menu;
 mod context_menu;
 mod content_controls;
@@ -413,6 +414,7 @@ impl Ribbon {
                     _ => None,
                 };
                 if ribbon.handle_style_context(event.get_id()) { return; }
+                if contents_menu::handle(&ribbon, event.get_id()) { return; }
                 if section_break_menu::handle(&ribbon, event.get_id()) { return; }
                 if ribbon.handle_recent_files(event.get_id()) { return; }
                 if ribbon.handle_spelling_menu(event.get_id()) { return; }
@@ -702,7 +704,7 @@ impl Ribbon {
             Action::RefreshSource => { self.source_revision.set(None); self.request_source(); }
             Action::CopySource => { self.source_copy_pending.set(true); self.request_source(); }
             Action::Help => document_info::about(&self.ui.main_frame),
-            Action::Contents => self.contents()?,
+            Action::Contents => contents_menu::show(self),
             Action::Footnotes => self.footnotes()?, Action::Bookmarks => self.bookmarks()?,
             Action::Comments => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.show(!p.shown()); } }
             Action::CommentNew => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.new_comment(); } }

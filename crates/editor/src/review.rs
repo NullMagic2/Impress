@@ -104,7 +104,8 @@ impl EditorState {
         let mut existing=old_paragraphs.iter().filter_map(|p|p.content.iter().find_map(|i|if let Inline::Hyperlink(h)=i{h.target.strip_prefix('#').map(|name|(name.to_string(),p.clone()))}else{None})).collect::<BTreeMap<_,_>>();
         if review_before.revisions.values().any(|r|old.contains(&r.paragraph)){return Err("Resolve pending revisions in the generated contents before rebuilding it".into());}
         for s in &mut self.document.sections{s.blocks.retain(|b|!matches!(b,Block::Paragraph(p) if old.contains(&p.id)));}
-        let mut review_after=review_before.clone();review_after.contents_paragraphs.clear();review_after.contents_options=options.clone();review_after.automatic_contents=true;
+        let mut review_after=review_before.clone();review_after.contents_paragraphs.clear();review_after.contents_options=options.clone();
+        if old.is_empty() { review_after.automatic_contents=true; }
         let mut contents=Vec::new();let mut title=Paragraph::plain(&options.title);if let Some(id)=old.first(){title.id=id.clone();}title.properties.keep_with_next=Some(true);
         review_after.contents_paragraphs.push(title.id.clone());title.content=(vec![Inline::Text(TextRun {properties:CharacterProperties{bold:Some(true),font_size_pt:Some(16.0),..Default::default()},..TextRun::plain(&options.title)})]).into();
         contents.push(Block::Paragraph(title));

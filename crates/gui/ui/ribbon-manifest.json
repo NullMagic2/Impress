@@ -915,10 +915,10 @@
       "label": "Contents",
       "icon": "toc",
       "action": "Contents",
-      "kind": "large",
-      "tip": "Insert table of contents",
+      "kind": "file-menu",
+      "tip": "Table of contents",
       "disabled": false,
-      "width_dip": 62,
+      "width_dip": 78,
       "height_dip": 78,
       "art_width_dip": 32,
       "art_height_dip": 32,
@@ -3367,7 +3367,7 @@
     ],
     [
       "toc_button",
-      62,
+      78,
       78
     ],
     [
