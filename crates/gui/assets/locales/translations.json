@@ -2579,6 +2579,12 @@
     "Escolha uma diferença. Outras alterações neste parágrafo permanecem pendentes.",
     "Escolha uma diferença. Outras alterações neste parágrafo permanecem pendentes."
   ],
+  "Choose a different name from a built-in template.": [
+    "Επιλέξτε όνομα διαφορετικό από τα ενσωματωμένα πρότυπα.",
+    "Elija un nombre distinto al de una plantilla integrada.",
+    "Escolha um nome diferente dos modelos internos.",
+    "Escolha um nome diferente dos modelos incluídos."
+  ],
   "Choose a following paragraph style": [
     "Επιλέξτε ένα ακόλουθο στυλ παραγράφου",
     "Elija un siguiente estilo de párrafo",
@@ -3520,6 +3526,18 @@
     "Plantilla del índice:",
     "Modelo de sumário:",
     "Modelo de índice:"
+  ],
+  "Contents templates": [
+    "Πρότυπα περιεχομένων",
+    "Plantillas de índice",
+    "Modelos de sumário",
+    "Modelos de índice"
+  ],
+  "Contents templates…": [
+    "Πρότυπα περιεχομένων…",
+    "Plantillas de índice…",
+    "Modelos de sumário…",
+    "Modelos de índice…"
   ],
   "Contents title": [
     "Τίτλος Περιεχομένου",
@@ -4505,6 +4523,18 @@
     "Excluir as linhas da tabela",
     "Excluir as linhas da tabela"
   ],
+  "Delete template": [
+    "Διαγραφή προτύπου",
+    "Eliminar plantilla",
+    "Excluir modelo",
+    "Eliminar modelo"
+  ],
+  "Delete template?": [
+    "Διαγραφή προτύπου;",
+    "¿Eliminar la plantilla?",
+    "Excluir o modelo?",
+    "Eliminar o modelo?"
+  ],
   "Delete text": [
     "Διαγραφή κειμένου",
     "Eliminar texto",
@@ -5387,6 +5417,12 @@
     "Digite uma posição de aba em milímetros.",
     "Digite uma posição em milímetros."
   ],
+  "Enter a template name of 1 to 128 characters.": [
+    "Πληκτρολογήστε όνομα προτύπου με 1 έως 128 χαρακτήρες.",
+    "Introduzca un nombre de plantilla de 1 a 128 caracteres.",
+    "Digite um nome de modelo de 1 a 128 caracteres.",
+    "Introduza um nome de modelo de 1 a 128 carateres."
+  ],
   "Enter an author name for the native revision journal": [
     "Εισάγετε ένα όνομα συγγραφέα για το τοπικό περιοδικό αναθεώρησης",
     "Introduzca un nombre de autor para la revista de revisión nativa",
@@ -5518,6 +5554,12 @@
     "Exacto",
     "Exatamente",
     "Exatamente"
+  ],
+  "Example": [
+    "Παράδειγμα",
+    "Ejemplo",
+    "Exemplo",
+    "Exemplo"
   ],
   "Exclude from contents": [
     "Εξαίρεση από τα περιεχόμενα",
@@ -6742,6 +6784,12 @@
     "Corazón",
     "Coração",
     "Coração"
+  ],
+  "Heavy line": [
+    "Παχιά γραμμή",
+    "Línea gruesa",
+    "Linha grossa",
+    "Linha grossa"
   ],
   "Hebrew": [
     "Εβραϊκά",
@@ -9082,6 +9130,12 @@
     "Derecha media",
     "Médio Direita",
     "Meio Direita"
+  ],
+  "Middle dots": [
+    "Μεσαίες τελείες",
+    "Puntos medios",
+    "Pontos médios",
+    "Pontos médios"
   ],
   "Minimize": [
     "Ελαχιστοποίηση",
@@ -11909,6 +11963,12 @@
     "Substitua uma ocorrência ou todas em uma edição que pode ser desfeita.",
     "Substitua uma ocorrência ou todas numa edição que pode ser anulada."
   ],
+  "Replace template?": [
+    "Αντικατάσταση προτύπου;",
+    "¿Reemplazar la plantilla?",
+    "Substituir o modelo?",
+    "Substituir o modelo?"
+  ],
   "Replace the current footer with this template?": [
     "Να αντικατασταθεί το τρέχον υποσέλιδο με αυτό το πρότυπο;",
     "¿Reemplazar el pie de página actual por esta plantilla?",
@@ -12502,6 +12562,12 @@
     "Guardar como",
     "Salvar como",
     "Guardar como"
+  ],
+  "Save as template…": [
+    "Αποθήκευση ως πρότυπο…",
+    "Guardar como plantilla…",
+    "Salvar como modelo…",
+    "Guardar como modelo…"
   ],
   "Save changes in": [
     "Αποθήκευση αλλαγών σε",
@@ -14249,6 +14315,12 @@
     "Modelo",
     "Modelo"
   ],
+  "Template name:": [
+    "Όνομα προτύπου:",
+    "Nombre de la plantilla:",
+    "Nome do modelo:",
+    "Nome do modelo:"
+  ],
   "Terminator": [
     "Αρχή/τέλος",
     "Inicio/fin",
@@ -15317,6 +15389,12 @@
     "Esta tabela não pode ocupar toda a largura entre as margens da página.",
     "Esta tabela não pode ocupar toda a largura entre as margens da página."
   ],
+  "This template changed in another window. Reopen the template list.": [
+    "Το πρότυπο άλλαξε σε άλλο παράθυρο. Ανοίξτε ξανά τη λίστα προτύπων.",
+    "La plantilla cambió en otra ventana. Vuelva a abrir la lista de plantillas.",
+    "O modelo foi alterado em outra janela. Abra novamente a lista de modelos.",
+    "O modelo foi alterado noutra janela. Volte a abrir a lista de modelos."
+  ],
   "Three": [
     "Τρεις",
     "Tres",
@@ -16138,6 +16216,12 @@
     "Usuario",
     "Usuário",
     "Utilizador"
+  ],
+  "User data folder unavailable.": [
+    "Ο φάκελος δεδομένων χρήστη δεν είναι διαθέσιμος.",
+    "La carpeta de datos del usuario no está disponible.",
+    "A pasta de dados do usuário está indisponível.",
+    "A pasta de dados do utilizador está indisponível."
   ],
   "Vector": [
     "Διάνυσμα",

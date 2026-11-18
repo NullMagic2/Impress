@@ -1,15 +1,6 @@
 //! Render the built-in contents designs with the same paragraphs used by the editor.
 use super::*;
 use model::{Block, Document, HeaderFooter, Inline, Paragraph};
-use render::{Affine2D, VectorPage};
-use std::sync::atomic::AtomicBool;
-use wxdragon::{
-    bitmap_bundle::BitmapBundle, sizers::FlexGridSizer,
-    event::WindowEvents, widgets::bitmaptogglebutton::BitmapToggleButton, Bitmap,
-};
-
-const PAPER_WIDTH: u32 = 170;
-const PAPER_HEIGHT: u32 = 110;
 const TEXT_WIDTH_MM: f32 = 68.0;
 
 fn sample_editor() -> EditorState {
@@ -48,78 +39,4 @@ pub(super) fn sample_fragment(options: ContentsOptions) -> Option<render::Vector
     }
     layout::LayoutEngine::default()
         .layout_header_footer_preview(&stream, TEXT_WIDTH_MM, &editor.document).ok()
-}
-
-fn thumbnail(fragment: &render::VectorFragment) -> Option<BitmapBundle> {
-    let mut page = VectorPage::new(fragment.size);
-    page.commands = fragment.commands.clone();
-    let zoom = ((PAPER_WIDTH - 16) as f32 / page.size.width)
-        .min((PAPER_HEIGHT - 16) as f32 / page.size.height.max(1.0));
-    let left = (PAPER_WIDTH as f32 - page.size.width * zoom) * 0.5;
-    let matrix = Affine2D::scale(zoom, zoom).then(Affine2D::translation(left, 8.0));
-    let mut renderer = output::raster::BandRenderer::default();
-    let mut bitmaps = Vec::new();
-    for scale in [1, 2] {
-        let pixels = scale as f32;
-        let width = PAPER_WIDTH * scale;
-        let height = PAPER_HEIGHT * scale;
-        let mut rgba = renderer.render(&page, width, height, matrix.then(Affine2D::scale(pixels, pixels)), &AtomicBool::new(false)).ok()?;
-        for pixel in rgba.chunks_exact_mut(4) { pixel.swap(0, 2); }
-        bitmaps.push(Bitmap::from_rgba(&rgba, width, height)?);
-    }
-    Some(BitmapBundle::from_bitmaps(&bitmaps))
-}
-
-pub(super) fn choose(ribbon: &Ribbon, options: &ContentsOptions, insert: bool) -> Option<ContentsTemplate> {
-    let dialog = DialogBuilder::new(&ribbon.ui.main_frame, &text("Contents gallery")).build();
-    let gap = dialog.from_dip_int(8);
-    let root = BoxSizer::builder(Orientation::Vertical).build();
-    let available = ribbon.ui.main_frame.get_size().width;
-    let columns = if available >= dialog.from_dip_int(1000) { 5 }
-        else if available >= dialog.from_dip_int(800) { 4 } else { 3 };
-    let grid = FlexGridSizer::builder(0, columns).with_gap(Size::new(gap, gap)).build();
-    let choice = Rc::new(Cell::new(None));
-    let mut initial = None;
-    for (template, name) in TEMPLATES {
-        let label = text(name);
-        let selected = Rc::clone(&choice);
-        let apply = move || {
-            selected.set(Some(template));
-            dialog.end_modal(ID_OK);
-        };
-        let mut sample = ContentsOptions { title: text("Contents"), ..Default::default() };
-        sample.apply_template(template);
-        let bitmap = sample_fragment(sample).as_ref()
-            .and_then(thumbnail).and_then(|bundle| bundle.get_bitmap_for(&dialog));
-        if let Some(bitmap) = bitmap {
-            let card = BoxSizer::builder(Orientation::Vertical).build();
-            let button = BitmapToggleButton::builder(&dialog).with_bitmap(Some(bitmap)).build();
-            button.set_accessibility_label(&label);
-            let current = template == options.template && !insert;
-            button.set_value(current);
-            if current { initial = Some(button); }
-            let activate = apply.clone();
-            button.on_toggle(move |_| activate());
-            let caption = StaticText::builder(&dialog).with_label(&label).build();
-            caption.on_mouse_left_up(move |_| apply());
-            card.add(&button, 0, SizerFlag::Expand, 0);
-            card.add(&caption, 0, SizerFlag::AlignCenterHorizontal | SizerFlag::Top, gap / 2);
-            grid.add_sizer(&card, 0, SizerFlag::Expand, 0);
-        } else {
-            let button = Button::builder(&dialog).with_label(&label).build();
-            button.on_click(move |_| apply());
-            grid.add(&button, 0, SizerFlag::Expand, 0);
-        }
-    }
-    root.add_sizer(&grid, 0, SizerFlag::Expand | SizerFlag::All, gap * 2);
-    let cancel = Button::builder(&dialog).with_id(ID_CANCEL).with_label(&text("Cancel")).build();
-    cancel.on_click(move |_| dialog.end_modal(ID_CANCEL));
-    root.add(&cancel, 0, SizerFlag::AlignCenterHorizontal | SizerFlag::Bottom, gap * 2);
-    dialog.set_escape_id(ID_CANCEL);
-    dialog.set_sizer_and_fit(root, true);
-    if let Some(button) = initial { button.set_focus(); }
-    crate::placement::centre(&dialog);
-    dialog.show_modal();
-    dialog.destroy();
-    choice.get()
 }
