@@ -37,6 +37,45 @@ fn frame(renderer: &mut WxCanvasRenderer, doc: &Arc<VectorDocument>, viewport: &
 }
 
 #[test]
+fn page_cache_follows_jumps_and_discards_off_window_rasters() {
+    let mut document = VectorDocument::default();
+    let mut image_keys = Vec::new();
+    for index in 0..50 {
+        let mut page = VectorPage::new(Size::new(150.0, 200.0));
+        let image = Arc::new(RasterImage::from_rgba(1, 1, &[index * 5, 0, 0, 255]).unwrap());
+        image_keys.push(image.key);
+        let rect = Rect::new(15.0, 15.0, 60.0, 80.0);
+        page.commands.push(DrawCommand::Image { rect, image });
+        document.pages.push(page);
+    }
+    let document = Arc::new(document);
+    let mut viewport = ViewportState { viewport_px: Size::new(240.0, 200.0), ..Default::default() };
+    let overlay = CanvasOverlay::default();
+    let mut renderer = WxCanvasRenderer::default();
+    for (index, expected_window) in [(0, 0..20), (24, 15..35), (49, 30..50), (0, 0..20)] {
+        let page = viewport.page_rect_px(&document, index).unwrap();
+        viewport.scroll_by(0.0, page.y - 5.0, &document);
+        let reused = frame(&mut renderer, &document, &viewport, &overlay);
+        assert_eq!(renderer.page_window, expected_window);
+        assert!(renderer.images.contains_key(&image_keys[index]));
+        assert!(renderer.images.keys().all(|key| image_keys[expected_window.clone()].contains(key)));
+        for (i, page) in renderer.pages.iter().enumerate() {
+            if !expected_window.contains(&i) {
+                assert!(page.tiles.is_empty() && page.stale.is_empty() && page.bounds.is_none());
+            }
+        }
+        let cold = frame(&mut WxCanvasRenderer::default(), &document, &viewport, &overlay);
+        assert_eq!(reused, cold);
+    }
+}
+
+#[test]
+fn page_cache_includes_every_page_visible_at_low_zoom() {
+    let pages: Vec<_> = (0..50).map(|i| Rect::new(0.0, 12.0 * i as f32, 8.0, 8.0)).collect();
+    assert_eq!(page_cache_window(&pages, Rect::new(0.0, 120.0, 100.0, 300.0)), 10..35);
+}
+
+#[test]
 fn incremental_typing_pixels_equal_full_repaint() {
     let mut renderer = WxCanvasRenderer::default();
     let mut viewport = ViewportState::default();

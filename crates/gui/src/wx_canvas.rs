@@ -13,7 +13,8 @@
 //! still, the screens above and below are prepared ahead of time.
 //!
 //! Only the part of the frame that changed is handed to wxWidgets.
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::ops::Range;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -35,6 +36,9 @@ const APRON: u32 = 2;
 const FRAME_BUDGET: Duration = Duration::from_millis(8);
 /// Rasterizing time per idle tick for tiles just outside the view.
 const PREFETCH_BUDGET: Duration = Duration::from_millis(4);
+/// Keep canvas data close to the viewport. Document geometry and text hit
+/// information remain available for page jumps and document-wide commands.
+const PAGE_CACHE_WINDOW: usize = 20;
 const WORKSPACE: Color = Color { r: 232.0 / 255.0, g: 236.0 / 255.0, b: 243.0 / 255.0, a: 1.0 };
 const PAGE_SHADOW: Color = Color { r: 192.0 / 255.0, g: 202.0 / 255.0, b: 215.0 / 255.0, a: 1.0 };
 
@@ -67,6 +71,7 @@ pub struct WxCanvasRenderer {
     document: Option<Arc<VectorDocument>>,
     scale: f32,
     pages: Vec<PageTiles>,
+    page_window: Range<usize>,
     glyphs: HashMap<usize, GlyphPath>,
     images: HashMap<u64, Pixmap>,
     /// Composited pages without overlay, and the inputs it was built from.
@@ -106,7 +111,7 @@ impl Default for WxCanvasRenderer {
 impl WxCanvasRenderer {
     fn with_tile_size(tile: u32) -> Self {
         Self {
-            tile, document: None, scale: 0.0, pages: Vec::new(), glyphs: HashMap::new(),
+            tile, document: None, scale: 0.0, pages: Vec::new(), page_window: 0..0, glyphs: HashMap::new(),
             images: HashMap::new(), base: None, frame: None, bitmap: None, present: Present::Full, spare: None,
             damaged: Vec::new(), overlay_bounds: None, frame_on_base: false,
             #[cfg(target_os = "linux")] cairo: None,
@@ -192,9 +197,10 @@ impl WxCanvasRenderer {
         let tile = self.tile;
         let (cx, cy) = (focus.x + focus.width * 0.5, focus.y + focus.height * 0.5);
         let mut wanted = Vec::new();
-        for (index, page) in rects.iter().enumerate() {
-            let (page_w, page_h) = page_pixels(*page);
-            let local = page_rect_local(*page, area);
+        for index in self.page_window.clone() {
+            let page = rects[index];
+            let (page_w, page_h) = page_pixels(page);
+            let local = page_rect_local(page, area);
             if local.is_empty() { continue; }
             let (tx0, ty0) = (local.x as u32 / tile, local.y as u32 / tile);
             let (tx1, ty1) = ((local.max_x().ceil() as u32).div_ceil(tile).min(page_w.div_ceil(tile)),
@@ -216,6 +222,7 @@ impl WxCanvasRenderer {
     fn fill_tiles(&mut self, document: &VectorDocument, rects: &[Rect], wanted: &[(usize, u32, u32)],
         deadline: Option<Instant>) -> (Vec<(usize, Rect)>, usize) {
         let mut pages: Vec<usize> = wanted.iter().map(|w| w.0).collect();
+        pages.sort_unstable();
         pages.dedup();
         for &index in &pages { self.prepare_page(index, &document.pages[index]); }
         let batch = self.pool.as_ref().map_or(1, |p| p.current_num_threads()).max(1);
@@ -311,12 +318,13 @@ impl WxCanvasRenderer {
         let scale = viewport.points_to_pixels();
         if scale != self.scale {
             self.scale = scale;
-            for page in &mut self.pages { page.tiles.clear(); page.stale.clear(); }
+            for page in &mut self.pages[self.page_window.clone()] { page.tiles.clear(); page.stale.clear(); }
             self.base = None;
         }
-        self.sync_document(document);
+        let document_changed = self.sync_document(document);
         let rects = viewport.page_rects_px(document);
         let view = Rect::new(0.0, 0.0, width as f32, height as f32);
+        self.retain_page_window(document, &rects, view, document_changed);
 
         // Pages without overlay. Rebuilt when the view moves or tiles change.
         let key = Arc::as_ptr(document) as usize;
@@ -420,12 +428,16 @@ impl WxCanvasRenderer {
         self.incomplete = remaining > 0;
         base.fill(sk_color(WORKSPACE));
         let tile = self.tile;
-        for (index, page) in rects.iter().enumerate() {
+        let shadow_start = self.page_window.start.saturating_sub(1);
+        let shadow_end = (self.page_window.end + 1).min(rects.len());
+        for index in shadow_start..shadow_end {
+            let page = rects[index];
             let shadow = Rect::new(page.x - 4.0, page.y - 2.0, page.width + 8.0, page.height + 10.0);
             if !rects_intersect(shadow, view) { continue; }
             fill_rect(base, shadow.intersection(view), PAGE_SHADOW);
-            let (page_w, page_h) = page_pixels(*page);
-            let visible = page_rect_local(*page, view);
+            if !self.page_window.contains(&index) { continue; }
+            let (page_w, page_h) = page_pixels(page);
+            let visible = page_rect_local(page, view);
             if visible.is_empty() { continue; }
             fill_rect(base, Rect::new(page.x + visible.x, page.y + visible.y, visible.width, visible.height), Color::WHITE);
             let (tx0, ty0) = (visible.x as u32 / tile, visible.y as u32 / tile);
@@ -442,35 +454,62 @@ impl WxCanvasRenderer {
         fresh
     }
 
-    /// Keeps visible tiles plus a bounded number of recently used ones.
+    fn retain_page_window(&mut self, document: &VectorDocument, rects: &[Rect], view: Rect, document_changed: bool) {
+        let next = page_cache_window(rects, view);
+        if !document_changed && next == self.page_window { return; }
+
+        for index in self.page_window.clone().filter(|index| !next.contains(index)) {
+            self.pages[index] = PageTiles::default();
+        }
+        self.page_window = next;
+
+        if !self.images.is_empty() {
+            let used_images: HashSet<_> = document.pages[self.page_window.clone()].iter()
+                .flat_map(|page| page.commands.iter().chain(page.review_cards.iter().flat_map(|card| &card.commands)))
+                .filter_map(|command| match command.unclipped().0 {
+                    DrawCommand::Image { image, .. } => Some(image.key),
+                    _ => None,
+                })
+                .collect();
+            self.images.retain(|key, _| used_images.contains(key));
+        }
+    }
+
+    /// Within the window, keep a screen-sized budget for recently used tiles.
     fn evict(&mut self, rects: &[Rect], view: Rect) {
         let tile = self.tile as f32;
-        let visible: usize = rects.iter().map(|page| page_rect_local(*page, view)).filter(|r| !r.is_empty())
+        let visible: usize = rects[self.page_window.clone()].iter().map(|page| page_rect_local(*page, view)).filter(|r| !r.is_empty())
             .map(|r| ((r.width / tile).ceil() as usize + 1) * ((r.height / tile).ceil() as usize + 1)).sum();
         let budget = visible * 3 + 32;
-        let total: usize = self.pages.iter().map(|p| p.tiles.len() + p.stale.len()).sum();
+        let pages = &mut self.pages[self.page_window.clone()];
+        let total: usize = pages.iter().map(|p| p.tiles.len() + p.stale.len()).sum();
         if total > budget {
-            let mut ages: Vec<u64> = self.pages.iter().flat_map(|p| p.tiles.values().chain(p.stale.values()).map(|t| t.used)).collect();
+            let mut ages: Vec<u64> = pages.iter().flat_map(|p| p.tiles.values().chain(p.stale.values()).map(|t| t.used)).collect();
             ages.sort_unstable_by(|a, b| b.cmp(a));
             let cutoff = ages[budget - 1];
-            for page in &mut self.pages { page.tiles.retain(|_, t| t.used >= cutoff); page.stale.retain(|_, t| t.used >= cutoff); }
+            for page in pages { page.tiles.retain(|_, t| t.used >= cutoff); page.stale.retain(|_, t| t.used >= cutoff); }
         }
         if self.glyphs.len() > 20_000 { self.glyphs.clear(); }
     }
 
     /// Invalidates only the tiles that a new document revision changes.
-    fn sync_document(&mut self, document: &Arc<VectorDocument>) {
+    fn sync_document(&mut self, document: &Arc<VectorDocument>) -> bool {
         let Some(old) = self.document.replace(Arc::clone(document)) else {
             self.pages.clear();
             self.pages.resize_with(document.pages.len(), PageTiles::default);
-            return;
+            return true;
         };
-        if Arc::ptr_eq(&old, document) { return; }
+        if Arc::ptr_eq(&old, document) { return false; }
         self.pages.truncate(document.pages.len());
         self.pages.resize_with(document.pages.len(), PageTiles::default);
-        for index in 0..document.pages.len() {
-            if self.pages[index].tiles.is_empty() { self.pages[index].bounds = None; continue; }
-            let Some(before) = old.pages.get(index) else { self.pages[index] = PageTiles::default(); continue; };
+        self.page_window.start = self.page_window.start.min(document.pages.len());
+        self.page_window.end = self.page_window.end.min(document.pages.len());
+        for index in self.page_window.clone() {
+            if self.pages[index].tiles.is_empty() && self.pages[index].stale.is_empty() {
+                self.pages[index].bounds = None;
+                continue;
+            }
+            let before = &old.pages[index];
             match self.page_damage(index, before, &document.pages[index]) {
                 Some(None) => {}
                 Some(Some(damage)) => {
@@ -501,6 +540,7 @@ impl WxCanvasRenderer {
                 }
             }
         }
+        true
     }
 
     /// `Some(None)`: unchanged. `Some(Some(rect))`: only `rect` (page points)
@@ -696,6 +736,21 @@ fn shifted(rect: Option<Rect>, shift: Option<(i32, i32)>) -> Option<Rect> {
 /// Pixel size of a page raster.
 fn page_pixels(page: Rect) -> (u32, u32) {
     (page.width.ceil().max(1.0) as u32, page.height.ceil().max(1.0) as u32)
+}
+
+/// Centre the retained pages on the visible range, borrowing unused slots
+/// from the other side when the view is near a document boundary.
+fn page_cache_window(pages: &[Rect], view: Rect) -> Range<usize> {
+    if pages.len() <= PAGE_CACHE_WINDOW { return 0..pages.len(); }
+    let first = pages.partition_point(|page| page.y + page.height.ceil().max(1.0) <= view.y)
+        .min(pages.len() - 1);
+    let end = pages.partition_point(|page| page.y < view.max_y()).max(first + 1);
+    // At very low zoom every visible page still has to be paintable.
+    let visible = end - first;
+    let count = PAGE_CACHE_WINDOW.max(visible);
+    let before = (count - visible) / 2;
+    let start = first.saturating_sub(before).min(pages.len() - count);
+    start..start + count
 }
 
 /// The part of `view` covered by `page`, in page pixels.
