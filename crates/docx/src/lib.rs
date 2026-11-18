@@ -35,6 +35,11 @@ fn contents_tag(review: &model::ReviewState) -> String {
         model::ContentsTemplate::Classic => "classic",
         model::ContentsTemplate::Compact => "compact",
         model::ContentsTemplate::Modern => "modern",
+        model::ContentsTemplate::ReadingOutline => "reading_outline",
+        model::ContentsTemplate::Formal => "formal",
+        model::ContentsTemplate::Technical => "technical",
+        model::ContentsTemplate::Atlas => "atlas",
+        model::ContentsTemplate::Book => "book",
     };
     let leader = match options.leader {
         model::TabLeader::None => "none", model::TabLeader::Dots => "dots",
@@ -55,6 +60,11 @@ fn parse_contents_tag(tag: &str) -> Option<(model::ContentsOptions, bool)> {
         "classic" => model::ContentsTemplate::Classic,
         "compact" => model::ContentsTemplate::Compact,
         "modern" => model::ContentsTemplate::Modern,
+        "reading_outline" => model::ContentsTemplate::ReadingOutline,
+        "formal" => model::ContentsTemplate::Formal,
+        "technical" => model::ContentsTemplate::Technical,
+        "atlas" => model::ContentsTemplate::Atlas,
+        "book" => model::ContentsTemplate::Book,
         _ => return None,
     };
     let max_heading_level = fields.next()?.parse::<u8>().ok()?;

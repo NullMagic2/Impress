@@ -38,7 +38,7 @@ pub struct TextRevision {
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ContentsTemplate { #[default] Classic, Compact, Modern }
+pub enum ContentsTemplate { #[default] Classic, Compact, Modern, Book, Atlas, Technical, Formal, ReadingOutline }
 
 #[derive(Clone,Debug,PartialEq,Serialize,Deserialize)]
 #[serde(default)]
@@ -58,10 +58,11 @@ impl Default for ContentsOptions {
 impl ContentsOptions {
     pub fn apply_template(&mut self, template: ContentsTemplate) {
         self.template = template;
-        self.show_page_numbers = true;
+        self.show_page_numbers = template != ContentsTemplate::ReadingOutline;
         self.leader = match template {
-            ContentsTemplate::Classic | ContentsTemplate::Compact => crate::TabLeader::Dots,
-            ContentsTemplate::Modern => crate::TabLeader::None,
+            ContentsTemplate::Classic | ContentsTemplate::Compact | ContentsTemplate::Formal => crate::TabLeader::Dots,
+            ContentsTemplate::Technical => crate::TabLeader::Dashes,
+            _ => crate::TabLeader::None,
         };
     }
 }

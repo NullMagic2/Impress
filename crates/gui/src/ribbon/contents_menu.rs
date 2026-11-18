@@ -10,17 +10,25 @@ use wxdragon::{
     widgets::{CheckBox, Choice, StaticText, TextCtrl, spinctrl::SpinCtrl},
 };
 
+#[path = "contents_gallery.rs"]
+mod gallery;
+
 const INSERT_OR_UPDATE: i32 = 32_680;
 const CUSTOM: i32 = 32_681;
 const AUTOMATIC: i32 = 32_682;
 const REMOVE: i32 = 32_683;
-const FIRST_TEMPLATE: i32 = 32_684;
+const GALLERY: i32 = 32_684;
 const FIRST_LEVEL: i32 = 32_688;
 
-const TEMPLATES: [(ContentsTemplate, &str); 3] = [
+const TEMPLATES: [(ContentsTemplate, &str); 8] = [
     (ContentsTemplate::Classic, "Classic contents"),
     (ContentsTemplate::Compact, "Compact contents"),
     (ContentsTemplate::Modern, "Modern contents"),
+    (ContentsTemplate::Book, "Book contents"),
+    (ContentsTemplate::Atlas, "Atlas contents"),
+    (ContentsTemplate::Technical, "Technical contents"),
+    (ContentsTemplate::Formal, "Formal contents"),
+    (ContentsTemplate::ReadingOutline, "Reading outline"),
 ];
 const LEADERS: [(TabLeader, &str); 4] = [
     (TabLeader::None, "None"),
@@ -46,23 +54,15 @@ fn popup(ribbon: &Ribbon, button: Button, tooltip: &str, mut menu: Menu) {
 }
 
 pub(super) fn show(ribbon: &Ribbon) {
-    let (options, insert, automatic) = state(ribbon);
-    let mut builder = Menu::builder();
-    for (index, (_, title)) in TEMPLATES.iter().enumerate() {
-        let id = FIRST_TEMPLATE + index as i32;
-        builder = builder.append_radio_item(id, &text(title), "");
-    }
-    let menu = builder.append_separator()
-        .append_item(INSERT_OR_UPDATE, &text(if insert { "Insert table of contents" } else { "Update table of contents" }), "")
+    let (_, insert, automatic) = state(ribbon);
+    let menu = Menu::builder()
+        .append_item(GALLERY, &text("Contents gallery…"), "")
         .append_item(CUSTOM, &text("Custom table of contents…"), "")
         .append_separator()
+        .append_item(INSERT_OR_UPDATE, &text(if insert { "Insert table of contents" } else { "Update table of contents" }), "")
         .append_check_item(AUTOMATIC, &text("Update automatically"), "")
         .append_item(REMOVE, &text("Remove table of contents"), "")
         .build();
-    if !insert {
-        let index = TEMPLATES.iter().position(|option| option.0 == options.template).unwrap_or(0);
-        menu.check_item(FIRST_TEMPLATE + index as i32, true);
-    }
     menu.check_item(AUTOMATIC, insert || automatic);
     menu.enable_item(AUTOMATIC, !insert);
     menu.enable_item(REMOVE, !insert);
@@ -135,10 +135,12 @@ pub(super) fn handle(ribbon: &Ribbon, id: i32) -> bool {
             editor.set_automatic_contents(!editor.document.review.automatic_contents)
         }),
         REMOVE => ribbon.edit_without_focus(EditorState::remove_contents),
-        id if (FIRST_TEMPLATE..FIRST_TEMPLATE + TEMPLATES.len() as i32).contains(&id) => {
-            let (mut options, _, _) = state(ribbon);
-            options.apply_template(TEMPLATES[(id - FIRST_TEMPLATE) as usize].0);
-            apply_options(ribbon, options)
+        GALLERY => {
+            let (mut options, insert, _) = state(ribbon);
+            if let Some(template) = gallery::choose(ribbon, &options, insert) {
+                options.apply_template(template);
+                apply_options(ribbon, options)
+            } else { Ok(()) }
         }
         id if (FIRST_LEVEL..=FIRST_LEVEL + 9).contains(&id) => {
             ribbon.edit_formatting(|editor| editor.set_contents_level((id - FIRST_LEVEL) as u8))
@@ -206,8 +208,8 @@ fn settings(
         let mut options = ContentsOptions::default();
         options.apply_template(TEMPLATES[template.get_selection().unwrap_or(0) as usize].0);
         leader.set_selection(LEADERS.iter().position(|item| item.0 == options.leader).unwrap_or(0) as u32);
-        page_numbers.set_value(true);
-        leader.enable(true);
+        page_numbers.set_value(options.show_page_numbers);
+        leader.enable(options.show_page_numbers);
     });
     root.add_sizer(&form, 0, SizerFlag::All | SizerFlag::Expand, margin);
     dialog_actions::divider(&window, &root, margin);

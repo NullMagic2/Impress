@@ -1589,6 +1589,12 @@
     "Em:",
     "Em:"
   ],
+  "Atlas contents": [
+    "Περιεχόμενα άτλαντα",
+    "Índice de atlas",
+    "Sumário de atlas",
+    "Índice de atlas"
+  ],
   "Attach bookmark to current selection": [
     "Επισυνάψτε σελιδοδείκτη στην τρέχουσα επιλογή",
     "Adjuntar marcador a la selección actual",
@@ -1876,6 +1882,12 @@
     "Negrita cursiva",
     "Negrito Itálico",
     "Negrito Itálico"
+  ],
+  "Book contents": [
+    "Περιεχόμενα βιβλίου",
+    "Índice de libro",
+    "Sumário de livro",
+    "Índice de livro"
   ],
   "Bookmark": [
     "Σελιδοδείκτης",
@@ -3478,6 +3490,18 @@
     "Se exportan las entradas del índice y los campos de referencia de página. Para reconstruir el índice a partir de los títulos, actualícelo en Impress.",
     "As entradas do sumário e os campos de referência de página são exportados. Para reconstruir o sumário a partir dos títulos, atualize-o no Impress.",
     "As entradas do índice e os campos de referência de página são exportados. Para reconstruir o índice a partir dos títulos, atualize-o no Impress."
+  ],
+  "Contents gallery": [
+    "Συλλογή πινάκων περιεχομένων",
+    "Galería de índices",
+    "Galeria de sumários",
+    "Galeria de índices"
+  ],
+  "Contents gallery…": [
+    "Συλλογή πινάκων περιεχομένων…",
+    "Galería de índices…",
+    "Galeria de sumários…",
+    "Galeria de índices…"
   ],
   "Contents template:": [
     "Πρότυπο περιεχομένων:",
@@ -5627,6 +5651,12 @@
     "Campo",
     "Campo"
   ],
+  "Field notes": [
+    "Σημειώσεις πεδίου",
+    "Notas de campo",
+    "Notas de campo",
+    "Notas de campo"
+  ],
   "Field uses cached text rather than a live Impress calculation: {}": [
     "Το πεδίο χρησιμοποιεί το κείμενο που έχει αποκολληθεί και όχι έναν ζωντανό υπολογισμό Impress: {}",
     "Campo utiliza texto en caché en lugar de un cálculo en vivo Impress: {}",
@@ -6172,6 +6202,12 @@
     "Los bloques extranjeros no son emitidos por el adaptador DOCX. Guarde una copia nativa.",
     "Os blocos estrangeiros não são emitidos pelo adaptador DOCX. Mantenha uma cópia nativa.",
     "Os blocos estrangeiros não são emitidos pelo adaptador DOCX. Mantenha uma cópia nativa."
+  ],
+  "Formal contents": [
+    "Επίσημα περιεχόμενα",
+    "Índice formal",
+    "Sumário formal",
+    "Índice formal"
   ],
   "Format": [
     "Μορφή",
@@ -11435,6 +11471,12 @@
     "Lendo e validando o documento...",
     "Leitura e validação do documento..."
   ],
+  "Reading outline": [
+    "Διάγραμμα ανάγνωσης",
+    "Esquema de lectura",
+    "Roteiro de leitura",
+    "Guião de leitura"
+  ],
   "Ready": [
     "Έτοιμο",
     "Listo",
@@ -12256,6 +12298,12 @@
     "Flecha derecha",
     "Seta para a direita",
     "Seta para a direita"
+  ],
+  "Rivers and valleys": [
+    "Ποτάμια και κοιλάδες",
+    "Ríos y valles",
+    "Rios e vales",
+    "Rios e vales"
   ],
   "Romanian": [
     "Ρουμανικά",
@@ -14153,6 +14201,12 @@
     "Gota",
     "Gota"
   ],
+  "Technical contents": [
+    "Τεχνικά περιεχόμενα",
+    "Índice técnico",
+    "Sumário técnico",
+    "Índice técnico"
+  ],
   "Template": [
     "Πρότυπο",
     "Plantilla",
@@ -14728,6 +14782,12 @@
     "La palabra destacada está siendo comprobada.",
     "A palavra destacada está sendo verificada.",
     "A palavra destacada está a ser verificada."
+  ],
+  "The landscape": [
+    "Το τοπίο",
+    "El paisaje",
+    "A paisagem",
+    "A paisagem"
   ],
   "The native DOC Data stream is too large": [
     "Η ροή Data εγγενούς DOC είναι υπερβολικά μεγάλη",

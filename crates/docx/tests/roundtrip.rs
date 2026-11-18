@@ -116,3 +116,39 @@ fn contents_templates_and_direct_outline_levels_survive_docx() {
     assert_eq!(paragraphs[3].properties.outline_level, Some(2));
     assert_eq!(reopened.review.contents_paragraphs, vec![paragraphs[1].id.clone(), paragraphs[2].id.clone()]);
 }
+
+#[test]
+fn gallery_designs_survive_docx_with_their_distinctive_formatting() {
+    use ContentsTemplate::*;
+    let mut doc = Document::default();
+    let mut chapter = Paragraph::plain("Chapter one");
+    let first = chapter.id.clone();
+    chapter.properties.outline_level = Some(1);
+    let mut section = Paragraph::plain("Field notes");
+    section.properties.outline_level = Some(2);
+    doc.sections[0].blocks = vec![Block::Paragraph(chapter), Block::Paragraph(section)].into();
+    let mut editor = EditorState::new(doc);
+    editor.set_caret(first, 0);
+    for design in [Classic, Compact, Modern, Book, Atlas, Technical, Formal, ReadingOutline] {
+        let mut options = ContentsOptions::default();
+        options.apply_template(design);
+        editor.update_contents_options(options.clone()).unwrap();
+        let reopened = cycle(&editor.document);
+        assert_eq!(reopened.review.contents_options, options);
+        let body = document_paragraphs(&reopened);
+        let title = body[0];
+        let entry = body[1];
+        let Inline::Hyperlink(link) = &entry.content[0] else { panic!("Missing chapter link") };
+        let Inline::Text(run) = &link.content[0] else { panic!("Missing chapter title") };
+        assert_eq!(run.text, "Chapter one");
+        assert_eq!(entry.properties.contents_leader, options.show_page_numbers.then_some(options.leader));
+        match design {
+            Book => assert_eq!(title.properties.alignment, Some(ParagraphAlignment::Center)),
+            Atlas => assert_eq!(entry.properties.shading.as_deref(), Some("#D9EEE9")),
+            Technical => assert_eq!(run.properties.font_family.as_deref(), Some("Liberation Mono")),
+            Formal => assert_eq!(title.properties.borders.as_ref().unwrap().bottom.as_ref().unwrap().style, BorderStyle::Double),
+            ReadingOutline => assert_eq!(link.content.len(), 1),
+            _ => {}
+        }
+    }
+}

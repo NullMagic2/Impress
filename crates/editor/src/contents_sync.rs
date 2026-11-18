@@ -40,7 +40,82 @@ fn generated_bookmark(name: &str) -> bool {
 }
 
 fn indentation(level: u8, template: ContentsTemplate) -> f32 {
-    f32::from(level - 1) * if template == ContentsTemplate::Compact { 3.0 } else { 4.0 }
+    let step = match template {
+        ContentsTemplate::Compact | ContentsTemplate::Technical => 3.0,
+        ContentsTemplate::Book | ContentsTemplate::ReadingOutline => 6.0,
+        _ => 4.0,
+    };
+    f32::from(level - 1) * step
+}
+
+fn contents_title(options: &ContentsOptions) -> Paragraph {
+    use ContentsTemplate::*;
+    let mut title = Paragraph::plain(&options.title);
+    let Some(Inline::Text(run)) = title.content.first_mut() else { return title; };
+    let (size, color, after) = match options.template {
+        Classic => (16.0, None, 8.0),
+        Compact => (12.0, None, 3.0),
+        Modern => (20.0, Some("#27536B"), 8.0),
+        Book => (24.0, None, 14.0),
+        Atlas => (22.0, Some("#145D58"), 10.0),
+        Technical => (16.0, Some("#283B4F"), 7.0),
+        Formal => (18.0, None, 12.0),
+        ReadingOutline => (19.0, Some("#663D32"), 10.0),
+    };
+    let font = &mut run.properties;
+    font.bold = Some(options.template != Book);
+    font.font_size_pt = Some(size);
+    font.color = color.map(str::to_owned);
+    title.properties.space_after_pt = Some(after);
+    if matches!(options.template, Book | Formal) {
+        title.properties.alignment = Some(model::ParagraphAlignment::Center);
+        font.font_family = Some("Liberation Serif".into());
+    }
+    if options.template == Book { font.italic = Some(true); }
+    if options.template == Technical { font.font_family = Some("Liberation Mono".into()); }
+    if options.template == Formal {
+        title.properties.borders = Some(model::BorderSet {
+            bottom: Some(model::Border { width_pt: 1.5, color: "#454545".into(), style: model::BorderStyle::Double }),
+            ..Default::default()
+        });
+    }
+    title
+}
+
+fn format_entry(template: ContentsTemplate, level: u8, paragraph: &mut model::ParagraphProperties, font: &mut model::CharacterProperties) {
+    use ContentsTemplate::*;
+    let major = level == 1;
+    paragraph.space_after_pt = Some(match template {
+        Compact | Technical => 0.0,
+        Modern | Book => 5.0,
+        _ => 3.0,
+    });
+    match template {
+        Book => {
+            font.font_family = Some("Liberation Serif".into());
+            font.font_size_pt = Some(if major { 14.0 } else { 11.0 });
+            font.italic = Some(!major);
+        }
+        Atlas if major => {
+            paragraph.shading = Some("#D9EEE9".into());
+            paragraph.space_before_pt = Some(5.0);
+            font.bold = Some(true);
+            font.color = Some("#104842".into());
+        }
+        Technical => {
+            font.font_family = Some("Liberation Mono".into());
+            font.font_size_pt = Some(10.0);
+            font.bold = Some(major);
+        }
+        Formal if major => { font.bold = Some(true); }
+        ReadingOutline if major => {
+            paragraph.space_before_pt = Some(6.0);
+            font.font_size_pt = Some(13.0);
+            font.color = Some("#663D32".into());
+        }
+        Modern if major => { font.bold = Some(true); }
+        _ => {}
+    }
 }
 
 fn current(editor: &EditorState, wanted: &[Heading]) -> bool {
@@ -185,20 +260,9 @@ impl EditorState {
         review.contents_options = options.clone();
         if insert { review.automatic_contents = true; }
 
-        let (title_size, title_color, spacing) = match options.template {
-            ContentsTemplate::Classic => (16.0, None, 3.0),
-            ContentsTemplate::Compact => (12.0, None, 0.0),
-            ContentsTemplate::Modern => (20.0, Some("#27536B".to_owned()), 5.0),
-        };
-        let mut title = Paragraph::plain(&options.title);
+        let mut title = contents_title(&options);
         if let Some(id) = old_title { title.id = id; }
         title.properties.keep_with_next = Some(!wanted.is_empty());
-        title.properties.space_after_pt = Some(if options.template == ContentsTemplate::Compact { 3.0 } else { 8.0 });
-        if let Some(Inline::Text(run)) = title.content.first_mut() {
-            run.properties.bold = Some(true);
-            run.properties.font_size_pt = Some(title_size);
-            run.properties.color = title_color;
-        }
         let mut contents = Vec::with_capacity(wanted.len() + 1);
         review.contents_paragraphs.push(title.id.clone());
         contents.push(Block::Paragraph(title));
@@ -216,12 +280,9 @@ impl EditorState {
             let mut paragraph = Paragraph::plain("");
             if let Some(id) = existing.remove(&heading.node) { paragraph.id = id; }
             paragraph.properties.left_indent_mm = Some(indentation(heading.level, options.template));
-            paragraph.properties.space_after_pt = Some(spacing);
             paragraph.properties.outline_level = Some(0);
             let mut run = TextRun::plain(&heading.text);
-            if options.template == ContentsTemplate::Modern && heading.level == 1 {
-                run.properties.bold = Some(true);
-            }
+            format_entry(options.template, heading.level, &mut paragraph.properties, &mut run.properties);
             let mut link_content = vec![Inline::Text(run)];
             if options.show_page_numbers {
                 paragraph.properties.contents_leader = Some(options.leader);
