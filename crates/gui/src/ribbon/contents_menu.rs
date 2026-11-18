@@ -37,12 +37,17 @@ pub(super) fn show(ribbon: &Ribbon) {
     menu.enable_item(AUTOMATIC, exists);
     let button = ribbon.ui.toc_button;
     let anchor = crate::gtk_native::to_screen(&button, Point::new(0, button.get_size().height));
+    // GTK can show a delayed button tooltip over the first menu item.
+    button.set_tooltip("");
     ribbon.ui.main_frame.popup_menu(&mut menu, Some(anchor));
+    button.set_tooltip(&text("Table of contents"));
 }
 
 pub(super) fn handle(ribbon: &Ribbon, id: i32) -> bool {
     let result = match id {
-        INSERT_OR_UPDATE => ribbon.edit(|editor| editor.update_contents(&Default::default())),
+        INSERT_OR_UPDATE => {
+            ribbon.edit_without_focus(|editor| editor.update_contents(&Default::default()))
+        }
         CUSTOM => {
             let (options, insert) = {
                 let state = ribbon.state.borrow();
@@ -53,11 +58,13 @@ pub(super) fn handle(ribbon: &Ribbon, id: i32) -> bool {
                 )
             };
             match settings(ribbon, options, insert) {
-                Some(options) => ribbon.edit(|editor| editor.update_contents_options(options)),
+                Some(options) => {
+                    ribbon.edit_without_focus(|editor| editor.update_contents_options(options))
+                }
                 None => Ok(()),
             }
         }
-        AUTOMATIC => ribbon.edit(|editor| {
+        AUTOMATIC => ribbon.edit_without_focus(|editor| {
             editor.set_automatic_contents(!editor.document.review.automatic_contents)
         }),
         _ => return false,
