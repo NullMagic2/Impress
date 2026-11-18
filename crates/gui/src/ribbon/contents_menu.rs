@@ -170,16 +170,16 @@ fn settings(
     let template = ComboBox::builder(&window)
         .with_style(wxdragon::widgets::combobox::ComboBoxStyle::ReadOnly)
         .with_choices(template_names(&entries)).build();
-    template.set_name(&text("Contents template:"));
+    template.set_name(&text("Template:"));
     template.set_selection(initial as u32);
     let entries = Rc::new(RefCell::new(entries));
     let design = Rc::new(Cell::new(options.template));
     let toolbar = BoxSizer::builder(Orientation::Horizontal).build();
-    let label = StaticText::builder(&window).with_label(&text("Contents template:")).build();
+    let label = StaticText::builder(&window).with_label(&text("Template:")).build();
     toolbar.add(&label, 0, SizerFlag::AlignCenterVertical | SizerFlag::Right, gap);
     toolbar.add(&template, 1, SizerFlag::AlignCenterVertical | SizerFlag::Right, gap);
-    let save = Button::builder(&window).with_label(&text("Save as template…")).build();
-    let delete = Button::builder(&window).with_label(&text("Delete template")).build();
+    let save = Button::builder(&window).with_label(&text("Save")).build();
+    let delete = Button::builder(&window).with_label(&text("Delete")).build();
     delete.enable(initial >= TEMPLATES.len());
     toolbar.add(&save, 0, SizerFlag::Right, gap);
     toolbar.add(&delete, 0, SizerFlag::empty(), 0);
