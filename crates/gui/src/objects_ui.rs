@@ -501,6 +501,7 @@ pub fn double_click(state:&mut CanvasState,p:Point) {
             state.selected_object = None;
             state.dragging_selection = false;
             state.cell_drag_anchor = None;
+            state.drag_pointer = None;
             state.preferred_caret_x_pt = None;
             state.caret_visual_line = Some(hit.visual_line);
             state.caret_page_hint = Some(hit.page_index);

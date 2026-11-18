@@ -8,7 +8,7 @@ use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, PixmapPaint, Transform};
 use wxdragon::{
     dc::AutoBufferedPaintDC, event::window_events::WindowEvents,
     font::{Font, FontFamily, FontStyle, FontWeight},
-    widgets::panel::Panel, window::BackgroundStyle, DeviceContext,
+    timer::Timer, widgets::panel::Panel, window::BackgroundStyle, DeviceContext,
 };
 
 const PREVIEW_BG: (u8, u8, u8) = (238, 242, 247);
@@ -52,11 +52,21 @@ pub(super) struct PagePreview {
     pages: RefCell<Vec<usize>>,
     index: Cell<usize>,
     cache: RefCell<Option<((usize, i32, i32), Pixmap)>>,
+    loader: RefCell<Option<PreviewLoader>>,
+}
+
+struct PreviewLoader {
+    source: Arc<Document>,
+    scheduler: layout::LayoutScheduler,
+    timer: Timer<Panel>,
+    generation: u64,
+    requested: Option<usize>,
+    rendered: Option<Arc<VectorDocument>>,
 }
 
 impl PagePreview {
     pub(super) fn install(panel: Panel, document: Arc<VectorDocument>) -> Rc<Self> {
-        let preview = Rc::new(Self { panel, document: RefCell::new(document), pages: RefCell::new(Vec::new()), index: Cell::new(0), cache: RefCell::new(None) });
+        let preview = Rc::new(Self { panel, document: RefCell::new(document), pages: RefCell::new(Vec::new()), index: Cell::new(0), cache: RefCell::new(None), loader: RefCell::new(None) });
         panel.set_background_style(BackgroundStyle::Paint);
         panel.on_erase_background(|_| {});
         let p = Rc::downgrade(&preview);
@@ -75,6 +85,54 @@ impl PagePreview {
             p.panel.refresh(false, None);
         });
         preview
+    }
+
+    fn install_for_output(panel: Panel, scene: Arc<VectorDocument>, source: Arc<Document>) -> Result<Rc<Self>, String> {
+        let sparse = scene.pages.iter().any(|page| !page.has_paint);
+        let preview = Self::install(panel, scene);
+        if sparse {
+            let scheduler = layout::LayoutScheduler::new(layout::LayoutOptions {
+                worker_threads: 2, ..Default::default()
+            }).map_err(|error| error.to_string())?;
+            let timer = Timer::new(&panel);
+            let weak = Rc::downgrade(&preview);
+            timer.on_tick(move |_| {
+                let Some(preview) = weak.upgrade() else { return; };
+                let mut state = preview.loader.borrow_mut();
+                let Some(loader) = state.as_mut() else { return; };
+                if let Some(result) = loader.scheduler.try_recv() {
+                    loader.timer.stop();
+                    if let Ok(layout) = result.layout {
+                        loader.rendered = Some(layout.document);
+                        preview.cache.borrow_mut().take();
+                        drop(state);
+                        preview.panel.refresh(false, None);
+                    }
+                }
+            });
+            *preview.loader.borrow_mut() = Some(PreviewLoader {
+                source, scheduler, timer, generation: 0, requested: None, rendered: None,
+            });
+        }
+        Ok(preview)
+    }
+
+    fn painted_page(&self, current: usize, initial: &Arc<VectorDocument>) -> Option<Arc<VectorDocument>> {
+        if initial.pages.get(current)?.has_paint { return Some(Arc::clone(initial)); }
+        let mut state = self.loader.borrow_mut();
+        let loader = state.as_mut()?;
+        if let Some(rendered) = &loader.rendered {
+            if rendered.pages.get(current).is_some_and(|page| page.has_paint) {
+                return Some(Arc::clone(rendered));
+            }
+        }
+        if loader.requested != Some(current) {
+            loader.requested = Some(current);
+            loader.generation = loader.generation.wrapping_add(1);
+            loader.scheduler.submit_preview(loader.generation, Arc::clone(&loader.source), current..current + 1);
+            loader.timer.start(30, false);
+        }
+        None
     }
 
     /// Shows another laid-out document, from its first page.
@@ -110,14 +168,16 @@ impl PagePreview {
         let pages = self.pages.borrow();
         let current = pages.get(self.index.get()).copied();
         let document = Arc::clone(&self.document.borrow());
-        if let Some(page) = current.and_then(|i| document.pages.get(i)) {
+        if let Some(index) = current.filter(|&index| index < document.pages.len()) {
+            let painted = self.painted_page(index, &document);
+            let page = &painted.as_ref().unwrap_or(&document).pages[index];
             let (aw, ah) = ((pw - 2 * ppad) as f32, (ph - 2 * ppad - pnav) as f32);
             let s = (aw / page.size.width).min(ah / page.size.height).max(0.01);
             let (tw, th) = ((page.size.width * s).round().max(1.0) as i32, (page.size.height * s).round().max(1.0) as i32);
             let (x, y) = ((pw - tw) / 2, ppad + (ph - 2 * ppad - pnav - th) / 2);
             let key = (current.unwrap_or(0), tw, th);
             let mut cache = self.cache.borrow_mut();
-            if cache.as_ref().is_none_or(|(k, _)| *k != key) {
+            if painted.is_some() && cache.as_ref().is_none_or(|(k, _)| *k != key) {
                 let matrix = render::Affine2D { sx: s, sy: s, ..render::Affine2D::IDENTITY };
                 let thumb = output::raster::BandRenderer::default().render(page, tw as u32, th as u32, matrix, &AtomicBool::new(false)).ok()
                     .and_then(|mut data| { for p in data.chunks_exact_mut(4) { p.swap(0, 2); } Pixmap::from_vec(data, tiny_skia::IntSize::from_wh(tw as u32, th as u32)?) });
@@ -129,7 +189,7 @@ impl PagePreview {
                 fill_rect(&mut pixmap, (x as f32 - grow, y as f32 - grow + 2.0 * k, tw as f32 + 2.0 * grow, th as f32 + 2.0 * grow), (40, 60, 90), alpha);
             }
             fill_rect(&mut pixmap, (x as f32, y as f32, tw as f32, th as f32), (255, 255, 255), 255);
-            if let Some((_, thumb)) = cache.as_ref() {
+            if let Some((_, thumb)) = cache.as_ref().filter(|(cached, _)| *cached == key) {
                 pixmap.draw_pixmap(x, y, thumb.as_ref(), &PixmapPaint::default(), Transform::identity(), None);
             }
         }
@@ -183,7 +243,7 @@ fn current_page(state: &CanvasState) -> usize {
 // Export PDF -----------------------------------------------------------------------------------
 
 pub(super) fn export_pdf(ribbon: &Ribbon) -> Result<(), String> {
-    let (scene, revision, current, title, author, subject, default_path) = {
+    let (scene, source, revision, current, title, author, subject, default_path) = {
         let mut s = ribbon.state.borrow_mut();
         let (scene, doc) = crate::output_ui::snapshot(&mut s)?;
         let stem = s.current_path.as_ref().and_then(|p| p.file_stem()).map(|x| x.to_string_lossy().to_string());
@@ -191,13 +251,13 @@ pub(super) fn export_pdf(ribbon: &Ribbon) -> Result<(), String> {
         let dir = s.current_path.as_ref().and_then(|p| p.parent().map(Path::to_path_buf))
             .or_else(|| std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")).map(PathBuf::from)).unwrap_or_default();
         let path = dir.join(format!("{}.pdf", stem.unwrap_or_else(|| "Document".into())));
-        (scene, s.editor.revision, current_page(&s), title, doc.metadata.author.clone().unwrap_or_default(),
+        (scene, Arc::clone(&doc), s.editor.revision, current_page(&s), title, doc.metadata.author.clone().unwrap_or_default(),
          doc.metadata.subject.clone().unwrap_or_default(), path)
     };
     let total = scene.pages.len();
     let ui = Rc::new(crate::i18n::localized(PdfExportDialogUi::new(Some(&ribbon.ui.main_frame), false)));
     let chrome = Chrome::new(ui.pdf_export_dialog, ui.pdf_export_card, &[], &[], (ui.pdf_export_ok, "Export"), Some(ui.pdf_export_cancel), &[], &[(ui.pdf_export_browse, "Browse…")]);
-    let preview = PagePreview::install(ui.pdf_export_preview, Arc::clone(&scene));
+    let preview = PagePreview::install_for_output(ui.pdf_export_preview, scene, source)?;
     ui.pdf_export_path.set_value(&default_path.to_string_lossy());
     ui.pdf_export_title.set_value(&title);
     ui.pdf_export_author.set_value(&author);
@@ -251,15 +311,15 @@ pub(super) fn export_pdf(ribbon: &Ribbon) -> Result<(), String> {
 // Print ----------------------------------------------------------------------------------------
 
 pub(super) fn print(ribbon: &Ribbon) -> Result<(), String> {
-    let (scene, revision, current) = {
+    let (scene, source, revision, current) = {
         let mut s = ribbon.state.borrow_mut();
-        let (scene, _) = crate::output_ui::snapshot(&mut s)?;
-        (scene, s.editor.revision, current_page(&s))
+        let (scene, source) = crate::output_ui::snapshot(&mut s)?;
+        (scene, source, s.editor.revision, current_page(&s))
     };
     let total = scene.pages.len();
     let ui = Rc::new(crate::i18n::localized(PrintDialogUi::new(Some(&ribbon.ui.main_frame), false)));
     let chrome = Chrome::new(ui.print_dialog, ui.print_card, &[], &[], (ui.print_ok, "Print…"), Some(ui.print_cancel), &[], &[]);
-    let preview = PagePreview::install(ui.print_preview, Arc::clone(&scene));
+    let preview = PagePreview::install_for_output(ui.print_preview, scene, source)?;
     ui.print_all.set_value(true);
     ui.print_fit.set_value(true);
     ui.print_collate.set_value(true);

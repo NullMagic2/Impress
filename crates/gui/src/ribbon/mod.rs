@@ -1504,12 +1504,16 @@ impl Ribbon {
             let key = EditKey { revision: state.editor.revision, selection: state.editor.selection.clone(),
                 typing: state.editor.typing_properties.clone(), cells };
             let pages = state.vector_document.pages.len().max(1);
-            let page = state.overlay.caret.as_ref().map(|caret| caret.page_index + 1).unwrap_or(1);
+            let visible = state.viewport.visible_pages(&state.vector_document);
+            let page = state.overlay.caret.as_ref().map(|caret| caret.page_index)
+                .or(state.caret_page_hint).filter(|index| visible.contains(index))
+                .or_else(|| visible.first().copied()).unwrap_or(0) + 1;
             let section = state.editor.section_properties_at_caret();
             let editing_header_footer = state.editor.header_footer_context().map(|context| context.title());
             let status = if let Some(error) = &state.layout_error { format!("Layout: {error}") }
                 else if let Some(error) = &state.recovery.error { error.clone() }
-                else if state.layout_inflight.is_some() && state.display_generation.is_none() && state.current_path.is_some() { crate::i18n::text("Laying out document…") }
+                else if state.layout_inflight.is_some() && (state.display_generation.is_none() && state.current_path.is_some()
+                    || visible.iter().any(|&index| !state.vector_document.pages[index].has_paint)) { crate::i18n::text("Laying out document…") }
                 else if let Some(message) = &state.action_status { message.clone() }
                 else {
                     (if self.mode.get() == ViewMode::Typst { "Read-only source" } else if state.editor.document.review.track_text { "Tracking paragraph text" } else { "Ready" }).to_string()

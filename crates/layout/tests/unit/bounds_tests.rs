@@ -310,7 +310,7 @@ fn unplaceable_picture_keeps_surrounding_paragraphs_in_the_editing_view() {
     let original = doc.clone();
     let engine = LayoutEngine::default();
     assert!(engine.layout_document(&doc).is_err());
-    let pages = engine.layout_document_pass(&doc, None, &mut Default::default(), true).unwrap().pages;
+    let pages = engine.layout_document_pass(&doc, None, &mut Default::default(), true, PagePaint::default()).unwrap().pages;
     let hits: Vec<_> = pages.iter().flat_map(|p| &p.hit_regions).collect();
     for id in [before, picture, after] {
         assert!(hits.iter().any(|h| h.node_id == id.0), "missing source {:?}", id);

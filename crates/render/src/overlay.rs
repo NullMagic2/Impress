@@ -4,7 +4,7 @@
 //! selection description into page-space rectangles that any renderer can draw.
 
 use crate::{CanvasOverlay, OverlayRect, Rect, VectorDocument};
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Range};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SourcePosition {
@@ -50,6 +50,18 @@ pub fn overlay_for_selection_with_caret_line(
         return caret_overlay(document, &selection.focus, caret_width_pt, caret_visual_line);
     }
 
+    if selection.anchor.node_id == selection.focus.node_id {
+        let start = selection.anchor.byte_offset.min(selection.focus.byte_offset);
+        let end = selection.anchor.byte_offset.max(selection.focus.byte_offset);
+        return CanvasOverlay {
+            selections: document.pages.iter().enumerate().flat_map(|(page, content)| {
+                content.hit_regions.iter().filter(|r| r.node_id == selection.anchor.node_id)
+                    .filter_map(move |r| text_range_rect(page, r, start..end))
+            }).collect(),
+            ..Default::default()
+        };
+    }
+
     let order = node_orders(document);
     let Some(&anchor_order) = order.get(selection.anchor.node_id.as_str()) else {
         return CanvasOverlay::default();
@@ -84,22 +96,23 @@ pub fn overlay_for_selection_with_caret_line(
             } else {
                 region.byte_range.end
             };
-            if region_start >= region_end { continue; }
-
-            let x0 = x_for_offset(region, region_start);
-            let x1 = x_for_offset(region, region_end);
-            overlay.selections.push(OverlayRect {
-                page_index,
-                rect: Rect::new(
-                    x0.min(x1),
-                    region.rect.y,
-                    (x1 - x0).abs().max(0.5),
-                    region.rect.height,
-                ),
-            });
+            overlay.selections.extend(text_range_rect(page_index, region, region_start..region_end));
         }
     }
     overlay
+}
+
+/// Clip a byte range to one shaped run and return its highlight in page points.
+pub fn text_range_rect(page_index: usize, region: &crate::TextHitRegion, range: Range<usize>) -> Option<OverlayRect> {
+    let start = range.start.max(region.byte_range.start);
+    let end = range.end.min(region.byte_range.end);
+    if start >= end { return None; }
+    let x0 = x_for_offset(region, start);
+    let x1 = x_for_offset(region, end);
+    Some(OverlayRect {
+        page_index,
+        rect: Rect::new(x0.min(x1), region.rect.y, (x1 - x0).abs().max(0.5), region.rect.height),
+    })
 }
 
 fn node_orders(document: &VectorDocument) -> HashMap<&str, (usize, usize)> {

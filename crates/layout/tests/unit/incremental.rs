@@ -6,7 +6,7 @@ fn paragraph(height:f32,tag:u8,keep:bool)->PreparedBlock {
 }
 fn fixture(blocks:&[PreparedBlock],keys:Vec<Vec<u8>>,g:&SectionGeometry)->Entry {
     let (pages,cursor,boundaries)=resume(blocks,&keys,g,None,true,None,None,&mut LayoutWork::default()).unwrap();
-    Entry{environment:Environment{key:vec![],resources:vec![]},keys,pages,cursor,boundaries:Some(boundaries),prepared:None,bytes:0,last_used:0}
+    Entry{paint: PagePaint::default(),environment:Environment{key:vec![],resources:vec![]},keys,pages,cursor,boundaries:Some(boundaries),prepared:None,bytes:0,last_used:0}
 }
 fn verify(blocks:&[PreparedBlock],keys:&[Vec<u8>],old:&Entry,g:&SectionGeometry)->LayoutWork {
     let mut work=LayoutWork::default();let (pages,cursor,_)=resume(blocks,keys,g,None,true,Some(old),None,&mut work).unwrap();
@@ -39,6 +39,45 @@ fn verify(blocks:&[PreparedBlock],keys:&[Vec<u8>],old:&Entry,g:&SectionGeometry)
         }
         verify(&blocks,&keys,&old,&g);
         let(pages,cursor,bounds)=resume(&blocks,&keys,&g,None,true,Some(&old),None,&mut LayoutWork::default()).unwrap();
-        old=Entry{environment:old.environment,keys:keys.clone(),pages,cursor,boundaries:Some(bounds),prepared:None,bytes:0,last_used:0};
+        old=Entry{paint: PagePaint::default(),environment:old.environment,keys:keys.clone(),pages,cursor,boundaries:Some(bounds),prepared:None,bytes:0,last_used:0};
+    }
+}
+
+#[test]
+fn two_hundred_pages_keep_exact_geometry_with_only_the_requested_drawings() {
+    let mut document = Document::default();
+    let mut section = Section::default();
+    for page in 0..200 {
+        if page > 0 {
+            section.blocks.push(Block::PageBreak { id: NodeId::new() });
+        }
+        section.blocks.push(Block::Paragraph(Paragraph::plain(&format!("Page {}", page + 1))));
+    }
+    document.sections[0] = section;
+    let engine = LayoutEngine::default();
+    let exact = engine.layout_document(&document).unwrap();
+    assert_eq!(exact.pages.len(), 200);
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(2).build().unwrap();
+    let mut cache = LayoutCache::default();
+    for window in [0..20, 91..111, 180..200, 0..20] {
+        let display = pool.install(|| engine.layout_document_in_pool_impl(
+            &document, None, &mut cache, PagePaint::window(window.clone()),
+        )).unwrap();
+        assert_eq!(display.pages.len(), 200);
+        assert_eq!(display.pages.iter().filter(|page| page.has_paint).count(), 20);
+        assert_eq!(display.text_order, exact.text_order);
+        for (i, (page, reference)) in display.pages.iter().zip(&exact.pages).enumerate() {
+            assert_eq!(page.has_paint, window.contains(&i));
+            if page.has_paint {
+                assert_eq!(page, reference);
+            } else {
+                assert!(page.commands.is_empty());
+                assert_eq!(page.size, reference.size);
+                assert_eq!(page.margin_rect, reference.margin_rect);
+                assert_eq!(page.page_number_label, reference.page_number_label);
+                assert_eq!(page.hit_regions, reference.hit_regions);
+                assert_eq!(page.object_regions, reference.object_regions);
+            }
+        }
     }
 }

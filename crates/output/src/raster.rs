@@ -31,7 +31,7 @@ impl BandRenderer{
    }
    let mask=clip.and_then(|_|mask_cache.as_ref().map(|(_,m)|m));
 if cancel.load(Ordering::Relaxed){return Err("Printing cancelled".into());}match command{
-   DrawCommand::Clipped{..}=>unreachable!("unclipped command"),
+   DrawCommand::Clipped{..} | DrawCommand::EncodedImage{..} => unreachable!("resolved scene command"),
    DrawCommand::FillRect{rect,paint:p}=>{if let Some(r)=tiny_skia::Rect::from_xywh(rect.x,rect.y,rect.width,rect.height){dest.fill_rect(r,&paint(p)?,transform(matrix),mask);}},
    DrawCommand::Path(obj)=>{if let Some(p)=path(&obj.path){let t=transform(obj.transform.then(matrix));if let Some(fill)=&obj.fill{dest.fill_path(&p,&paint(fill)?,tiny_skia::FillRule::Winding,t,mask);}if let Some((color,style))=&obj.stroke{dest.stroke_path(&p,&paint(color)?,&tiny_skia::Stroke{width:style.width_pt,..Default::default()},t,mask);}}},
    DrawCommand::TextRun(run)=>{let p=paint(&run.fill)?;for g in &run.glyphs{if let Some(path)=path(&g.outline){dest.fill_path(&path,&p,tiny_skia::FillRule::Winding,transform(g.transform.then(matrix)),mask);}}},

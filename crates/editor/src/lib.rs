@@ -233,13 +233,17 @@ impl EditorState {
     pub fn select_word_at(&mut self, node_id: NodeId, byte_offset: usize) -> bool {
         let Some(text) = self.paragraph_text(&node_id) else { return false; };
         let offset = self.clamp_offset(&node_id, byte_offset);
-        let words: Vec<_> = text.unicode_word_indices().map(|(start, word)| start..start+word.len()).collect();
-        let range = words.iter().find(|range| range.contains(&offset)).cloned()
-            .or_else(|| words.iter().find(|range| range.end == offset).cloned())
-            .or_else(|| text.split_word_bound_indices().find_map(|(start, span)| {
-                let end = start + span.len();
-                (start <= offset && (offset < end || offset == text.len())).then_some(start..end)
-            }));
+        let mut range = None;
+        for (start, word) in text.unicode_word_indices() {
+            if start > offset { break; }
+            let end = start + word.len();
+            if end >= offset { range = Some(start..end); }
+            if end > offset { break; }
+        }
+        let range = range.or_else(|| text.split_word_bound_indices().find_map(|(start, span)| {
+            let end = start + span.len();
+            (start <= offset && (offset < end || offset == text.len())).then_some(start..end)
+        }));
         let Some(range) = range else { return false; };
         self.set_caret(node_id.clone(), range.start);
         self.extend_selection(node_id, range.end);

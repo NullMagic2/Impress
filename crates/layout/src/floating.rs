@@ -214,10 +214,12 @@ pub(super) fn paginate<T:AsRef<PreparedBlock>>(section:&Section,document:&Docume
     if !stable{return Err(error("Drawing anchors and text wrapping did not settle in twelve passes; adjust anchor position or drawing size"));}
     for f in floats{
         let page=pages.get_mut(f.page).ok_or_else(||error("Floating drawing page is missing"))?;
-        let commands=f.commands.into_iter().map(|c|c.translated(f.rect.x,f.rect.y));
-        if f.wrap==Wrap::Behind{
-            let at=usize::from(background&&!page.commands.is_empty());page.commands.splice(at..at,commands);
-        }else{page.commands.extend(commands);}
+        if page.has_paint {
+            let commands=f.commands.into_iter().map(|c|c.translated(f.rect.x,f.rect.y));
+            if f.wrap==Wrap::Behind{
+                let at=usize::from(background&&!page.commands.is_empty());page.commands.splice(at..at,commands);
+            }else{page.commands.extend(commands);}
+        }
         page.hit_regions.extend(f.hit_regions.into_iter().map(|r|r.translated(f.rect.x,f.rect.y)));
         if matches!(f.place,Place::Table(_)){
             page.object_regions.extend(f.object_regions.into_iter().map(|r|r.translated(f.rect.x,f.rect.y)));
@@ -230,7 +232,7 @@ pub(super) fn paginate<T:AsRef<PreparedBlock>>(section:&Section,document:&Docume
 }
 #[allow(clippy::too_many_arguments)]
 fn flow_pass<T:AsRef<PreparedBlock>>(flow:&[&Block],prepared:&[T],document:&Document,g:&SectionGeometry,initial:Option<(usize,f32)>,background:bool,fields:&FieldContext,floats:&[Floating],cancel:Option<(&AtomicU64,u64)>)->Result<(Vec<VectorPage>,FlowCursor,Starts),LayoutError>{
-    let mut pages=vec![new_page(g.page_width,g.page_height,background)];let (column,y)=initial.unwrap_or((0,g.content_top));
+    let mut pages=vec![g.page(0, background)];let (column,y)=initial.unwrap_or((0,g.content_top));
     let mut cursor=FlowCursor{page_index:0,column_index:column,y};let mut starts=Starts::new();let mut ctx=WorkerContext{fonts:FontCatalog::for_resources(&document.resources),typst:TypstTypesetter::new()};
     if flow.len()!=prepared.len(){return Err(error("Floating flow/preparation order mismatch"));}
     for (block,p) in flow.iter().zip(prepared){
@@ -251,7 +253,9 @@ fn flow_pass<T:AsRef<PreparedBlock>>(flow:&[&Block],prepared:&[T],document:&Docu
             (_,PreparedBlock::Image(i))=>{
                 clear_fixed(floats,i.height,&mut pages,&mut cursor,g,background)?;
                 let x=g.content_left+match i.alignment{ImageAlignment::Left=>0.0,ImageAlignment::Center=>(g.column_width-i.width)*0.5,ImageAlignment::Right=>g.column_width-i.width};
-                let page=&mut pages[cursor.page_index];page.commands.extend(i.commands.iter().map(|c|c.translated(x,cursor.y)));page.object_regions.push(ObjectHitRegion{node_id:i.id.clone(),rect:Rect::new(x,cursor.y,i.width,i.height),kind:ObjectKind::Picture{source:None}});cursor.y+=i.height+4.0;
+                let page=&mut pages[cursor.page_index];
+                if page.has_paint { page.commands.extend(i.commands.iter().map(|c|c.translated(x,cursor.y))); }
+                page.object_regions.push(ObjectHitRegion{node_id:i.id.clone(),rect:Rect::new(x,cursor.y,i.width,i.height),kind:ObjectKind::Picture{source:None}});cursor.y+=i.height+4.0;
             }
             (_,PreparedBlock::Table(t))=>{
                 let height=t.rows.iter().map(|r|r.height).sum::<f32>();clear_fixed(floats,height.min(g.column_height()),&mut pages,&mut cursor,g,background)?;
@@ -262,7 +266,9 @@ fn flow_pass<T:AsRef<PreparedBlock>>(flow:&[&Block],prepared:&[T],document:&Docu
             }
             (_,PreparedBlock::Equation{id,fragment,before,after})=>{
                 cursor.y+=*before;clear_fixed(floats,fragment.size.height,&mut pages,&mut cursor,g,background)?;let x=g.content_left+((g.column_width-fragment.size.width)*0.5).max(0.0);
-                pages[cursor.page_index].commands.extend(fragment.commands.iter().map(|c|c.translated(x,cursor.y)));pages[cursor.page_index].object_regions.push(ObjectHitRegion{node_id:id.clone(),rect:Rect::new(x,cursor.y,fragment.size.width,fragment.size.height),kind:ObjectKind::Equation{source:None}});cursor.y+=fragment.size.height+*after;
+                let page = &mut pages[cursor.page_index];
+                if page.has_paint { page.commands.extend(fragment.commands.iter().map(|c|c.translated(x,cursor.y))); }
+                page.object_regions.push(ObjectHitRegion{node_id:id.clone(),rect:Rect::new(x,cursor.y,fragment.size.width,fragment.size.height),kind:ObjectKind::Equation{source:None}});cursor.y+=fragment.size.height+*after;
             }
             (_,PreparedBlock::Foreign{height})=>{clear_fixed(floats,*height,&mut pages,&mut cursor,g,background)?;cursor.y+=*height;}
             _=>return Err(error("Unexpected floating-flow block preparation")),
@@ -310,7 +316,7 @@ fn wrapped_paragraph(p:&Paragraph,document:&Document,ctx:&mut WorkerContext,g:&S
             }
             let format=document.styles.resolve_formatting(p.style.as_ref());
             let result=vectorize_mixed_line(&tokens,&p.id.0,visual,width,0.0,1.0,props.alignment.unwrap_or(ParagraphAlignment::Left),line_height,0.0,props.hanging_punctuation.unwrap_or(true),&format,&ctx.fonts)?;
-            if visual==0{if let Some(m)=marker{let mx=x-m.width-m.gap;pages[cursor.page_index].commands.extend(m.commands.iter().map(|c|c.translated(mx,cursor.y+result.ascent)));}}
+            if visual==0 && pages[cursor.page_index].has_paint {if let Some(m)=marker{let mx=x-m.width-m.gap;pages[cursor.page_index].commands.extend(m.commands.iter().map(|c|c.translated(mx,cursor.y+result.ascent)));}}
             emit(&result,x,width,g,pages,cursor);visual+=1;start=end;
         }
     }
@@ -320,7 +326,7 @@ fn emit(line:&PreparedLine,x:f32,width:f32,g:&SectionGeometry,pages:&mut[VectorP
     let y=cursor.y+line.ascent;
     let clip=Rect::new(x,g.content_top,width.max(0.0),g.height_at(cursor.page_index));
     let page=&mut pages[cursor.page_index];
-    page.commands.extend(line.commands.iter().map(|c|c.translated(x,y).clipped(clip)));
+    if page.has_paint { page.commands.extend(line.commands.iter().map(|c|c.translated(x,y).clipped(clip))); }
     page.hit_regions.extend(line.hit_regions.iter().filter_map(|r|r.translated(x,y).clipped(clip)));
     cursor.y+=line.height;
 }

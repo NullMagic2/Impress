@@ -207,6 +207,8 @@ WXD_EXPORTED int
 wxd_IdleEvent_GetMode();
 WXD_EXPORTED void
 wxd_UpdateUIEvent_SetMode(int mode);
+WXD_EXPORTED bool
+wxd_DispatchingLeftDoubleClick();
 
 // Mouse wheel event functions
 WXD_EXPORTED int

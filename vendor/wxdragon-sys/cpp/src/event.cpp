@@ -482,6 +482,16 @@ WxdEventHandler::RunClosures(const std::vector<RustClosureInfo>& snapshot, wxEve
     return event_consumed;
 }
 
+// wxDragon exposes the translated event as a LeftDown in Rust. Keep the native
+// double-click flag for handlers that need the actual desktop gesture.
+static thread_local const wxEvent* translated_double_click = nullptr;
+
+extern "C" WXD_EXPORTED bool
+wxd_DispatchingLeftDoubleClick()
+{
+    return translated_double_click != nullptr;
+}
+
 // New DispatchEvent method that handles multiple closures per event
 void
 WxdEventHandler::DispatchEvent(wxEvent& event)
@@ -492,7 +502,10 @@ WxdEventHandler::DispatchEvent(wxEvent& event)
         if (auto* mouse = dynamic_cast<wxMouseEvent*>(&event)) {
             wxMouseEvent press(*mouse);
             press.SetEventType(wxEVT_LEFT_DOWN);
+            const auto* previous = translated_double_click;
+            translated_double_click = &press;
             DispatchEvent(press);
+            translated_double_click = previous;
             event.Skip(press.GetSkipped());
         }
         return;

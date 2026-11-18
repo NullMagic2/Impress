@@ -1,4 +1,4 @@
-//! Output jobs from a snapshot of the displayed pages: PDF export on a worker
+//! Output jobs from a snapshot of the document: PDF export on a worker
 //! thread, and printing through the platform's print system (wxWidgets
 //! printing: GDI on Windows, GTK print on Linux, Cocoa on macOS). Completing an
 //! export never marks the editable document as saved.
@@ -30,6 +30,14 @@ pub fn snapshot(s:&mut CanvasState)->Result<(Arc<VectorDocument>,Arc<Document>),
  Ok((s.vector_document.clone(),document_snapshot(s)))
 }
 
+fn output_scene(scene: Arc<VectorDocument>, document: &Document, cancel: &AtomicBool) -> Result<Arc<VectorDocument>, String> {
+    if cancel.load(Ordering::Acquire) { return Err("Output cancelled".into()); }
+    if scene.pages.iter().all(|page| page.has_paint) { return Ok(scene); }
+    let full = layout::LayoutEngine::default().layout_document(document).map_err(|error| error.to_string())?;
+    if cancel.load(Ordering::Acquire) { return Err("Output cancelled".into()); }
+    Ok(Arc::new(full))
+}
+
 /// Everything the Export PDF dialog decided.
 pub struct PdfRequest{pub path:PathBuf,pub pages:Vec<usize>,pub info:output::pdf::PdfInfo,pub links:bool,pub open:bool}
 
@@ -45,9 +53,11 @@ pub fn start_pdf_export(state:&Rc<RefCell<CanvasState>>,revision:u64,request:Pdf
  let total=pages.len();
  let completed=Arc::new(AtomicUsize::new(0));let worker_progress=Arc::clone(&completed);
  std::thread::Builder::new().name("impress-pdf-output".into()).spawn(move||{
-  let links=if links{output::links::collect(&doc,&scene)}else{Vec::new()};
-  let result=format::atomic_write(&path,|file|{output::pdf::write_pdf_with_progress(&scene,&pages,&info,&links,&flag,file,|count|worker_progress.store(count,Ordering::Release))?;if flag.load(Ordering::Acquire){return Err("Export cancelled before the file was replaced".into());}Ok(())})
-   .map(|()|format!("Exported {} page{} to {}",pages.len(),if pages.len()==1{""}else{"s"},path.display()));
+  let result=output_scene(scene, &doc, &flag).and_then(|scene| {
+   let links=if links{output::links::collect(&doc,&scene)}else{Vec::new()};
+   format::atomic_write(&path,|file|{output::pdf::write_pdf_with_progress(&scene,&pages,&info,&links,&flag,file,|count|worker_progress.store(count,Ordering::Release))?;if flag.load(Ordering::Acquire){return Err("Export cancelled before the file was replaced".into());}Ok(())})
+    .map(|()|format!("Exported {} page{} to {}",pages.len(),if pages.len()==1{""}else{"s"},path.display()))
+  });
   let _=tx.send(result);
  }).map_err(|e|e.to_string())?;
  s.output_job=Some(Job{progress:ProgressState{cancel,completed,total:Some(total),printing:false},receiver,open_after});s.action_status=Some("Exporting PDF… You can keep editing.".into());Ok(())
@@ -58,7 +68,7 @@ pub fn start_pdf_export(state:&Rc<RefCell<CanvasState>>,revision:u64,request:Pdf
 /// thread; elsewhere the platform print system (GTK, Cocoa) renders the job
 /// with its own progress. Returns false when cancelled.
 pub fn print_pages(parent:&impl WxWidget,state:&Rc<RefCell<CanvasState>>,revision:u64,pages:Vec<usize>,copies:usize,collate:bool,fit:bool)->Result<bool,String>{
- let scene={let mut s=state.borrow_mut();if s.editor.revision!=revision{return Err("The document changed while the Print dialog was open. Print again.".into());}snapshot(&mut s)?.0};
+ let (scene, doc)={let mut s=state.borrow_mut();if s.editor.revision!=revision{return Err("The document changed while the Print dialog was open. Print again.".into());}snapshot(&mut s)?};
  if pages.is_empty()||pages.iter().any(|&p|p>=scene.pages.len()){return Err("Choose pages that exist in the document.".into());}
  let copies=copies.clamp(1,99);
  let sequence:Vec<usize>=if collate{(0..copies).flat_map(|_|pages.iter().copied()).collect()}else{pages.iter().flat_map(|&p|std::iter::repeat_n(p,copies)).collect()};
@@ -67,13 +77,13 @@ pub fn print_pages(parent:&impl WxWidget,state:&Rc<RefCell<CanvasState>>,revisio
   device.pages=sequence;
   let mut s=state.borrow_mut();if s.output_job.is_some(){return Err("Another output job started while the printer dialog was open".into());}
   let cancel=Arc::new(AtomicBool::new(false));let flag=cancel.clone();let(tx,receiver)=mpsc::channel();
-  std::thread::Builder::new().name("impress-print-spool".into()).spawn(move||{let result=device.spool(&scene,fit,&flag).map(|()|"Print job sent to the printer".into());let _=tx.send(result);}).map_err(|e|e.to_string())?;
+  std::thread::Builder::new().name("impress-print-spool".into()).spawn(move||{let result=output_scene(scene, &doc, &flag).and_then(|scene|device.spool(&scene,fit,&flag)).map(|()|"Print job sent to the printer".into());let _=tx.send(result);}).map_err(|e|e.to_string())?;
   s.output_job=Some(Job{progress:ProgressState{cancel,completed:Arc::new(AtomicUsize::new(0)),total:None,printing:true},receiver,open_after:None});s.action_status=Some("Printing… You can keep editing.".into());
   return Ok(true);
  }
  #[cfg(not(windows))]{
   let title=state.borrow().current_path.as_ref().and_then(|p|p.file_stem()).map(|s|s.to_string_lossy().to_string()).unwrap_or_else(||"Impress document".into());
-  let printout=PagesPrintout{document:scene,sequence,fit,renderer:output::raster::BandRenderer::default(),first:1};
+  let printout=PagesPrintout{document:scene, source:Some(doc), sequence,fit,renderer:output::raster::BandRenderer::default(),first:1};
   let mut printer=Printer::new(Some(&PrintDialogData::new()));
   Ok(printer.print(Some(parent),&title,printout,true))
  }
@@ -82,13 +92,22 @@ pub fn print_pages(parent:&impl WxWidget,state:&Rc<RefCell<CanvasState>>,revisio
 /// Draws each page as high-resolution raster bands from the final page
 /// geometry (not a screen capture), scaled to the printer's resolution.
 #[cfg_attr(windows,allow(dead_code))]
-struct PagesPrintout{document:Arc<VectorDocument>,sequence:Vec<usize>,fit:bool,renderer:output::raster::BandRenderer,
+struct PagesPrintout{document:Arc<VectorDocument>,source:Option<Arc<Document>>,sequence:Vec<usize>,fit:bool,renderer:output::raster::BandRenderer,
  /// Number of the first page as the print system counts: wxGTK counts from
  /// the dialog's minimum page, which starts at 0; other ports from 1.
  first:i32}
 impl Printout for PagesPrintout{
  fn get_page_info(&mut self)->(i32,i32,i32,i32){let n=self.sequence.len() as i32;(1,n,1,n)}
- fn on_begin_document(&mut self,_dc:&wxdragon::dc::GenericDC,start:i32,_end:i32)->bool{self.first=start.min(1).max(0);true}
+ fn on_begin_document(&mut self,_dc:&wxdragon::dc::GenericDC,start:i32,_end:i32)->bool{
+  self.first=start.min(1).max(0);
+  if let Some(source)=self.source.take() {
+   match output_scene(Arc::clone(&self.document), &source, &AtomicBool::new(false)) {
+    Ok(full) => self.document = full,
+    Err(_) => return false,
+   }
+  }
+  true
+ }
  fn has_page(&mut self,page:i32)->bool{page>=self.first&&((page-self.first) as usize)<self.sequence.len()}
  fn on_print_page(&mut self,dc:&wxdragon::dc::GenericDC,number:i32)->bool{
   let Some(page)=usize::try_from(number-self.first).ok().and_then(|n|self.sequence.get(n)).and_then(|&i|self.document.pages.get(i)) else{return false;};

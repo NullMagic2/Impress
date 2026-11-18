@@ -1,4 +1,4 @@
-use crate::{LayoutEngine, LayoutError, LayoutOptions};
+use crate::{LayoutEngine, LayoutError, LayoutOptions, PagePaint};
 use model::Document;
 use render::VectorDocument;
 use rayon::ThreadPoolBuilder;
@@ -7,10 +7,12 @@ use std::sync::{
     Arc, Condvar, Mutex,
 };
 use std::thread::{self, JoinHandle};
+use std::ops::Range;
 
 #[derive(Clone)]
 struct LayoutRequest {
     recover_display: bool,
+    paint: PagePaint,
     revision: u64,
     document: Arc<Document>,
 }
@@ -81,14 +83,15 @@ impl LayoutScheduler {
                 let hits_before = crate::cache_totals().0;
                 let result = pool.install(|| {
                     let result = engine.layout_document_cached(
-                        &request.document, revision, &worker_generation, &mut pagination,
+                        &request.document, revision, &worker_generation, &mut pagination, request.paint,
                     );
                     let (document, display_warning) = match result {
                         Ok(scene) => (scene, None),
                         Err(LayoutError::Cancelled) => return Err(LayoutError::Cancelled),
                         Err(error) if request.recover_display => {
-                            let scene = engine.layout_document_pass(&request.document,
-                                Some((&worker_generation, revision)), &mut pagination, true)?;
+                            let cancel = Some((&*worker_generation, revision));
+                            let scene = engine.layout_document_pass(&request.document, cancel, &mut pagination, true, request.paint)?;
+                            let scene = crate::materialize_scene(scene, cancel)?;
                             (scene, Some(format!("Simplified document view: {error}")))
                         }
                         Err(error) => return Err(error),
@@ -123,19 +126,23 @@ impl LayoutScheduler {
     }
 
     pub fn submit(&self, revision: u64, document: Arc<Document>) {
-        self.enqueue(revision, document, false);
+        self.enqueue(revision, document, false, PagePaint::default());
     }
 
     /// A file opened for editing may display a local fallback. Equation validation
     /// and callers asking for an exact layout continue to use submit().
-    pub fn submit_for_display(&self, revision: u64, document: Arc<Document>) {
-        self.enqueue(revision, document, true);
+    pub fn submit_for_display(&self, revision: u64, document: Arc<Document>, pages: Range<usize>) {
+        self.enqueue(revision, document, true, PagePaint::window(pages));
     }
 
-    fn enqueue(&self, revision: u64, document: Arc<Document>, recover_display: bool) {
+    pub fn submit_preview(&self, revision: u64, document: Arc<Document>, pages: Range<usize>) {
+        self.enqueue(revision, document, false, PagePaint::window(pages));
+    }
+
+    fn enqueue(&self, revision: u64, document: Arc<Document>, recover_display: bool, paint: PagePaint) {
         self.generation.store(revision, Ordering::Release);
         let (lock, cv) = &*self.mailbox;
-        *lock.lock().expect("layout mailbox poisoned") = Some(LayoutRequest { revision, document, recover_display });
+        *lock.lock().expect("layout mailbox poisoned") = Some(LayoutRequest { revision, document, recover_display, paint });
         cv.notify_one();
     }
 

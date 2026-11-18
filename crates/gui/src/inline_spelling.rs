@@ -169,40 +169,37 @@ pub fn adorn(state: &mut CanvasState) {
     {
         return;
     }
-    let mut marks = Vec::new();
+    // Resolve each affected text run once. Building an editor selection for each
+    // misspelling traverses the full document repeatedly on every mouse click.
+    use std::collections::HashMap;
+    let mut ranges = HashMap::<&str, Vec<std::ops::Range<usize>>>::new();
     for issue in &state.inline_spelling.issues {
-        let source = render::SourceSelection {
-            anchor: render::SourcePosition {
-                node_id: issue.node.0.clone(),
-                byte_offset: issue.start,
-            },
-            focus: render::SourcePosition {
-                node_id: issue.node.0.clone(),
-                byte_offset: issue.end,
-            },
-        };
-        let overlay = render::overlay_for_selection(&state.vector_document, Some(&source), 1.0);
-        for selection in overlay.selections {
-            let rect = selection.rect;
-            let segments = (rect.width / 1.5).ceil().clamp(1.0, 2048.0) as usize;
-            for i in 0..segments {
-                if marks.len() >= 60000 {
-                    break;
+        ranges.entry(issue.node.0.as_str()).or_default().push(issue.start..issue.end);
+    }
+    let mut marks = Vec::new();
+    for (page_index, page) in state.vector_document.pages.iter().enumerate() {
+        if !page.has_paint { continue; }
+        for region in &page.hit_regions {
+            let Some(ranges) = ranges.get(region.node_id.as_str()) else { continue; };
+            for range in ranges {
+                let Some(selection) = render::text_range_rect(page_index, region, range.clone()) else { continue; };
+                let rect = selection.rect;
+                let segments = (rect.width / 1.5).ceil().clamp(1.0, 2048.0) as usize;
+                for i in 0..segments {
+                    if marks.len() == 60_000 {
+                        state.overlay.review_marks = marks;
+                        return;
+                    }
+                    let x = rect.x + i as f32 * 1.5;
+                    let y = rect.y + rect.height + if i % 2 == 0 { 0.3 } else { 1.1 };
+                    marks.push(render::ColoredOverlayRect {
+                        area: render::OverlayRect {
+                            page_index,
+                            rect: render::Rect::new(x, y, (rect.max_x() - x).clamp(0.1, 1.5), 0.6),
+                        },
+                        color: render::Color::rgb8(190, 42, 42),
+                    });
                 }
-                let x = rect.x + i as f32 * 1.5;
-                let y = rect.y + rect.height + if i % 2 == 0 { 0.3 } else { 1.1 };
-                marks.push(render::ColoredOverlayRect {
-                    area: render::OverlayRect {
-                        page_index: selection.page_index,
-                        rect: render::Rect::new(
-                            x,
-                            y,
-                            (rect.x + rect.width - x).clamp(0.1, 1.5),
-                            0.6,
-                        ),
-                    },
-                    color: render::Color::rgb8(190, 42, 42),
-                });
             }
         }
     }

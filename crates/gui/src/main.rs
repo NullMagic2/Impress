@@ -51,8 +51,8 @@ use format_native::NativeImpressFormat;
 use format_typst::TypstFormat;
 use layout::{LayoutOptions, LayoutScheduler};
 use render::{
-    overlay_for_selection_with_caret_line, visual_vertical_target, CanvasOverlay, Point, SourcePosition, SourceSelection,
-    VectorDocument, ViewportState, VisualMoveDirection,
+    overlay_for_selection_with_caret_line, visual_vertical_target, CanvasOverlay, Point, Rect,
+    SourcePosition, SourceSelection, VectorDocument, ViewportState, VisualMoveDirection,
 };
 use std::{
     cell::{Cell, RefCell},
@@ -256,7 +256,7 @@ fn main() {
                 return;
             }
         };
-        scheduler.submit(editor.revision, Arc::new(editor.document.clone()));
+        scheduler.submit_for_display(editor.revision, Arc::new(editor.document.clone()), 0..render::PAGE_WINDOW_SIZE);
 
         let client = ui.paper_canvas.get_client_size();
         let mut viewport = ViewportState::default();
@@ -408,13 +408,12 @@ fn main() {
                 }
                 if state.typing_layout_pending {
                     state.typing_layout_pending = false;
-                    let snapshot = document_snapshot(&mut state);
-                    let generation = state.layout_generation;
-                    state.scheduler.submit_for_display(generation, snapshot);
-                    state.layout_inflight = Some(generation);
+                    let pages = display_page_window(&state.viewport, &state.vector_document);
+                    queue_display_layout(&mut state, pages);
                 }
             }
 
+            keep_display_pages_ready(&mut state);
             let caret_is_collapsed = state.editor.selection.as_ref().is_some_and(Selection::is_collapsed);
             // A blink alone repaints just the caret's rectangle: a whole-canvas
             // repaint fills, copies and redraws every pixel of the view, which
@@ -591,9 +590,9 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
                     // Clicking elsewhere in the document edits it; the equation editor stays open.
                     equation_ui::show_document(&mut state);
                     state.shift_click = state.input.shift_down() || gtk_native::press_with_shift();
-                    // Windows reports double-clicks through the native input
-                    // bridge; elsewhere two quick clicks in one spot are one.
-                    if !state.input.installed() && !state.shift_click && is_double_click(position) {
+                    // Windows handles double-clicks through its native input
+                    // bridge. Other ports use wx's original desktop gesture.
+                    if !state.input.installed() && !state.shift_click && unsafe { wxd_DispatchingLeftDoubleClick() } {
                         objects_ui::double_click(&mut state, view_point);
                         drop(state);
                         down_canvas.set_focus(); down_canvas.refresh(false, None);
@@ -1067,9 +1066,8 @@ fn submit_layout(state: &mut CanvasState) {
     // out again after the next pause.
     equation_ui::interrupt_preview(state);
     state.layout_generation = state.layout_generation.wrapping_add(1);
-    let snapshot=document_snapshot(state);
-    state.scheduler.submit_for_display(state.layout_generation,snapshot);
-    state.layout_inflight = Some(state.layout_generation);
+    let pages = display_page_window(&state.viewport, &state.vector_document);
+    queue_display_layout(state, pages);
     state.typing_layout_pending = false;
     state.needs_present = true;
 }
@@ -1083,10 +1081,43 @@ fn submit_typing_layout(state: &mut CanvasState) {
     if state.layout_inflight.is_some() {
         state.typing_layout_pending = true;
     } else {
-        let snapshot = document_snapshot(state);
-        state.scheduler.submit_for_display(state.layout_generation, snapshot);
-        state.layout_inflight = Some(state.layout_generation);
+        let pages = display_page_window(&state.viewport, &state.vector_document);
+        queue_display_layout(state, pages);
     }
+}
+
+fn display_page_window(viewport: &ViewportState, document: &VectorDocument) -> std::ops::Range<usize> {
+    let rects = viewport.page_rects_px(document);
+    let view = Rect::new(0.0, 0.0, viewport.viewport_px.width, viewport.viewport_px.height);
+    let pages = render::page_cache_window(&rects, view);
+    // A new document has no page count yet. Allow all 20 at either the
+    // beginning or the end of a formerly short document that is growing.
+    pages.start..pages.end.max(pages.start + render::PAGE_WINDOW_SIZE)
+}
+
+fn queue_display_layout(state: &mut CanvasState, pages: std::ops::Range<usize>) {
+    let snapshot = document_snapshot(state);
+    state.scheduler.submit_for_display(state.layout_generation, snapshot, pages);
+    state.layout_inflight = Some(state.layout_generation);
+}
+
+fn keep_display_pages_ready(state: &mut CanvasState) {
+    if state.layout_inflight.is_some() || state.display_generation != Some(state.layout_generation)
+        || equation_ui::previewing(state) || state.vector_document.pages.is_empty() {
+        return;
+    }
+    let rects = state.viewport.page_rects_px(&state.vector_document);
+    let view = Rect::new(0.0, 0.0, state.viewport.viewport_px.width, state.viewport.viewport_px.height);
+    let visible = render::pages_in_view(&rects, view);
+    // Request ahead of a scrolling edge, so nearby pages normally arrive
+    // while the old window still covers everything the user can see.
+    let buffered = visible.start.saturating_sub(2)..(visible.end + 2).min(rects.len());
+    if state.vector_document.pages[buffered].iter().all(|page| page.has_paint) { return; }
+    let wanted = render::page_cache_window(&rects, view);
+    // At minimum zoom the screen can itself contain more than 20 short pages.
+    // In that case there may be no spare slots to prefetch.
+    if state.vector_document.pages[wanted.clone()].iter().all(|page| page.has_paint) { return; }
+    queue_display_layout(state, wanted);
 }
 
 /// The caret's area in window pixels, with a margin, for repainting it alone.
@@ -1106,6 +1137,7 @@ fn caret_window_rect(state: &CanvasState) -> Option<wxdragon::geometry::Rect> {
 unsafe extern "C" {
     /// From the vendored wxdragon-sys (see vendor/wxdragon-sys/IMPRESS_CHANGES.md).
     fn wxd_UpdateUIEvent_SetMode(mode: i32);
+    fn wxd_DispatchingLeftDoubleClick() -> bool;
 }
 
 fn refresh_overlay(state: &mut CanvasState) {
@@ -1444,24 +1476,8 @@ fn drain_native_input(state: &mut CanvasState) {
         refresh_overlay(state); wake_caret(state);
     }
 }
-/// Longest gap between two clicks of a double-click, and how far apart they
-/// may be (logical pixels).
-const DOUBLE_CLICK_TIME: Duration = Duration::from_millis(450);
-const DOUBLE_CLICK_SLOP: i32 = 4;
-
 thread_local! {
-    static LAST_CLICK: Cell<Option<(Instant, i32, i32)>> = const { Cell::new(None) };
     static NOTE_TOOLTIP: RefCell<Option<String>> = const { RefCell::new(None) };
-}
-
-/// Whether a click at `position` completes a double-click.
-fn is_double_click(position: wxdragon::geometry::Point) -> bool {
-    let now = Instant::now();
-    let previous = LAST_CLICK.with(|last| last.replace(Some((now, position.x, position.y))));
-    let double = previous.is_some_and(|(at, x, y)| now.duration_since(at) <= DOUBLE_CLICK_TIME
-        && (x - position.x).abs() <= DOUBLE_CLICK_SLOP && (y - position.y).abs() <= DOUBLE_CLICK_SLOP);
-    if double { LAST_CLICK.with(|last| last.set(None)); }
-    double
 }
 
 /// Size the viewport in physical pixels for a canvas of `width` x `height`

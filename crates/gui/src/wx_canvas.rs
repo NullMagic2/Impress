@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 use rayon::prelude::*;
 
 use render::{Affine2D, CanvasOverlay, Color, DrawCommand, Paint as ScenePaint,
-    PathVerb, RasterImage, Rect, VectorDocument, VectorPage, VectorPath, ViewportState};
+    page_cache_window, PathVerb, RasterImage, Rect, VectorDocument, VectorPage, VectorPath, ViewportState};
 use tiny_skia::{FillRule, FilterQuality, IntSize, Mask, Paint, Path, PathBuilder,
     Pixmap, PixmapPaint, Rect as SkRect, Stroke, Transform};
 use wxdragon::{Bitmap, DeviceContext};
@@ -36,9 +36,6 @@ const APRON: u32 = 2;
 const FRAME_BUDGET: Duration = Duration::from_millis(8);
 /// Rasterizing time per idle tick for tiles just outside the view.
 const PREFETCH_BUDGET: Duration = Duration::from_millis(4);
-/// Keep canvas data close to the viewport. Document geometry and text hit
-/// information remain available for page jumps and document-wide commands.
-const PAGE_CACHE_WINDOW: usize = 20;
 const WORKSPACE: Color = Color { r: 232.0 / 255.0, g: 236.0 / 255.0, b: 243.0 / 255.0, a: 1.0 };
 const PAGE_SHADOW: Color = Color { r: 192.0 / 255.0, g: 202.0 / 255.0, b: 215.0 / 255.0, a: 1.0 };
 
@@ -185,7 +182,7 @@ impl WxCanvasRenderer {
         if !current || self.incomplete || self.prefetched == Some(key) { return false; }
         let rects = viewport.page_rects_px(document);
         let (w, h) = (viewport.viewport_px.width, viewport.viewport_px.height);
-        let wanted = self.missing_tiles(&rects, Rect::new(0.0, -h, w, 3.0 * h), Rect::new(0.0, 0.0, w, h));
+        let wanted = self.missing_tiles(document, &rects, Rect::new(0.0, -h, w, 3.0 * h), Rect::new(0.0, 0.0, w, h));
         let remaining = self.fill_tiles(document, &rects, &wanted, Some(Instant::now() + PREFETCH_BUDGET)).1;
         if remaining == 0 { self.prefetched = Some(key); }
         remaining > 0
@@ -193,11 +190,12 @@ impl WxCanvasRenderer {
 
     /// Tiles of pages intersecting `area` (view pixels) that are not cached,
     /// nearest to the centre of `focus` first.
-    fn missing_tiles(&self, rects: &[Rect], area: Rect, focus: Rect) -> Vec<(usize, u32, u32)> {
+    fn missing_tiles(&self, document: &VectorDocument, rects: &[Rect], area: Rect, focus: Rect) -> Vec<(usize, u32, u32)> {
         let tile = self.tile;
         let (cx, cy) = (focus.x + focus.width * 0.5, focus.y + focus.height * 0.5);
         let mut wanted = Vec::new();
         for index in self.page_window.clone() {
+            if !document.pages[index].has_paint { continue; }
             let page = rects[index];
             let (page_w, page_h) = page_pixels(page);
             let local = page_rect_local(page, area);
@@ -423,7 +421,7 @@ impl WxCanvasRenderer {
     /// Newly exposed areas start as paper. Returns the tiles
     /// rasterized for this frame.
     fn compose(&mut self, base: &mut Pixmap, document: &VectorDocument, rects: &[Rect], view: Rect) -> Vec<(usize, Rect)> {
-        let wanted = self.missing_tiles(rects, view, view);
+        let wanted = self.missing_tiles(document, rects, view, view);
         let (fresh, remaining) = self.fill_tiles(document, rects, &wanted, self.budget.map(|b| Instant::now() + b));
         self.incomplete = remaining > 0;
         base.fill(sk_color(WORKSPACE));
@@ -505,6 +503,13 @@ impl WxCanvasRenderer {
         self.page_window.start = self.page_window.start.min(document.pages.len());
         self.page_window.end = self.page_window.end.min(document.pages.len());
         for index in self.page_window.clone() {
+            if !document.pages[index].has_paint {
+                if !self.pages[index].tiles.is_empty() || !self.pages[index].stale.is_empty() {
+                    self.damaged.push((index, Rect::new(0.0, 0.0, 1.0e9, 1.0e9)));
+                }
+                self.pages[index] = PageTiles::default();
+                continue;
+            }
             if self.pages[index].tiles.is_empty() && self.pages[index].stale.is_empty() {
                 self.pages[index].bounds = None;
                 continue;
@@ -577,7 +582,7 @@ impl WxCanvasRenderer {
     fn command_bounds(&mut self, command: &DrawCommand) -> Option<Rect> {
         let (inner, _) = command.unclipped();
         let bounds = match inner {
-            DrawCommand::Clipped { .. } => unreachable!("unclipped command"),
+            DrawCommand::Clipped { .. } | DrawCommand::EncodedImage { .. } => unreachable!("resolved scene command"),
             DrawCommand::FillRect { rect, .. } | DrawCommand::Image { rect, .. } => *rect,
             DrawCommand::TextRun(run) => {
                 let mut bounds = None;
@@ -650,7 +655,7 @@ impl Raster<'_> {
         let mask = clip.filter(|_| needs_mask).and_then(|rect|
             masks.get(&[rect.x.to_bits(), rect.y.to_bits(), rect.width.to_bits(), rect.height.to_bits()]));
         match command {
-            DrawCommand::Clipped { .. } => unreachable!("unclipped command"),
+            DrawCommand::Clipped { .. } | DrawCommand::EncodedImage { .. } => unreachable!("resolved scene command"),
             DrawCommand::FillRect { rect, paint } => {
                 if let Some(rect) = sk_rect(*rect) {
                     target.fill_rect(rect, &solid_paint(scene_color(paint)), transform(view), mask);
@@ -736,21 +741,6 @@ fn shifted(rect: Option<Rect>, shift: Option<(i32, i32)>) -> Option<Rect> {
 /// Pixel size of a page raster.
 fn page_pixels(page: Rect) -> (u32, u32) {
     (page.width.ceil().max(1.0) as u32, page.height.ceil().max(1.0) as u32)
-}
-
-/// Centre the retained pages on the visible range, borrowing unused slots
-/// from the other side when the view is near a document boundary.
-fn page_cache_window(pages: &[Rect], view: Rect) -> Range<usize> {
-    if pages.len() <= PAGE_CACHE_WINDOW { return 0..pages.len(); }
-    let first = pages.partition_point(|page| page.y + page.height.ceil().max(1.0) <= view.y)
-        .min(pages.len() - 1);
-    let end = pages.partition_point(|page| page.y < view.max_y()).max(first + 1);
-    // At very low zoom every visible page still has to be paintable.
-    let visible = end - first;
-    let count = PAGE_CACHE_WINDOW.max(visible);
-    let before = (count - visible) / 2;
-    let start = first.saturating_sub(before).min(pages.len() - count);
-    start..start + count
 }
 
 /// The part of `view` covered by `page`, in page pixels.

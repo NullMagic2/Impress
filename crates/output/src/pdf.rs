@@ -90,7 +90,7 @@ pub fn write_pdf_with_progress(document:&VectorDocument,pages:&[usize],meta:&Pdf
  for (completed,(&pi,&id)) in pages.iter().zip(&ids).enumerate(){if cancel.load(Ordering::Relaxed){return Err("Output cancelled".into());}let page=document.pages.get(pi).ok_or("Selected PDF page no longer exists")?;validate_page(page)?;
   let mut fonts=Fonts::default();let mut image_res=String::new();let mut used_images=std::collections::BTreeSet::new();let mut content=format!("q\n1 0 0 -1 0 {} cm\n",n(page.size.height)?);
   for source in &page.commands{let (command,clip)=source.unclipped();if cancel.load(Ordering::Relaxed){return Err("Output cancelled".into());}content+="q\n";if let Some(clip)=clip {content+=&rectangle(clip)?;content+="W n\n";}match command{
-   DrawCommand::Clipped{..}=>unreachable!("unclipped command"),
+   DrawCommand::Clipped{..} | DrawCommand::EncodedImage{..} => unreachable!("resolved scene command"),
    DrawCommand::FillRect{rect,paint}=>{color(&mut content,paint,false,&mut f,&mut states)?;content+=&rectangle(*rect)?;content+="f\n";},
    DrawCommand::Path(p)=>{content+=&matrix(p.transform)?;content+=&path(&p.path,Affine2D::IDENTITY)?;
     if let Some(paint)=&p.fill{color(&mut content,paint,false,&mut f,&mut states)?;content+="f\n";}

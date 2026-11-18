@@ -178,13 +178,18 @@ impl PreparedNotes {
         for (index,pieces)in plan.pages.iter().enumerate(){if pieces.is_empty(){continue;}
             let mut y=geometry.content_bottom-plan.reserves[index];
             if pages[index].hit_regions.iter().any(|r|r.rect.y+r.rect.height>y+1.0&&r.rect.y>=geometry.content_top)||pages[index].object_regions.iter().any(|r|r.rect.y+r.rect.height>y+1.0&&r.rect.y>=geometry.content_top){return Err(LayoutError::RenderPreparation("An oversized body object overlaps the footnote area".into()));}
-            pages[index].commands.push(DrawCommand::FillRect{rect:Rect::new(geometry.content_left,y,geometry.column_width.min(140.0),0.5),paint:Paint::Solid(Color::BLACK)});y+=8.0;
+            let page = &mut pages[index];
+            if page.has_paint {
+                page.commands.push(DrawCommand::FillRect{rect:Rect::new(geometry.content_left,y,geometry.column_width.min(140.0),0.5),paint:Paint::Solid(Color::BLACK)});
+            }
+            y += 8.0;
             for piece in pieces{
                 let note=&self.fragments[&piece.note];let label=if piece.start==0{&note.first}else{&note.continued};
-                pages[index].commands.extend(label.commands.iter().map(|c|c.translated(geometry.content_left,y+9.0)));y+=NOTE_LABEL_HEIGHT;
+                if page.has_paint { page.commands.extend(label.commands.iter().map(|c|c.translated(geometry.content_left,y+9.0))); }
+                y += NOTE_LABEL_HEIGHT;
                 for atom in &note.atoms[piece.start..piece.end]{
-                    pages[index].commands.extend(atom.commands.iter().map(|c|c.translated(geometry.content_left,y)));
-                    pages[index].hit_regions.extend(atom.hit_regions.iter().map(|r|r.translated(geometry.content_left,y)));
+                    if page.has_paint { page.commands.extend(atom.commands.iter().map(|c|c.translated(geometry.content_left,y))); }
+                    page.hit_regions.extend(atom.hit_regions.iter().map(|r|r.translated(geometry.content_left,y)));
                     // Object manipulation inside notes remains restricted. Text
                     // regions use the original semantic offsets, without labels.
                     y+=atom.height;

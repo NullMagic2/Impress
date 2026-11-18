@@ -69,6 +69,7 @@ impl Boundary {
     }
 }
 struct Entry {
+    paint: PagePaint,
     environment: Environment,
     keys: Vec<Vec<u8>>,
     pages: Vec<VectorPage>,
@@ -126,7 +127,7 @@ impl LayoutCache {
     }
 
     pub(super) fn layout_section(&mut self, engine:&LayoutEngine, section:&Section, document:&Document,
-        section_index:usize, global_start:usize, initial:Option<(usize,f32)>, extents:HeaderFooterExtents, cancel:Option<(&AtomicU64,u64)>)
+        section_index:usize, global_start:usize, initial:Option<(usize,f32)>, extents:HeaderFooterExtents, paint: PagePaint, cancel:Option<(&AtomicU64,u64)>)
         ->Result<(Vec<VectorPage>,FlowCursor),LayoutError>
     {
         check_cancel(cancel)?;
@@ -143,19 +144,20 @@ impl LayoutCache {
             .collect::<Option<Vec<_>>>();
         let (Some(env_key),Some(keys))=(env_key,keys) else {
             self.work.conservative_sections+=1;self.work.sections_rebuilt+=1;self.work.blocks_paginated+=section.blocks.len();
-            return engine.layout_section(section,document,section_index,global_start,initial,extents,cancel);
+            return engine.layout_section(section,document,section_index,global_start,initial,extents,paint,cancel);
         };
         let dependencies=resource_dependencies(section,document,has_notes);
         let environment=Environment { key:env_key, resources:dependencies.into_iter().filter_map(|id|document.resources.get(&id).map(|r|
             ResourceOwner{id,media_type:r.media_type.clone(),font_faces:r.font_faces.clone(),data:Arc::clone(&r.data)})).collect() };
         if let Some(old)=self.entries.get_mut(&section.id) {
-            if old.environment.same(&environment) && old.keys==keys {
+            if old.paint == paint && old.environment.same(&environment) && old.keys==keys {
                 old.last_used=self.clock;
                 self.work.sections_reused+=1; self.work.blocks_skipped+=keys.len();
                 return Ok((old.pages.clone(),old.cursor));
             }
         }
-        let geometry=SectionGeometry::with_extents(section,extents);
+        let mut geometry=SectionGeometry::with_extents(section,extents);
+        geometry.paint = paint;
         let eligible=geometry.column_count==1 && !has_notes && !floating::has_floats(section)
             && keys.len() < MAX_BOUNDARIES;
         let (pages,cursor,boundaries,prepared_cache)=if eligible {
@@ -179,11 +181,11 @@ impl LayoutCache {
                 preparation_cache::prepare(b,geometry.column_width,&document.styles,&document.resources,marker,&fields)
             }).collect::<Vec<_>>().into_iter().collect::<Result<Vec<_>,_>>()?;
             let (pages,cursor,bounds)=resume(&prepared,&keys,&geometry,initial,engine.options.show_page_background,
-                old,cancel,&mut self.work)?;
+                old.filter(|entry| entry.paint == paint),cancel,&mut self.work)?;
             (pages,cursor,Some(bounds),Some(prepared))
         } else {
             self.work.conservative_sections+=1;self.work.blocks_paginated+=section.blocks.len();
-            let (pages,cursor)=engine.layout_section(section,document,section_index,global_start,initial,extents,cancel)?;
+            let (pages,cursor)=engine.layout_section(section,document,section_index,global_start,initial,extents,paint,cancel)?;
             (pages,cursor,None,None)
         };
         check_cancel(cancel)?;
@@ -198,7 +200,7 @@ impl LayoutCache {
                 let old=self.entries.remove(&id).expect("selected entry"); self.retained_bytes-=old.bytes;
             }
             self.retained_bytes+=bytes;
-            self.entries.insert(section.id.clone(),Entry { environment,keys,pages:pages.clone(),cursor,boundaries,prepared:prepared_cache,bytes,last_used:self.clock });
+            self.entries.insert(section.id.clone(),Entry { paint,environment,keys,pages:pages.clone(),cursor,boundaries,prepared:prepared_cache,bytes,last_used:self.clock });
         }
         Ok((pages,cursor))
     }
@@ -254,7 +256,7 @@ fn resume<T:AsRef<PreparedBlock>>(prepared:&[T],keys:&[Vec<u8>],geometry:&Sectio
     // every preceding block in its keep chain, not merely the changed block.
     while prefix>0 && matches!(prepared[prefix-1].as_ref(),PreparedBlock::Paragraph{keep_with_next:true,..}){prefix-=1;}
     let suffix=old.map_or(0,|e|keys.iter().rev().zip(e.keys.iter().rev()).take_while(|(a,b)|a==b).count());
-    let mut pages=vec![new_page(geometry.page_width,geometry.page_height,background)];
+    let mut pages=vec![geometry.page(0, background)];
     let (col,y)=initial.unwrap_or((0,geometry.content_top));
     let mut cursor=FlowCursor{page_index:0,column_index:col.min(geometry.column_count.saturating_sub(1)),y:y.clamp(geometry.content_top,geometry.content_bottom)};
     let mut boundaries=Vec::with_capacity(prepared.len()+1);

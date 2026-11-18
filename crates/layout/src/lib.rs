@@ -111,6 +111,27 @@ pub enum LayoutError {
     Cancelled,
 }
 
+/// Half-open physical page range for screen drawing. Geometry is always paginated
+/// for the entire document so page numbers and destinations stay stable.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct PagePaint {
+    window: Option<(usize, usize)>,
+}
+
+impl PagePaint {
+    fn window(range: std::ops::Range<usize>) -> Self {
+        Self { window: Some((range.start, range.end)) }
+    }
+
+    fn from_page(self, first: usize) -> Self {
+        Self { window: self.window.map(|(start, end)| (start.saturating_sub(first), end.saturating_sub(first))) }
+    }
+
+    fn contains(self, page: usize) -> bool {
+        self.window.is_none_or(|(start, end)| (start..end).contains(&page))
+    }
+}
+
 impl LayoutEngine {
     /// Lay out a template stream with the same shaping and decoration as a page.
     pub fn layout_header_footer_preview(&self, stream: &HeaderFooter, width_mm: f32, document: &Document) -> Result<VectorFragment, LayoutError> {
@@ -120,7 +141,8 @@ impl LayoutEngine {
         let context = FieldContext { page_number: PREVIEW_PAGE_NUMBER, page_count: PREVIEW_PAGE_COUNT,
             section_number: 1, page_number_format: Default::default() };
         let fragment = prepare_header_footer_fragment(stream, width, &document.styles, &document.resources, &context)?;
-        Ok(VectorFragment { size: Size::new(width, fragment.height), baseline_pt: 0.0, commands: fragment.commands })
+        Ok(VectorFragment { size: Size::new(width, fragment.height), baseline_pt: 0.0,
+            commands: materialize_pictures(fragment.commands) })
     }
 
     pub fn layout_document(&self, document: &Document) -> Result<VectorDocument, LayoutError> {
@@ -133,23 +155,30 @@ impl LayoutEngine {
     }
 
     pub(crate) fn layout_document_in_pool(&self, document: &Document) -> Result<VectorDocument, LayoutError> {
-        self.layout_document_in_pool_impl(document, None, &mut incremental::LayoutCache::default())
+        self.layout_document_in_pool_impl(document, None, &mut incremental::LayoutCache::default(), PagePaint::default())
     }
 
-    pub(crate) fn layout_document_cached(&self, document:&Document, expected_revision:u64, generation:&AtomicU64, cache:&mut incremental::LayoutCache)->Result<VectorDocument,LayoutError> {
+    pub(crate) fn layout_document_cached(&self, document:&Document, expected_revision:u64, generation:&AtomicU64, cache:&mut incremental::LayoutCache, paint: PagePaint)->Result<VectorDocument,LayoutError> {
         cache.begin_request();
-        self.layout_document_in_pool_impl(document,Some((generation,expected_revision)),cache)
+        self.layout_document_in_pool_impl(document,Some((generation,expected_revision)),cache,paint)
     }
 
-    fn layout_document_in_pool_impl(&self, document:&Document, cancel:Option<(&AtomicU64,u64)>, cache:&mut incremental::LayoutCache)->Result<VectorDocument,LayoutError> {
-        if !references::has_dynamic_fields(document) { cache.clear_fields(); return self.layout_document_pass(document,cancel,cache,false); }
+    fn layout_document_in_pool_impl(&self, document:&Document, cancel:Option<(&AtomicU64,u64)>, cache:&mut incremental::LayoutCache, paint: PagePaint)->Result<VectorDocument,LayoutError> {
+        if !references::has_dynamic_fields(document) {
+            cache.clear_fields();
+            let scene = self.layout_document_pass(document, cancel, cache, false, paint)?;
+            return materialize_scene(scene, cancel);
+        }
         let inputs=incremental::LayoutCache::field_inputs(document,self.options.show_page_background);
         let mut draft=document.clone();references::append_endnotes(&mut draft,&mut cache.derived_notes)?;references::update_fields(&mut draft,None);
         cache.seed_fields(&mut draft,inputs.as_ref());
         for _ in 0..8 {
             check_cancel(cancel)?;
-            let pages=self.layout_document_pass(&draft,cancel,cache,false)?;
-            if !references::update_fields(&mut draft,Some(&pages)) { cache.remember_fields(&draft,inputs); return Ok(pages); }
+            let pages=self.layout_document_pass(&draft,cancel,cache,false,paint)?;
+            if !references::update_fields(&mut draft,Some(&pages)) {
+                cache.remember_fields(&draft,inputs);
+                return materialize_scene(pages, cancel);
+            }
         }
         Err(LayoutError::RenderPreparation("Page-reference fields did not settle within eight layout passes".into()))
     }
@@ -160,6 +189,7 @@ impl LayoutEngine {
         cancel: Option<(&AtomicU64, u64)>,
         cache: &mut incremental::LayoutCache,
         recover_display: bool,
+        paint: PagePaint,
     ) -> Result<VectorDocument, LayoutError> {
         cache.work.field_passes += 1;
         let mut pages = Vec::new();
@@ -194,7 +224,8 @@ impl LayoutEngine {
             if needs_blank {
                 let width = section.properties.page_width_mm * MM_TO_PT;
                 let height = section.properties.page_height_mm * MM_TO_PT;
-                let mut blank = new_page(width, height, self.options.show_page_background);
+                let mut blank = new_page(width, height, self.options.show_page_background && paint.contains(pages.len()));
+                blank.has_paint = paint.contains(pages.len());
                 blank.margin_rect = Some(margin_rect);
                 blank.page_number_label = Some(format_page_number(next_display_number, current_page_format));
                 pages.push(blank);
@@ -206,7 +237,7 @@ impl LayoutEngine {
                 Err(_) if recover_display => HeaderFooterExtents::default(),
                 Err(error) => return Err(error),
             };
-            let geometry = SectionGeometry::with_extents(section, extents);
+            let mut geometry = SectionGeometry::with_extents(section, extents);
             let has_notes = references::section_has_notes(section);
             let next_column = previous_flow.and_then(|(_, cursor)| {
                 (matches!(section.properties.start_on, model::SectionStart::NewColumn)
@@ -228,11 +259,12 @@ impl LayoutEngine {
             };
 
             let global_page_start = if can_share { pages.len() - 1 } else { pages.len() };
+            geometry.paint = paint.from_page(global_page_start);
             let page_format = section.properties.page_number_format.unwrap_or(current_page_format);
             let display_start = section.properties.page_number_start.map(|value|value as usize)
                 .unwrap_or(if can_share {next_display_number.saturating_sub(1)} else {next_display_number});
             let (mut section_pages, final_cursor) = match cache.layout_section(
-                self, section, document, section_index, global_page_start, initial, extents, cancel,
+                self, section, document, section_index, global_page_start, initial, extents, geometry.paint, cancel,
             ) {
                 Ok(result) => result,
                 Err(LayoutError::Cancelled) => return Err(LayoutError::Cancelled),
@@ -285,6 +317,8 @@ impl LayoutEngine {
             let section = &document.sections[range.section_index];
             let geometry = SectionGeometry::with_extents(section, range.extents);
             for rendered_page in 0..range.page_count {
+                check_cancel(cancel)?;
+                let page = &mut pages[range.first_page + rendered_page];
                 let local_page = range.local_page_offset + rendered_page;
                 let context = FieldContext {
                     page_number: range.display_start + local_page,
@@ -293,7 +327,7 @@ impl LayoutEngine {
                     page_number_format: range.page_format,
                 };
                 let result = render_header_footer_for_page(
-                    &mut pages[range.first_page + rendered_page], section, document, local_page, &geometry, &context,
+                    page, section, document, local_page, &geometry, &context,
                 );
                 if !recover_display { result?; }
             }
@@ -311,9 +345,11 @@ impl LayoutEngine {
         global_page_start: usize,
         initial_flow: Option<(usize, f32)>,
         extents: HeaderFooterExtents,
+        paint: PagePaint,
         cancel: Option<(&AtomicU64, u64)>,
     ) -> Result<(Vec<VectorPage>, FlowCursor), LayoutError> {
-        let geometry = SectionGeometry::with_extents(section, extents);
+        let mut geometry = SectionGeometry::with_extents(section, extents);
+        geometry.paint = paint;
         let list_markers = compute_list_markers(section, &document.lists, &document.styles);
         let field_context = FieldContext {
             page_number: global_page_start + 1,
@@ -371,7 +407,7 @@ impl LayoutEngine {
             let required=&plan.reserves;
             let stable=required.iter().enumerate().all(|(i,h)|*h <= reserves.get(i).copied().unwrap_or(0.0)+0.05);
             if stable {
-                let old_len=pages.len();while pages.len()<plan.pages.len(){pages.push(new_page(geometry.page_width,geometry.page_height,self.options.show_page_background));}
+                let old_len=pages.len();while pages.len()<plan.pages.len(){pages.push(geometry.page(pages.len(), self.options.show_page_background));}
                 if pages.len()!=old_len{cursor.page_index=pages.len()-1;cursor.column_index=geometry.column_count-1;cursor.y=geometry.content_bottom;}
                 // Before the footnotes, so the rule ends at the body text.
                 draw_column_separators(&mut pages, &geometry, initial_flow.map(|(_, y)| y));
@@ -390,6 +426,7 @@ impl LayoutEngine {
 fn draw_column_separators(pages: &mut [VectorPage], geometry: &SectionGeometry, first_page_top: Option<f32>) {
     if !geometry.column_separator { return; }
     for (index, page) in pages.iter_mut().enumerate() {
+        if !page.has_paint { continue; }
         let top = if index == 0 { first_page_top.unwrap_or(geometry.content_top) } else { geometry.content_top };
         let bottom = page.hit_regions.iter().map(|region| region.rect.max_y())
             .filter(|y| *y > top).fold(top, f32::max).min(geometry.content_bottom);
@@ -481,11 +518,7 @@ fn flow_prepared<T:AsRef<PreparedBlock>>(prepared:&[T],geometry:&SectionGeometry
             }
         }
 
-        let mut pages = vec![new_page(
-            geometry.page_width,
-            geometry.page_height,
-            show_page_background,
-        )];
+        let mut pages = vec![geometry.page(0, show_page_background)];
         let (initial_column, initial_y) = initial_flow.unwrap_or((0, geometry.content_top));
         let mut cursor = FlowCursor {
             page_index: 0,
@@ -551,7 +584,9 @@ fn paginate_block_with<T:AsRef<PreparedBlock>>(prepared:&[T],block_index:usize,p
                     let x = flow_geometry.column_left(cursor.column_index)
                         + ((flow_geometry.column_width - fragment.size.width) * 0.5).max(0.0);
                     let current = &mut pages[cursor.page_index];
-                    current.commands.extend(fragment.commands.iter().map(|command| command.translated(x, cursor.y)));
+                    if current.has_paint {
+                        current.commands.extend(fragment.commands.iter().map(|command| command.translated(x, cursor.y)));
+                    }
                     current.object_regions.push(ObjectHitRegion { node_id: id.clone(), rect: Rect::new(x, cursor.y, fragment.size.width, fragment.size.height), kind: ObjectKind::Equation { source: None } });
                     cursor.y += fragment.size.height + *after;
                 }
@@ -573,7 +608,9 @@ fn paginate_block_with<T:AsRef<PreparedBlock>>(prepared:&[T],block_index:usize,p
                         ImageAlignment::Right => col_left + (flow_geometry.column_width - image.width).max(0.0),
                     };
                     let current = &mut pages[cursor.page_index];
-                    current.commands.extend(image.commands.iter().map(|c| c.translated(x, cursor.y)));
+                    if current.has_paint {
+                        current.commands.extend(image.commands.iter().map(|c| c.translated(x, cursor.y)));
+                    }
                     current.object_regions.push(ObjectHitRegion { node_id: image.id.clone(), rect: Rect::new(x, cursor.y, image.width, image.height), kind: ObjectKind::Picture { source: None } });
                     cursor.y += image.height + 4.0;
                 }
@@ -602,6 +639,7 @@ struct FieldContext {
 
 #[derive(Clone, Copy, Debug)]
 struct SectionGeometry<'a> {
+    paint: PagePaint,
     note_reserves: &'a [f32],
     page_width: f32,
     page_height: f32,
@@ -694,7 +732,7 @@ impl<'a> SectionGeometry<'a> {
             column_widths[index] = (band.width_mm * MM_TO_PT).max(1.0);
         }
         Self {
-            note_reserves: &[], page_width, page_height, content_left, content_top, content_bottom,
+            paint: PagePaint::default(), note_reserves: &[], page_width, page_height, content_left, content_top, content_bottom,
             column_count: bands.len().max(1), column_width: column_widths[0], column_lefts, column_widths,
             column_separator: section.properties.column_separator && bands.len() > 1,
         }
@@ -705,8 +743,15 @@ impl<'a> SectionGeometry<'a> {
     fn single_column(page_width: f32, page_height: f32, content_left: f32, content_top: f32, content_bottom: f32, width: f32) -> Self {
         let mut column_widths = [0.0; MAX_COLUMNS];
         column_widths[0] = width;
-        Self { note_reserves: &[], page_width, page_height, content_left, content_top, content_bottom,
+        Self { paint: PagePaint::default(), note_reserves: &[], page_width, page_height, content_left, content_top, content_bottom,
             column_count: 1, column_width: width, column_lefts: [0.0; MAX_COLUMNS], column_widths, column_separator: false }
+    }
+
+    fn page(&self, index: usize, background: bool) -> VectorPage {
+        let has_paint = self.paint.contains(index);
+        let mut page = new_page(self.page_width, self.page_height, background && has_paint);
+        page.has_paint = has_paint;
+        page
     }
 
     fn column_index(&self, index: usize) -> usize { index.min(self.column_count.saturating_sub(1)) }
@@ -765,7 +810,7 @@ fn new_flow_page(
     geometry: &SectionGeometry,
     show_page_background: bool,
 ) {
-    pages.push(new_page(geometry.page_width, geometry.page_height, show_page_background));
+    pages.push(geometry.page(pages.len(), show_page_background));
     cursor.page_index = pages.len() - 1;
     cursor.column_index = 0;
     cursor.y = geometry.content_top;
@@ -994,7 +1039,7 @@ fn paginate_paragraph_with(
             }
         }
 
-        if let Some(decoration) = decoration {
+        if let Some(decoration) = decoration.filter(|_| pages[cursor.page_index].has_paint) {
             let decoration_width = decoration.width + decoration_width_change;
             let height = lines[index..index + fit].iter().map(|line| line.height).sum::<f32>();
             let x = geometry.column_left(cursor.column_index) + left_indent;
@@ -1008,7 +1053,7 @@ fn paginate_paragraph_with(
             let dx = geometry.column_left(cursor.column_index) + left_indent;
             let current = &mut pages[cursor.page_index];
             if first_visual_line {
-                if let Some(marker) = marker {
+                if let Some(marker) = marker.filter(|_| current.has_paint) {
                     let marker_x = (dx - marker.width - marker.gap).max(geometry.column_left(cursor.column_index));
                     current.commands.extend(marker.commands.iter().map(|c| c.translated(marker_x, baseline_y)));
                 }
@@ -1016,7 +1061,9 @@ fn paginate_paragraph_with(
             }
             let clip=Rect::new(geometry.column_left(cursor.column_index),geometry.content_top,
                 geometry.width_of(cursor.column_index),geometry.height_at(cursor.page_index));
-            current.commands.extend(line.commands.iter().map(|c| c.translated(dx, baseline_y).clipped(clip)));
+            if current.has_paint {
+                current.commands.extend(line.commands.iter().map(|c| c.translated(dx, baseline_y).clipped(clip)));
+            }
             current.hit_regions.extend(line.hit_regions.iter().filter_map(|r| r.translated(dx, baseline_y).clipped(clip)));
             cursor.y += line.height;
         }
@@ -1379,7 +1426,7 @@ fn split_prepared_cell(cell: &PreparedTableCell, boundary: f32) -> Option<(Prepa
 fn command_vertical_bounds(command: &DrawCommand) -> Option<(f32, f32)> {
     match command {
         DrawCommand::Clipped {rect,command} => command_vertical_bounds(command).map(|(top,bottom)|(top.max(rect.y),bottom.min(rect.max_y()))),
-        DrawCommand::FillRect { rect, .. } | DrawCommand::Image { rect, .. } => Some((rect.y, rect.y + rect.height)),
+        DrawCommand::FillRect { rect, .. } | DrawCommand::Image { rect, .. } | DrawCommand::EncodedImage { rect, .. } => Some((rect.y, rect.y + rect.height)),
         DrawCommand::TextRun(run) => Some((run.bounds.y, run.bounds.y + run.bounds.height)),
         // Typst/vector paths do not carry a cheap page-space bounding box in
         // the scene graph. Keep those rows atomic rather than risk clipping.
@@ -1394,17 +1441,19 @@ fn render_table_row(page: &mut VectorPage, row: &PreparedTableRow, x: f32, y: f3
         // overhang/hanging punctuation in that padding, but never across the
         // cell boundary into the neighboring column.
         let clip=Rect::new(cell_x,y,cell.width,cell.height);
-        if let Some(color) = cell.shading {
-            page.commands.push(DrawCommand::FillRect {
-                rect: Rect::new(cell_x, y, cell.width, cell.height),
-                paint: Paint::Solid(color),
-            });
+        if page.has_paint {
+            if let Some(color) = cell.shading {
+                page.commands.push(DrawCommand::FillRect {
+                    rect: Rect::new(cell_x, y, cell.width, cell.height),
+                    paint: Paint::Solid(color),
+                });
+            }
+            page.commands.extend(cell.commands.iter().map(|c| c.translated(cell_x, y).clipped(clip)));
+            append_cell_borders(&mut page.commands, cell_x, y, cell.width, cell.height, &cell.borders);
         }
-        page.commands.extend(cell.commands.iter().map(|c| c.translated(cell_x, y).clipped(clip)));
         page.hit_regions.extend(cell.hit_regions.iter().filter_map(|r| r.translated(cell_x, y).clipped(clip)));
         page.object_regions.push(cell.own_region.translated(cell_x, y));
         page.object_regions.extend(cell.object_regions.iter().filter_map(|r| {let mut r=r.translated(cell_x,y);r.rect=r.rect.intersection(clip);(!r.rect.is_empty()).then_some(r)}));
-        append_cell_borders(&mut page.commands, cell_x, y, cell.width, cell.height, &cell.borders);
     }
 }
 
@@ -1612,7 +1661,7 @@ fn render_header_footer_for_page(
     if let Some(header) = section.headers.for_page(&section.properties, local_page) {
         let fragment = prepare_header_footer_fragment(header, available_width, &document.styles, &document.resources, context)?;
         let y = header_top(section);
-        page.commands.extend(fragment.commands.iter().map(|c| c.translated(x, y)));
+        if page.has_paint { page.commands.extend(fragment.commands.iter().map(|c| c.translated(x, y))); }
         page.hit_regions.extend(fragment.hit_regions.iter().map(|r| r.translated(x, y)));
         page.object_regions.extend(fragment.object_regions.iter().map(|r| r.translated(x, y)));
     }
@@ -1620,7 +1669,7 @@ fn render_header_footer_for_page(
         let fragment = prepare_header_footer_fragment(footer, available_width, &document.styles, &document.resources, context)?;
         let distance = section.properties.footer_distance_mm * MM_TO_PT;
         let y = (geometry.page_height - distance - fragment.height).max(geometry.content_bottom + 2.0);
-        page.commands.extend(fragment.commands.iter().map(|c| c.translated(x, y)));
+        if page.has_paint { page.commands.extend(fragment.commands.iter().map(|c| c.translated(x, y))); }
         page.hit_regions.extend(fragment.hit_regions.iter().map(|r| r.translated(x, y)));
         page.object_regions.extend(fragment.object_regions.iter().map(|r| r.translated(x, y)));
     }
@@ -2069,8 +2118,9 @@ fn raster_preview_commands(resource: &Resource, width: f32, height: f32, effects
     if effects.crop.is_none() && effects.outer_shadow.is_none() && effects.glow.is_none()
         && effects.soft_edge_mm.is_none() && effects.reflection.is_none()
         && effects.shape.preset == "rect" && effects.outline.is_none() {
-        let image = render::decode_raster_cached(&resource.data).ok()?;
-        return Some(vec![DrawCommand::Image { rect: Rect::new(0.0, 0.0, width, height), image }]);
+        return Some(vec![DrawCommand::EncodedImage {
+            rect: Rect::new(0.0, 0.0, width, height), data: Arc::clone(&resource.data),
+        }]);
     }
     let mut reader = image::ImageReader::new(std::io::Cursor::new(resource.data.as_slice())).with_guessed_format().ok()?;
     let mut limits = image::Limits::default();
@@ -2174,6 +2224,40 @@ fn raster_preview_commands(resource: &Resource, width: f32, height: f32, effects
         }
     }
     Some(commands)
+}
+
+fn materialize_scene(mut scene: VectorDocument, cancel: Option<(&AtomicU64, u64)>) -> Result<VectorDocument, LayoutError> {
+    for page in &mut scene.pages {
+        check_cancel(cancel)?;
+        page.commands = materialize_pictures(std::mem::take(&mut page.commands));
+    }
+    Ok(scene)
+}
+
+fn materialize_pictures(commands: Vec<DrawCommand>) -> Vec<DrawCommand> {
+    if !commands.iter().any(|command| matches!(command.unclipped().0, DrawCommand::EncodedImage { .. })) {
+        return commands;
+    }
+    let mut rendered = Vec::with_capacity(commands.len());
+    for command in commands {
+        let (image, clip) = command.unclipped();
+        if let DrawCommand::EncodedImage { rect, data } = image {
+            let mut append = |paint: DrawCommand| {
+                rendered.push(if let Some(clip) = clip { paint.clipped(clip) } else { paint });
+            };
+            match render::decode_raster_cached(data) {
+                Ok(image) => append(DrawCommand::Image { rect: *rect, image }),
+                Err(_) => {
+                    for shape in image_frame_commands(rect.width, rect.height) {
+                        append(shape.translated(rect.x, rect.y));
+                    }
+                }
+            }
+        } else {
+            rendered.push(command);
+        }
+    }
+    rendered
 }
 
 fn image_frame_commands(width: f32, height: f32) -> Vec<DrawCommand> {

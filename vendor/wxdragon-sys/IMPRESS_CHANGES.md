@@ -25,3 +25,4 @@ Every change is marked with an `Impress:` comment in `build.rs`.
 - `cpp/src/event.cpp` routes window `wxEVT_LEFT_DCLICK` through LeftDown
   callbacks, since wxDragon does not expose a window double-click enum.
   The paired binding is removed when the corresponding closure is unbound.
+  While translating the event, Impress can query its native double-click flag.

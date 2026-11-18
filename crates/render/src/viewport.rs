@@ -1,4 +1,5 @@
 use crate::{Point, Rect, Size, TextHitRegion, VectorDocument};
+use std::ops::Range;
 
 const PT_PER_INCH: f32 = 72.0;
 const DEFAULT_DPI: f32 = 96.0;
@@ -34,6 +35,29 @@ pub struct DocumentHit {
     /// Visual row selected by the pointer. This disambiguates wrap boundaries
     /// where one semantic offset is a valid caret stop on two adjacent lines.
     pub visual_line: usize,
+}
+
+/// Maximum resident page drawings, except when more pages are visible at once.
+pub const PAGE_WINDOW_SIZE: usize = 20;
+
+/// The vertical slice on screen. When the viewport is in a page gap, use the
+/// following page (or the last one at the bottom).
+pub fn pages_in_view(pages: &[Rect], view: Rect) -> Range<usize> {
+    if pages.is_empty() { return 0..0; }
+    let first = pages.partition_point(|page| page.y + page.height.ceil().max(1.0) <= view.y)
+        .min(pages.len() - 1);
+    let end = pages.partition_point(|page| page.y < view.max_y()).max(first + 1);
+    first..end
+}
+
+/// Borrow unused capacity from the other end at the beginning and end.
+pub fn page_cache_window(pages: &[Rect], view: Rect) -> Range<usize> {
+    if pages.len() <= PAGE_WINDOW_SIZE { return 0..pages.len(); }
+    let visible = pages_in_view(pages, view);
+    let count = PAGE_WINDOW_SIZE.max(visible.len());
+    let before = (count - visible.len()) / 2;
+    let start = visible.start.saturating_sub(before).min(pages.len() - count);
+    start..start + count
 }
 
 impl ViewportState {

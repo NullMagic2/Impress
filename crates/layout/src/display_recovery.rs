@@ -12,11 +12,7 @@ pub(super) fn section(
     fields: &FieldContext,
     cancel: Option<(&AtomicU64, u64)>,
 ) -> Result<(Vec<VectorPage>, FlowCursor), LayoutError> {
-    let mut pages = vec![new_page(
-        geometry.page_width,
-        geometry.page_height,
-        background,
-    )];
+    let mut pages = vec![geometry.page(0, background)];
     let (column_index, y) = initial.unwrap_or((0, geometry.content_top));
     let mut cursor = FlowCursor {
         page_index: 0,
@@ -55,11 +51,9 @@ pub(super) fn section(
             ensure_vertical_space(&mut pages, &mut cursor, geometry, height, background);
             let x = geometry.column_left(cursor.column_index);
             let page = &mut pages[cursor.page_index];
-            page.commands.extend(
-                image_frame_commands(width, height)
-                    .iter()
-                    .map(|c| c.translated(x, cursor.y)),
-            );
+            if page.has_paint {
+                page.commands.extend(image_frame_commands(width, height).iter().map(|c| c.translated(x, cursor.y)));
+            }
             if let Block::Equation(equation) = block {
                 page.object_regions.push(ObjectHitRegion {
                     node_id: equation.id.0.clone(),

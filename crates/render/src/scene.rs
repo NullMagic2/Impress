@@ -65,6 +65,9 @@ pub enum DrawCommand {
     TextRun(std::sync::Arc<VectorTextRun>),
     /// Original-resolution raster; never tessellated into colored pixel tiles.
     Image { rect: Rect, image: std::sync::Arc<crate::RasterImage> },
+    /// Layout-only recipe for a plain picture. Page materialization resolves
+    /// it before delivering a scene to a renderer.
+    EncodedImage { rect: Rect, data: std::sync::Arc<Vec<u8>> },
 }
 
 impl DrawCommand {
@@ -89,6 +92,10 @@ impl DrawCommand {
             Self::Image { rect, image } => Self::Image {
                 rect: Rect::new(rect.x + dx, rect.y + dy, rect.width, rect.height),
                 image: image.clone(),
+            },
+            Self::EncodedImage { rect, data } => Self::EncodedImage {
+                rect: Rect::new(rect.x + dx, rect.y + dy, rect.width, rect.height),
+                data: data.clone(),
             },
             Self::FillRect { rect, paint } => Self::FillRect {
                 rect: Rect::new(rect.x + dx, rect.y + dy, rect.width, rect.height),
@@ -214,6 +221,8 @@ pub struct VectorPage {
     pub margin_rect: Option<Rect>,
     /// Display value of a PAGE field; independent of the physical page index.
     pub page_number_label: Option<String>,
+    /// A geometry-only page still participates in scrolling and navigation.
+    pub has_paint: bool,
     pub commands: Vec<DrawCommand>,
     pub hit_regions: Vec<TextHitRegion>,
     pub object_regions: Vec<ObjectHitRegion>,
@@ -222,7 +231,7 @@ pub struct VectorPage {
 }
 
 impl VectorPage {
-    pub fn new(size: Size) -> Self { Self { size, margin_rect:None, page_number_label:None, commands: Vec::new(), hit_regions: Vec::new(), object_regions: Vec::new(), review_cards:Vec::new() } }
+    pub fn new(size: Size) -> Self { Self { size, margin_rect:None, page_number_label:None, has_paint:true, commands: Vec::new(), hit_regions: Vec::new(), object_regions: Vec::new(), review_cards:Vec::new() } }
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
