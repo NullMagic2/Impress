@@ -106,3 +106,16 @@ fn docx_tables_with_different_cell_line_origins_open_and_paginate_after_roundtri
     }
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+#[cfg(unix)]
+#[test]
+fn launcher_decodes_file_uris_once_and_preserves_native_paths() {
+    use std::os::unix::ffi::OsStringExt;
+    let path = PathBuf::from("/tmp/100%20 Ελληνικά.docx");
+    let uri = url::Url::from_file_path(&path).unwrap();
+    assert_eq!(launch_path(uri.as_str().into()).unwrap(), path);
+    assert_eq!(launch_path(path.clone().into_os_string()).unwrap(), path);
+    let bytes = std::ffi::OsString::from_vec(b"/tmp/test\xff.docx".to_vec());
+    assert_eq!(launch_path(bytes.clone()).unwrap(), PathBuf::from(bytes));
+    assert!(launch_path("file://remote.example/document.docx".into()).is_err());
+}

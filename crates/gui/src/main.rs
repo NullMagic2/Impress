@@ -330,9 +330,13 @@ fn main() {
             once.start(150, true);
         }
         // `impress <file>` opens a document, as file managers expect.
-        if let Some(path) = std::env::args_os().nth(1).map(PathBuf::from).filter(|p| p.is_file()) {
+        let mut args = std::env::args_os().skip(1);
+        let target = args.next().and_then(|arg| if arg == "--" { args.next() } else { Some(arg) });
+        if let Some(arg) = target {
             state.borrow_mut().documents.startup_placeholder = true;
-            if let Err(error) = background_io::queue_open(path, &state) { state.borrow_mut().action_status = Some(error); }
+            if let Err(error) = file_io::launch_path(arg).and_then(|path| background_io::queue_open(path, &state)) {
+                state.borrow_mut().action_status = Some(error);
+            }
         }
 
         // A 60 Hz UI poll only checks for completed background layouts and asks
@@ -387,7 +391,7 @@ fn main() {
                         // A laid-out equation change goes into the document.
                         equation_ui::commit_preview(&mut state, result.revision);
                         if is_current && state.reveal_caret_at.take_if(|r| *r == result.revision).is_some() { reveal_review_caret(&mut state); }
-                        if is_current { state.layout_error = None; }
+                        if is_current { state.layout_error = layout.display_warning; }
                         state.needs_present = true;
                         layout_changed = true;
                     }
@@ -405,7 +409,7 @@ fn main() {
                     state.typing_layout_pending = false;
                     let snapshot = document_snapshot(&mut state);
                     let generation = state.layout_generation;
-                    state.scheduler.submit(generation, snapshot);
+                    state.scheduler.submit_for_display(generation, snapshot);
                     state.layout_inflight = Some(generation);
                 }
             }
@@ -1028,7 +1032,7 @@ fn submit_layout(state: &mut CanvasState) {
     equation_ui::interrupt_preview(state);
     state.layout_generation = state.layout_generation.wrapping_add(1);
     let snapshot=document_snapshot(state);
-    state.scheduler.submit(state.layout_generation,snapshot);
+    state.scheduler.submit_for_display(state.layout_generation,snapshot);
     state.layout_inflight = Some(state.layout_generation);
     state.typing_layout_pending = false;
     state.needs_present = true;
@@ -1044,7 +1048,7 @@ fn submit_typing_layout(state: &mut CanvasState) {
         state.typing_layout_pending = true;
     } else {
         let snapshot = document_snapshot(state);
-        state.scheduler.submit(state.layout_generation, snapshot);
+        state.scheduler.submit_for_display(state.layout_generation, snapshot);
         state.layout_inflight = Some(state.layout_generation);
     }
 }

@@ -10,6 +10,7 @@ use std::thread::{self, JoinHandle};
 
 #[derive(Clone)]
 struct LayoutRequest {
+    recover_display: bool,
     revision: u64,
     document: Arc<Document>,
 }
@@ -17,6 +18,8 @@ struct LayoutRequest {
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct PreparedLayout {
+    /// Original error when only a recoverable editing view could be produced.
+    pub display_warning: Option<String>,
     pub work: crate::LayoutWork,
     pub reused_pages: usize,
     pub prepared_cache_hits: usize,
@@ -77,9 +80,19 @@ impl LayoutScheduler {
                 let revision = request.revision;
                 let hits_before = crate::cache_totals().0;
                 let result = pool.install(|| {
-                    let document = engine.layout_document_cached(
+                    let result = engine.layout_document_cached(
                         &request.document, revision, &worker_generation, &mut pagination,
-                    )?;
+                    );
+                    let (document, display_warning) = match result {
+                        Ok(scene) => (scene, None),
+                        Err(LayoutError::Cancelled) => return Err(LayoutError::Cancelled),
+                        Err(error) if request.recover_display => {
+                            let scene = engine.layout_document_pass(&request.document,
+                                Some((&worker_generation, revision)), &mut pagination, true)?;
+                            (scene, Some(format!("Simplified document view: {error}")))
+                        }
+                        Err(error) => return Err(error),
+                    };
                     if worker_generation.load(Ordering::Acquire) != revision {
                         return Err(LayoutError::Cancelled);
                     }
@@ -92,7 +105,7 @@ impl LayoutScheduler {
                     if worker_generation.load(Ordering::Acquire) != revision {
                         return Err(LayoutError::Cancelled);
                     }
-                    Ok(PreparedLayout { work: pagination.work, document: Arc::new(document), reused_pages, prepared_cache_hits:crate::cache_totals().0.saturating_sub(hits_before) })
+                    Ok(PreparedLayout { display_warning, work: pagination.work, document: Arc::new(document), reused_pages, prepared_cache_hits:crate::cache_totals().0.saturating_sub(hits_before) })
                 });
                 if worker_generation.load(Ordering::Acquire) != revision {
                     continue;
@@ -110,9 +123,19 @@ impl LayoutScheduler {
     }
 
     pub fn submit(&self, revision: u64, document: Arc<Document>) {
+        self.enqueue(revision, document, false);
+    }
+
+    /// A file opened for editing may display a local fallback. Equation validation
+    /// and callers asking for an exact layout continue to use submit().
+    pub fn submit_for_display(&self, revision: u64, document: Arc<Document>) {
+        self.enqueue(revision, document, true);
+    }
+
+    fn enqueue(&self, revision: u64, document: Arc<Document>, recover_display: bool) {
         self.generation.store(revision, Ordering::Release);
         let (lock, cv) = &*self.mailbox;
-        *lock.lock().expect("layout mailbox poisoned") = Some(LayoutRequest { revision, document });
+        *lock.lock().expect("layout mailbox poisoned") = Some(LayoutRequest { revision, document, recover_display });
         cv.notify_one();
     }
 

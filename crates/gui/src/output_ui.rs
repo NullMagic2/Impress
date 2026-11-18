@@ -24,7 +24,8 @@ pub(crate) fn progress(s:&CanvasState)->Option<ProgressState>{s.output_job.as_re
 /// The pages as displayed now, if output can start.
 pub fn snapshot(s:&mut CanvasState)->Result<(Arc<VectorDocument>,Arc<Document>),String>{
  if s.object_drag.is_some()||s.table_drag.is_some(){return Err("Finish or cancel dragging before output".into());}
- if s.display_generation!=Some(s.layout_generation)||s.layout_error.is_some()||s.vector_document.pages.is_empty(){return Err("Output needs a finished layout of the current document. Try again in a moment.".into());}
+ if let Some(error) = &s.layout_error { return Err(format!("Output requires a complete layout: {error}")); }
+ if s.display_generation!=Some(s.layout_generation)||s.vector_document.pages.is_empty(){return Err("Output needs a finished layout of the current document. Try again in a moment.".into());}
  if s.output_job.is_some(){return Err("Output is already running. Cancel it in the progress window.".into());}
  Ok((s.vector_document.clone(),document_snapshot(s)))
 }

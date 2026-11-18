@@ -274,3 +274,47 @@ fn independent_cell_breaks_keep_short_cell_once_and_repeat_headers_within_the_pa
         for r in &page.object_regions { assert!(r.rect.max_y()<=g.content_bottom+0.02); }
     }
 }
+
+fn document_with_tall_picture(height: f32) -> (Document, NodeId, NodeId, NodeId) {
+    let mut doc = Document::default();
+    let section = &mut doc.sections[0];
+    section.properties.page_height_mm = 279.4;
+    section.properties.margin_top_mm = 25.4;
+    section.properties.margin_bottom_mm = 25.4;
+    let before = Paragraph::plain("Before picture");
+    let after = Paragraph::plain("After picture");
+    let mut picture = Paragraph::plain("");
+    picture.content = vec![Inline::Image(model::InlineImage {
+        id: NodeId::new(), resource: ResourceId::new(), width_mm: 128.87,
+        height_mm: height, alt_text: None, effects: Default::default(),
+    })].into();
+    let ids = (before.id.clone(), picture.id.clone(), after.id.clone());
+    section.blocks = vec![Block::Paragraph(before), Block::Paragraph(picture), Block::Paragraph(after)].into();
+    (doc, ids.0, ids.1, ids.2)
+}
+
+#[test]
+fn picture_exactly_as_tall_as_printable_body_retains_its_size() {
+    let (doc, before, picture, after) = document_with_tall_picture(228.6);
+    let pages = LayoutEngine::default().layout_document(&doc).unwrap().pages;
+    assert_eq!(pages.len(), 3);
+    assert!(pages[0].hit_regions.iter().any(|h| h.node_id == before.0));
+    let image = pages[1].hit_regions.iter().find(|h| h.node_id == picture.0).unwrap();
+    assert!((image.rect.height - 228.6 * MM_TO_PT).abs() < 0.01);
+    assert!(pages[2].hit_regions.iter().any(|h| h.node_id == after.0));
+}
+
+#[test]
+fn unplaceable_picture_keeps_surrounding_paragraphs_in_the_editing_view() {
+    let (doc, before, picture, after) = document_with_tall_picture(350.0);
+    let original = doc.clone();
+    let engine = LayoutEngine::default();
+    assert!(engine.layout_document(&doc).is_err());
+    let pages = engine.layout_document_pass(&doc, None, &mut Default::default(), true).unwrap().pages;
+    let hits: Vec<_> = pages.iter().flat_map(|p| &p.hit_regions).collect();
+    for id in [before, picture, after] {
+        assert!(hits.iter().any(|h| h.node_id == id.0), "missing source {:?}", id);
+    }
+    assert_eq!(pages.len(), 1, "discard the partial placement of the failed picture");
+    assert_eq!(doc, original);
+}

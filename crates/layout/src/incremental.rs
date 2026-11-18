@@ -47,16 +47,21 @@ impl Environment {
 }
 
 #[derive(Clone, Copy, Debug)]
-struct Boundary {
+pub(super) struct Boundary {
     cursor: FlowCursor,
     commands: usize,
     hits: usize,
     objects: usize,
 }
 impl Boundary {
-    fn capture(pages: &[VectorPage], cursor: FlowCursor) -> Self {
+    pub(super) fn capture(pages: &[VectorPage], cursor: FlowCursor) -> Self {
         let p = &pages[cursor.page_index];
         Self { cursor, commands:p.commands.len(), hits:p.hit_regions.len(), objects:p.object_regions.len() }
+    }
+    pub(super) fn restore(self, pages: &mut Vec<VectorPage>, cursor: &mut FlowCursor) {
+        *cursor = self.cursor;
+        pages.truncate(cursor.page_index + 1);
+        self.truncate(&mut pages[cursor.page_index]);
     }
     fn truncate(self, page: &mut VectorPage) {
         page.commands.truncate(self.commands); page.hit_regions.truncate(self.hits);

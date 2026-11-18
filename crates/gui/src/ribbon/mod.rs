@@ -1481,6 +1481,7 @@ impl Ribbon {
             let editing_header_footer = state.editor.header_footer_context().map(|context| context.title());
             let status = if let Some(error) = &state.layout_error { format!("Layout: {error}") }
                 else if let Some(error) = &state.recovery.error { error.clone() }
+                else if state.layout_inflight.is_some() && state.display_generation.is_none() && state.current_path.is_some() { crate::i18n::text("Laying out document…") }
                 else if let Some(message) = &state.action_status { message.clone() }
                 else {
                     (if self.mode.get() == ViewMode::Typst { "Read-only source" } else if state.editor.document.review.track_text { "Tracking paragraph text" } else { "Ready" }).to_string()

@@ -5,6 +5,7 @@
 //! deterministic. File-format adapters never participate in layout.
 
 mod scheduler;
+mod display_recovery;
 mod preparation_cache;
 mod incremental;
 pub use incremental::LayoutWork;
@@ -135,13 +136,13 @@ impl LayoutEngine {
     }
 
     fn layout_document_in_pool_impl(&self, document:&Document, cancel:Option<(&AtomicU64,u64)>, cache:&mut incremental::LayoutCache)->Result<VectorDocument,LayoutError> {
-        if !references::has_dynamic_fields(document) { cache.clear_fields(); return self.layout_document_pass(document,cancel,cache); }
+        if !references::has_dynamic_fields(document) { cache.clear_fields(); return self.layout_document_pass(document,cancel,cache,false); }
         let inputs=incremental::LayoutCache::field_inputs(document,self.options.show_page_background);
         let mut draft=document.clone();references::append_endnotes(&mut draft,&mut cache.derived_notes)?;references::update_fields(&mut draft,None);
         cache.seed_fields(&mut draft,inputs.as_ref());
         for _ in 0..8 {
             check_cancel(cancel)?;
-            let pages=self.layout_document_pass(&draft,cancel,cache)?;
+            let pages=self.layout_document_pass(&draft,cancel,cache,false)?;
             if !references::update_fields(&mut draft,Some(&pages)) { cache.remember_fields(&draft,inputs); return Ok(pages); }
         }
         Err(LayoutError::RenderPreparation("Page-reference fields did not settle within eight layout passes".into()))
@@ -152,6 +153,7 @@ impl LayoutEngine {
         document: &Document,
         cancel: Option<(&AtomicU64, u64)>,
         cache: &mut incremental::LayoutCache,
+        recover_display: bool,
     ) -> Result<VectorDocument, LayoutError> {
         cache.work.field_passes += 1;
         let mut pages = Vec::new();
@@ -193,7 +195,11 @@ impl LayoutEngine {
                 next_display_number = next_display_number.saturating_add(1);
             }
 
-            let extents = HeaderFooterExtents::measure(section, document)?;
+            let extents = match HeaderFooterExtents::measure(section, document) {
+                Ok(extents) => extents,
+                Err(_) if recover_display => HeaderFooterExtents::default(),
+                Err(error) => return Err(error),
+            };
             let geometry = SectionGeometry::with_extents(section, extents);
             let has_notes = references::section_has_notes(section);
             let next_column = previous_flow.and_then(|(_, cursor)| {
@@ -219,9 +225,18 @@ impl LayoutEngine {
             let page_format = section.properties.page_number_format.unwrap_or(current_page_format);
             let display_start = section.properties.page_number_start.map(|value|value as usize)
                 .unwrap_or(if can_share {next_display_number.saturating_sub(1)} else {next_display_number});
-            let (mut section_pages, final_cursor) = cache.layout_section(
+            let (mut section_pages, final_cursor) = match cache.layout_section(
                 self, section, document, section_index, global_page_start, initial, extents, cancel,
-            )?;
+            ) {
+                Ok(result) => result,
+                Err(LayoutError::Cancelled) => return Err(LayoutError::Cancelled),
+                Err(_) if recover_display => display_recovery::section(
+                    document, section, &geometry, initial, self.options.show_page_background,
+                    &FieldContext { page_number: display_start, page_count: display_start,
+                        section_number: section_index + 1, page_number_format: page_format }, cancel,
+                )?,
+                Err(error) => return Err(error),
+            };
             for (index, page) in section_pages.iter_mut().enumerate() {
                 page.margin_rect = Some(margin_rect);
                 page.page_number_label = Some(format_page_number(display_start.saturating_add(index), page_format));
@@ -271,9 +286,10 @@ impl LayoutEngine {
                     section_number: range.section_index + 1,
                     page_number_format: range.page_format,
                 };
-                render_header_footer_for_page(
+                let result = render_header_footer_for_page(
                     &mut pages[range.first_page + rendered_page], section, document, local_page, &geometry, &context,
-                )?;
+                );
+                if !recover_display { result?; }
             }
         }
         object_scene::annotate_inline_objects(document, &mut pages);
@@ -933,8 +949,8 @@ fn paginate_paragraph_with(
         let mut used = 0.0f32;
         for line in &lines[index..] {
             if line.pagination_break.is_some() { break; }
-            if fit > 0 && used + line.height > remaining_height { break; }
-            if fit == 0 && line.height > remaining_height { break; }
+            // EMU and millimetre conversions can disagree by a fraction of a point.
+            if used + line.height > remaining_height + 0.001 { break; }
             used += line.height;
             fit += 1;
         }
@@ -3209,7 +3225,9 @@ fn vectorize_mixed_line(
     } + first_line_indent;
 
     let ascent = tokens.iter().map(|t| t.ascent).fold(representative_size, f32::max);
-    let descent = tokens.iter().map(|t| t.descent).fold(representative_size * 0.2, f32::max);
+    // Picture-only lines sit on the baseline and have no text descenders.
+    let text_descent = if tokens.iter().all(|t| matches!(t.kind, InlineTokenKind::Image { .. })) { 0.0 } else { representative_size * 0.2 };
+    let descent = tokens.iter().map(|t| t.descent).fold(text_descent, f32::max);
     let height = base_line_height.max(ascent + descent);
     let mut x = origin_x;
     let mut commands = Vec::new();

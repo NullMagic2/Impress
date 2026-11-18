@@ -32,6 +32,16 @@ pub fn save_filter_index(path: Option<&Path>) -> i32 {
         .unwrap_or(0) as i32
 }
 
+/// File managers normally pass a native path, but may supply a local file URI.
+/// Keep literal percent signs and non-Unicode bytes in native paths intact.
+pub fn launch_path(arg: std::ffi::OsString) -> Result<PathBuf, String> {
+    if let Some(uri) = arg.to_str().filter(|s| s.get(..7).is_some_and(|p| p.eq_ignore_ascii_case("file://"))) {
+        return url::Url::parse(uri).ok().and_then(|url| url.to_file_path().ok())
+            .ok_or_else(|| format!("Could not open the file location {uri}"));
+    }
+    Ok(PathBuf::from(arg))
+}
+
 pub fn load_document(path: &Path, formats: &FormatRegistry) -> Result<Document, String> {
     let format = formats.for_path(path)
         .ok_or_else(|| format!("No importer is registered for {}", path.display()))?;

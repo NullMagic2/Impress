@@ -31,7 +31,7 @@ pub fn queue_open(path:PathBuf,state:&Rc<RefCell<CanvasState>>)->Result<(),Strin
 /// Opening adds a document to the window's stack, so the one shown need not be saved first.
 pub fn start_open(s:&mut CanvasState,path:PathBuf)->Result<(),String>{
  if s.file_job.is_some()||s.clipboard_job.is_some()||s.pending_close{return Err("Finish the current file operation before opening another document".into());}
- let revision=s.editor.revision;let formats=s.formats.clone();let(tx,receiver)=mpsc::channel();std::thread::Builder::new().name("impress-open".into()).spawn(move||{let result=load_document(&path,&formats).map(|d|Completed::Opened(path,d));let _=tx.send(result);}).map_err(|e|e.to_string())?;
+ let revision=s.editor.revision;let formats=s.formats.clone();let(tx,receiver)=mpsc::channel();std::thread::Builder::new().name("impress-open".into()).spawn(move||{let result=load_document(&path,&formats).map_err(|error| format!("{}: {error}", path.display())).map(|d|Completed::Opened(path,d));let _=tx.send(result);}).map_err(|e|e.to_string())?;
  s.file_job=Some(Job{revision,receiver});s.action_status=Some("Reading and validating document…".into());Ok(())
 }
 pub fn poll(s:&mut CanvasState){let result=s.file_job.as_ref().map(|j|j.receiver.try_recv());

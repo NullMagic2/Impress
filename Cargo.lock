@@ -1191,6 +1191,7 @@ dependencies = [
  "typst-engine",
  "unicode-script",
  "unicode-segmentation",
+ "url",
  "windows",
  "windows-sys",
  "wxdragon",
