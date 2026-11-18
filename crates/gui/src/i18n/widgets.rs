@@ -580,8 +580,7 @@ self.style_italic_button.set_label(&text("I"));
 self.style_italic_button.set_tooltip(&text("Italic"));
 self.style_underline_button.set_label(&text("U"));
 self.style_underline_button.set_tooltip(&text("Underline"));
-self.style_font_color.set_tooltip(&text("Stored font color choice"));
-self.style_color_display.set_tooltip(&text("Font color choices"));
+self.style_font_color.set_tooltip(&text("Font color choices"));
 self.style_left_button.set_label(&text("L"));
 self.style_left_button.set_tooltip(&text("Align left"));
 self.style_center_button.set_label(&text("C"));
@@ -609,10 +608,6 @@ self.style_format.set_label(&text("Format ▾"));
 self.style_cancel.set_label(&text("Cancel"));
 self.style_save.set_label(&text("OK"));
 self.style_editor.layout();} }
-impl Localize for crate::StyleColorPaletteUi { fn localize(&self) {
-self.style_color_palette_dialog.set_label(&text("Font color"));
-self.style_color_palette_surface.set_tooltip(&text("Choose a font color, or press Escape to cancel"));
-self.style_color_palette_dialog.layout();} }
 impl Localize for crate::FontDialogUi { fn localize(&self) {
 self.fnt_dialog.set_label(&text("Font"));
 self.fnt_tab_0.set_label(&text("Font"));

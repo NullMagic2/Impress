@@ -208,7 +208,6 @@ The tree lists every file. The three icon folders hold one file per icon name, s
 |       |   |-- columns_dialog.xrc   Columns dialog (generated).
 |       |   |-- layout_dialog.xrc    Picture Layout dialog (generated).
 |       |   |-- style_editor.xrc     Modify Style dialog.
-|       |   |-- style_color_palette.xrc  Colour palette popup.
 |       |   |-- format_*.xrc         Format dialogs: font, paragraph, tabs, borders, frame, language, numbering, shortcut, text effects.
 |       |   |-- pdf_export.xrc / pdf_import.xrc / print_dialog.xrc  Output dialogs.
 |       |   |-- recovery_dialog.xrc  Recover Documents dialog.

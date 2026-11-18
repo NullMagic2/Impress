@@ -93,13 +93,9 @@ divider(fonts)
 for index, (name, fallback, hint) in enumerate(FONT_TOGGLES):
     tool(fonts, name, fallback, hint, index == 0)
 divider(fonts)
-# Keep native choice storage separate from the swatch painted by Rust.
-colour = node(None, 'wxBitmapComboBox', 'style_font_color', size='1,1', style='wxCB_READONLY')
-item(fonts, tip(colour, 'Stored font color choice'), 0, 'wxALIGN_CENTER_VERTICAL')
-colour_display = node(None, 'wxPanel', 'style_color_display',
-                      size=f'{COLOR_W},{FIELD_H}', minsize=f'{COLOR_W},{FIELD_H}',
-                      bg=CARD, style='wxWANTS_CHARS')
-item(fonts, tip(colour_display, 'Font color choices'), 0, 'wxALIGN_CENTER_VERTICAL')
+colour = node(None, 'wxBitmapComboBox', 'style_font_color',
+              size=f'{COLOR_W},-1', style='wxCB_READONLY')
+item(fonts, tip(colour, 'Font color choices'), 0, 'wxALIGN_CENTER_VERTICAL')
 
 paragraph = sizer('wxHORIZONTAL')
 item(formatting, paragraph, 0, 'wxEXPAND|wxTOP', ROW - 2)

@@ -89,6 +89,9 @@ pub(crate) fn fill_colour_list(combo:BitmapComboBox,window:&impl WxWidget,curren
 /// choice). `changed` runs after every effective change.
 pub(crate) fn bind_colour_list(combo:BitmapComboBox,parent:Dialog,changed:impl Fn()+'static){
     let previous=Rc::new(Cell::new(combo.get_selection()));
+    // A Format subdialog can replace the selected colour between openings.
+    let on_open = Rc::clone(&previous);
+    combo.on_dropdown(move |_| on_open.set(combo.get_selection()));
     combo.on_selection_changed(move |_|{
         if crate::i18n::source(&combo.get_value())==MORE_COLOURS{
             let start=combo.get_string(previous.get().max(0) as u32);
@@ -148,123 +151,8 @@ fn sync_controls(ui:&StyleEditorUi,draft:&Style,sheet:&StyleSheet){
     ui.style_font_family.change_value(&draft.character.font_family.as_ref().or(resolved.font_family.as_ref()).cloned().unwrap_or_else(||crate::i18n::text("Inherit from base")));
     ui.style_font_size.change_value(&draft.character.font_size_pt.or(resolved.font_size_pt).map(|n|n.to_string()).unwrap_or_else(||crate::i18n::text("Inherit from base")));
     fill_colour_list(ui.style_font_color,&ui.style_editor,draft.character.color.as_deref(),AUTOMATIC);
-    ui.style_color_display.refresh(false,None);
 }
 
-/// The main Modify Style color control is painted as a single rounded field.
-/// Its hidden bitmap combo retains the selected value for the existing style
-/// draft, while this surface presents the compact palette shown in the design.
-fn install_style_color_display(ui:&StyleEditorUi){
-    let panel=ui.style_color_display;
-    panel.set_background_style(BackgroundStyle::Paint);
-    let choices=ui.style_font_color;
-    panel.on_paint(move |_|{
-        let dc=AutoBufferedPaintDC::new(&panel);
-        let size=panel.get_client_size();let dip=|n:i32|panel.from_dip(Size::new(n,n)).width;
-        dc.set_background(Colour::rgb(255,255,255));dc.clear();
-        dc.set_brush(Colour::rgb(255,255,255),BrushStyle::Solid);
-        dc.set_pen(if panel.has_focus(){Colour::rgb(58,104,194)}else{Colour::rgb(202,211,223)},dip(1).max(1),PenStyle::Solid);
-        dc.draw_rounded_rectangle(0,0,size.width-1,size.height-1,dip(5) as f64);
-        let value=choices.get_value();
-        let color=colour_value(&value).and_then(|hex|hex_colour(&hex)).unwrap_or(Colour::rgb(0,0,0));
-        let chip=(dip(9), (size.height-dip(12))/2,dip(18),dip(12));
-        dc.set_brush(color,BrushStyle::Solid);dc.set_pen(if value=="White"{Colour::rgb(202,211,223)}else{color},dip(1).max(1),PenStyle::Solid);
-        dc.draw_rectangle(chip.0,chip.1,chip.2,chip.3);
-        if let Some(font)=Font::new_with_details(10,FontFamily::Default as i32,FontStyle::Normal as i32,
-            FontWeight::Normal as i32,false,"Segoe UI"){dc.set_font(&font);}
-        dc.set_text_foreground(Colour::rgb(36,48,66));
-        let label=if value.is_empty(){AUTOMATIC}else{value.as_str()};
-        let (_,th)=dc.get_text_extent(&crate::i18n::text(&(label)));
-        dc.draw_text(&crate::i18n::text(&(label)),dip(34),(size.height-th)/2);
-        dc.set_pen(Colour::rgb(107,119,138),dip(1).max(1),PenStyle::Solid);
-        let x=size.width-dip(12);let y=size.height/2;
-        dc.draw_line(x-dip(3),y-dip(1),x,y+dip(2));
-        dc.draw_line(x,y+dip(2),x+dip(3),y-dip(1));
-    });
-    panel.on_set_focus(move |event|{panel.refresh(false,None);event.skip(true);});
-    panel.on_kill_focus(move |event|{panel.refresh(false,None);event.skip(true);});
-    panel.on_size(move |event|{panel.refresh(false,None);event.skip(true);});
-}
-
-fn choose_style_color(parent:&StyleEditorUi,initial:Option<&str>)->Option<Option<String>>{
-    let ui=crate::i18n::localized(crate::StyleColorPaletteUi::new(Some(&parent.style_editor),false));
-    let dialog=ui.style_color_palette_dialog;let surface=ui.style_color_palette_surface;
-    surface.set_background_style(BackgroundStyle::Paint);
-    let selected=Rc::new(RefCell::new(None::<String>));
-    let current=initial.map(str::to_ascii_uppercase);
-    let current_for_paint=current.clone();
-    let selected_for_paint=Rc::clone(&selected);
-    surface.on_paint(move |_|{
-        let dc=AutoBufferedPaintDC::new(&surface);
-        paint_rounded_surface(&dc,&surface,Colour::rgb(255,255,255),Colour::rgb(202,211,223),5);
-        let dip=|n:i32|surface.from_dip(Size::new(n,n)).width;
-        if let Some(font) = surface.get_font() { dc.set_font(&font); }
-        let chosen=selected_for_paint.borrow();
-        let active=chosen.as_ref().or(current_for_paint.as_ref());
-        if active.is_none(){
-            dc.set_brush(Colour::rgb(229,237,252),BrushStyle::Solid);
-            dc.set_pen(Colour::rgb(181,200,238),dip(1).max(1),PenStyle::Solid);
-            dc.draw_rounded_rectangle(dip(6),dip(5),dip(184),dip(27),dip(4) as f64);
-        }
-        dc.set_brush(Colour::rgb(0,0,0),BrushStyle::Solid);dc.set_pen(Colour::rgb(0,0,0),dip(1).max(1),PenStyle::Solid);
-        dc.draw_rectangle(dip(13),dip(12),dip(18),dip(12));
-        dc.set_text_foreground(Colour::rgb(36,48,66));dc.draw_text(&crate::i18n::text(&(AUTOMATIC)),dip(40),dip(9));
-        dc.set_pen(Colour::rgb(223,228,236),dip(1).max(1),PenStyle::Solid);
-        dc.draw_line(dip(10),dip(38),dip(186),dip(38));
-        for (index,(_,hex)) in FONT_COLOURS.iter().enumerate(){
-            let x=dip(12+(index%7) as i32*25);let y=dip(47+(index/7) as i32*26);
-            let color=hex_colour(hex).unwrap_or(Colour::rgb(0,0,0));
-            dc.set_brush(color,BrushStyle::Solid);
-            dc.set_pen(if *hex=="#FFFFFF"{Colour::rgb(202,211,223)}else{color},dip(1).max(1),PenStyle::Solid);
-            dc.draw_rounded_rectangle(x,y,dip(20),dip(20),dip(3) as f64);
-            if active.is_some_and(|value|value.eq_ignore_ascii_case(hex)){
-                dc.set_brush(Colour::rgb(255,255,255),BrushStyle::Transparent);
-                dc.set_pen(Colour::rgb(58,104,194),dip(1).max(1),PenStyle::Solid);
-                dc.draw_rounded_rectangle(x-dip(2),y-dip(2),dip(24),dip(24),dip(4) as f64);
-            }
-        }
-        dc.set_pen(Colour::rgb(223,228,236),dip(1).max(1),PenStyle::Solid);
-        dc.draw_line(dip(10),dip(106),dip(186),dip(106));
-        dc.set_text_foreground(Colour::rgb(36,48,66));dc.draw_text(&crate::i18n::text(&(MORE_COLOURS)),dip(12),dip(116));
-    });
-    {let selected=Rc::clone(&selected);surface.on_mouse_left_down(move |event|{
-        let WindowEventData::MouseButton(mouse)=&event else{return};
-        let Some(point)=mouse.get_position()else{return};
-        let px=|n:i32|surface.from_dip(Size::new(n,n)).width;
-        if point.y<px(36){selected.replace(None);dialog.end_modal(ID_OK);return;}
-        if (px(44)..px(100)).contains(&point.y){
-            let col=(point.x-px(12))/px(25);let row=(point.y-px(47))/px(26);
-            if (0..7).contains(&col)&&(0..2).contains(&row){
-                let index=(row*7+col) as usize;
-                if let Some((_,hex))=FONT_COLOURS.get(index){selected.replace(Some((*hex).to_owned()));dialog.end_modal(ID_OK);}
-            }
-            return;
-        }
-        if point.y>=px(108){
-            let initial=current.as_deref().and_then(hex_colour).unwrap_or(Colour::rgb(0,0,0));
-            let picker=ColourDialog::builder(&dialog).with_title(&crate::i18n::text(&("More colors"))).with_initial_colour(initial).with_choose_full(true).build();
-            if picker.show_modal()==ID_OK{if let Some(color)=picker.get_colour(){
-                selected.replace(Some(format!("#{:02X}{:02X}{:02X}",color.r,color.g,color.b)));dialog.end_modal(ID_OK);
-            }}
-        }
-    });}
-    surface.on_key_down(move |event|{
-        if let WindowEventData::Keyboard(key)=&event{
-            if key.get_key_code()==Some(wxdragon::keycode::WXK_ESCAPE){dialog.end_modal(wxdragon::id::ID_CANCEL);return;}
-        }
-        event.skip(true);
-    });
-    #[cfg(windows)]
-    let anchor=crate::gtk_native::to_screen(&parent.style_color_display,wxdragon::geometry::Point::new(0,parent.style_color_display.get_size().height+2));
-    #[cfg(windows)] unsafe {
-        use windows_sys::Win32::UI::WindowsAndMessaging::{SetWindowPos,SWP_NOSIZE,SWP_NOZORDER};
-        SetWindowPos(dialog.get_handle(),std::ptr::null_mut(),anchor.x,anchor.y,0,0,SWP_NOSIZE|SWP_NOZORDER);
-    }
-    #[cfg(not(windows))] crate::placement::centre(&dialog);
-    let accepted=dialog.show_modal()==ID_OK;
-    let choice=if accepted{Some(selected.borrow().clone())}else{None};
-    dialog.destroy();choice
-}
 fn read_style(ui:&StyleEditorUi,draft:&Style,original:&Style,base_ids:&[Option<StyleId>],sheet:&StyleSheet)->Result<Style,String>{
     let mut draft=draft.clone();draft.name=ui.style_name.get_value().trim().to_owned();
     if draft.name==crate::i18n::style_name(original) {draft.name=original.name.clone();}
@@ -609,12 +497,9 @@ impl Ribbon{
   // with the font boxes on every DPI.
   let field=ui.style_editor.from_dip(Size::new(28,28)).height;
   for combo in [ui.style_font_family,ui.style_font_size]{let w=combo.get_size().width;combo.set_min_size(Size::new(w,field));}
-  ui.style_font_color.hide();
-  ui.style_color_display.set_min_size(ui.style_color_display.from_dip(Size::new(150,28)));
   let side=ui.style_font_size.get_size().height.max(field);
   for (button,icon,tip) in style_toolbar(&ui){skin_dialog_button(button,icon,tip,side,16);}
   install_rounded_surfaces(&ui);
-  install_style_color_display(&ui);
   ui.style_editor.set_escape_id(StyleEditorUi::xrc_id("style_cancel"));
   ui.style_type.set_selection(if draft.kind==StyleKind::Paragraph{0}else{1});
   ui.style_name.change_value(&crate::i18n::style_name(&draft));
@@ -677,30 +562,10 @@ impl Ribbon{
   for control in [ui.style_font_family,ui.style_font_size]{
     let session=Rc::clone(&session);control.on_text_updated(move |_|session.refresh());
   }
-  {let session=Rc::clone(&session);let panel=ui.style_color_display;
-   panel.on_mouse_left_down(move |event|{
-    panel.set_focus();
-    let initial=colour_value(&crate::i18n::source(&session.ui.style_font_color.get_value()));
-    if let Some(choice)=choose_style_color(&session.ui,initial.as_deref()){
-        fill_colour_list(session.ui.style_font_color,&session.ui.style_editor,choice.as_deref(),AUTOMATIC);
-        panel.refresh(false,None);session.refresh();
-    }
-    event.skip(false);
-   });}
-  {let session=Rc::clone(&session);let panel=ui.style_color_display;
-   panel.on_key_down(move |event|{
-    if let WindowEventData::Keyboard(key)=&event{
-        if matches!(key.get_key_code(),Some(wxdragon::keycode::WXK_RETURN|wxdragon::keycode::WXK_SPACE)){
-            let initial=colour_value(&crate::i18n::source(&session.ui.style_font_color.get_value()));
-            if let Some(choice)=choose_style_color(&session.ui,initial.as_deref()){
-                fill_colour_list(session.ui.style_font_color,&session.ui.style_editor,choice.as_deref(),AUTOMATIC);
-                panel.refresh(false,None);session.refresh();
-            }
-            event.skip(false);return;
-        }
-    }
-    event.skip(true);
-   });}
+  {
+    let session = Rc::clone(&session);
+    bind_colour_list(ui.style_font_color, ui.style_editor, move || session.refresh());
+  }
   {let session=Rc::clone(&session);ui.style_base.on_selection_changed(move |_|session.change_base());}
   for control in [ui.style_next,ui.style_font_family,ui.style_font_size]{
     let session=Rc::clone(&session);control.on_selection_changed(move |_|session.refresh());

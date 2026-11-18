@@ -330,20 +330,8 @@
                               <flag>wxALIGN_CENTER_VERTICAL</flag>
                               <border>0</border>
                               <object class="wxBitmapComboBox" name="style_font_color">
-                                <size>1,1</size>
+                                <size>150,-1</size>
                                 <style>wxCB_READONLY</style>
-                                <tooltip>Stored font color choice</tooltip>
-                              </object>
-                            </object>
-                            <object class="sizeritem">
-                              <option>0</option>
-                              <flag>wxALIGN_CENTER_VERTICAL</flag>
-                              <border>0</border>
-                              <object class="wxPanel" name="style_color_display">
-                                <size>150,28</size>
-                                <minsize>150,28</minsize>
-                                <bg>#ffffff</bg>
-                                <style>wxWANTS_CHARS</style>
                                 <tooltip>Font color choices</tooltip>
                               </object>
                             </object>

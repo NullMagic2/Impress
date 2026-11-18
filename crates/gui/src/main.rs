@@ -82,7 +82,6 @@ wxdragon::include_xrc!("../ui/find_dialog.xrc", FindDialogUi);
 wxdragon::include_xrc!("../ui/layout_dialog.xrc", LayoutDialogUi);
 wxdragon::include_xrc!("../ui/citation_dialog.xrc", CitationDialogUi);
 wxdragon::include_xrc!("../ui/style_editor.xrc", StyleEditorUi);
-wxdragon::include_xrc!("../ui/style_color_palette.xrc", StyleColorPaletteUi);
 // Format ▾ dialogs of Modify Style (tools/build_format_dialogs.py).
 wxdragon::include_xrc!("../ui/format_font.xrc", FontDialogUi);
 wxdragon::include_xrc!("../ui/pdf_export.xrc", PdfExportDialogUi);

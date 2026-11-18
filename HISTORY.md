@@ -1,3 +1,7 @@
+## 0.8.6-69 — Style color dropdown
+
+Modify Style uses the same native swatch dropdown as the Font dialog. Escape or a click outside dismisses the list.
+
 ## 0.8.6-68 — Opening documents with full-page pictures
 
 - Open DOCX files containing pictures as tall as the printable area. If an element prevents normal pagination, the editor can show a simplified view while preserving the original document.

@@ -17,7 +17,7 @@ def run(args, **kwargs): return subprocess.check_output(args, text=True, **kwarg
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--target', choices=TARGETS, required=True)
-    parser.add_argument('--version', default='0.8.6-68')
+    parser.add_argument('--version', default='0.8.6-69')
     parser.add_argument('--binaries', type=Path, default=ROOT/'target/release')
     parser.add_argument('--output', type=Path, default=ROOT/'dist')
     args = parser.parse_args()
