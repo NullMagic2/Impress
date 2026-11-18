@@ -126,7 +126,7 @@ pub enum ViewMode { Graphical, Typst, Split }
 enum Action {
     InterfaceLanguage,
     New, Open, RecentFiles, Save, SaveAs, Recovery, Editor(AppCommand),
-    Pdf, ImportPdf, Print, CommentNew, CommentDelete, CommentResolve, CommentStep(bool), StyleManager, ManageStyles, StyleGalleryMore, StylesClose, StyleNew, StyleModify, StyleApply, StyleInspect, StyleDelete, ClearDirect, Highlight, Hyphenation, TextLanguage,
+    Pdf, ImportPdf, Print, CommentNew, CommentDelete, CommentDecision, CommentStep(bool), StyleManager, ManageStyles, StyleGalleryMore, StylesClose, StyleNew, StyleModify, StyleApply, StyleInspect, StyleDelete, ClearDirect, Highlight, Hyphenation, TextLanguage,
     SearchOptions, SearchStep(bool), ReplaceOne, ReplaceAll,
     Contents, ContentsUpdate, ContentsLevel, Footnotes, Bookmarks, Comments, TextTracking, Spelling, Compatibility,
     EquationClose,
@@ -714,10 +714,10 @@ impl Ribbon {
             Action::Footnotes => self.footnotes()?, Action::Bookmarks => self.bookmarks()?,
             Action::Comments => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.show(!p.shown()); } }
             Action::CommentNew => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.new_comment(); } }
-            Action::CommentDelete | Action::CommentResolve => {
+            Action::CommentDelete | Action::CommentDecision => {
                 let id = comments_pane::current(&self.state.borrow()).ok_or("Select a comment first")?;
                 let pane = self.comments.borrow().clone();
-                if let Some(p) = pane { if matches!(action, Action::CommentDelete) { p.delete(&id); } else { p.toggle_resolved(&id); } }
+                if let Some(p) = pane { if matches!(action, Action::CommentDelete) { p.delete(&id); } else { p.review_decision(&id); } }
             }
             Action::CommentStep(forward) => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.step(forward); } }
             Action::TextTracking => self.text_tracking()?,
@@ -1477,6 +1477,8 @@ impl Ribbon {
         if let Some(display) = pending {
             if let Err(error) = self.open_equation(None, display) { self.state.borrow_mut().action_status = Some(error); }
         }
+        let new_comment = std::mem::take(&mut self.state.borrow_mut().pending_new_comment);
+        if new_comment { self.run(Action::CommentNew); }
         let pending_comment=self.state.borrow_mut().pending_comment.take();
         if let Some(id)=pending_comment{let pane=self.comments.borrow().clone();if let Some(p)=pane{p.select(Some(id));}}
         let layout_menu=self.state.borrow_mut().layout_menu_request.take();
@@ -1564,6 +1566,7 @@ impl Ribbon {
                 bar.set_scrollbar(position, thumb, range, thumb, true); bar.enable(range > thumb);
             }
         }
+        if let Some(pane) = self.comments.borrow().as_ref() { pane.sync_view(); }
         let changed = self.last_key.borrow().as_ref() != Some(&key) || self.state.borrow().equation_draft.is_some();
         if changed {
             let pane = self.comments.borrow().clone();
@@ -1623,7 +1626,7 @@ impl Ribbon {
             let enabled = !spec.disabled && match spec.action {
                 Action::StyleApply | Action::StyleModify | Action::StyleInspect | Action::StyleDelete => self.styles_view.borrow().has_selection(),
                 Action::Editor(AppCommand::Undo) => undo,
-                Action::CommentDelete | Action::CommentResolve => comments_pane::current(&self.state.borrow()).is_some(),
+                Action::CommentDelete | Action::CommentDecision => comments_pane::current(&self.state.borrow()).is_some(),
                 Action::CommentStep(_) => !self.state.borrow().editor.document.review.comments.is_empty(),
                 Action::Editor(AppCommand::Redo) => redo,
                 Action::Editor(AppCommand::Cut | AppCommand::Copy) => selection,

@@ -1,13 +1,6 @@
-//! The Comments pane, as Word's: the document's comment threads as cards in
-//! document order (author, date, text, replies; resolved ones dimmed), the
-//! commented text highlighted on the page. Selecting a card selects its text;
-//! the selected card offers Reply, Edit, Resolve or Reopen, and Delete. New
-//! comments, replies and edits are written in the field at the bottom (Ctrl+
-//! Enter posts, Escape cancels). Review > Comment, Delete, Resolve, Previous
-//! and Next work on the current comment: the one selected here, or the one
-//! the caret is in.
+//! Comment cards aligned to visible text anchors, with a list for all threads.
 use super::*;
-use model::{AnchorRange, ReviewComment};
+use model::{AnchorRange, CommentDecision, ReviewComment};
 use render::Rect;
 use wxdragon::{
     dc::AutoBufferedPaintDC,
@@ -45,15 +38,32 @@ enum Compose {
 }
 
 #[derive(Clone, PartialEq)]
-enum Hit { Close, Card(NodeId), Reply(NodeId), Edit(NodeId), Resolve(NodeId), Delete(NodeId), Post, Cancel }
+enum Hit {
+    Close, View, Card(NodeId), Reply(NodeId), Edit(NodeId),
+    Decide(NodeId, CommentDecision), Reopen(NodeId), Delete(NodeId), Post, Cancel,
+}
+
+#[derive(Clone, PartialEq)]
+struct ViewKey {
+    document: u64,
+    viewport: render::ViewportState,
+    generation: Option<u64>,
+    revision: u64,
+    selected: Option<NodeId>,
+}
+
 
 #[derive(Default)]
 struct Inner {
     compose: Option<Compose>,
+    draft_document: Option<u64>,
     scroll: i32,
     content_height: i32,
     hits: Vec<(Rect, Hit)>,
     hover: Option<Hit>,
+    all: bool,
+    view_key: Option<ViewKey>,
+    last_focus: Option<editor::DocumentPosition>,
 }
 
 pub(super) struct CommentsPane {
@@ -74,7 +84,7 @@ fn font(points: i32, bold: bool) -> Option<Font> {
 fn author(state: &CanvasState) -> String {
     let named = state.editor.document.review.author.trim().to_string();
     if !named.is_empty() { return named; }
-    let user = std::env::var("USER").unwrap_or_default();
+    let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_default();
     let full = std::fs::read_to_string("/etc/passwd").ok().and_then(|passwd| passwd.lines()
         .find(|line| line.split(':').next() == Some(user.as_str()))
         .and_then(|line| line.split(':').nth(4).map(|g| g.split(',').next().unwrap_or("").trim().to_string())))
@@ -117,20 +127,61 @@ fn threads(state: &CanvasState) -> Vec<ReviewComment> {
     list
 }
 
-/// Whether `range` holds the caret position (`paragraph`, `offset`).
-fn contains(state: &CanvasState, range: &AnchorRange, paragraph: &NodeId, offset: usize) -> bool {
-    let order: Vec<NodeId> = model::document_paragraphs(&state.editor.document).iter().map(|p| p.id.clone()).collect();
-    let at = |id: &NodeId| order.iter().position(|p| p == id);
-    let (Some(start), Some(end), Some(here)) = (at(&range.start.paragraph), at(&range.end.paragraph), at(paragraph)) else { return false; };
-    (start, range.start.offset) <= (here, offset) && (here, offset) <= (end, range.end.offset)
+/// The open comment at the caret, if any.
+fn at_caret(state: &CanvasState) -> Option<NodeId> {
+    let comments = &state.editor.document.review.comments;
+    if comments.is_empty() { return None; }
+    let focus = state.editor.focus_position()?;
+    let order = model::document_paragraphs(&state.editor.document).into_iter()
+        .enumerate().map(|(index, paragraph)| (&paragraph.id, index)).collect::<std::collections::BTreeMap<_, _>>();
+    let here = (*order.get(&focus.node_id)?, focus.byte_offset);
+    comments.values().filter(|comment| !comment.is_closed()).filter_map(|comment| {
+        let range = comment.range.as_ref()?;
+        let start = (*order.get(&range.start.paragraph)?, range.start.offset);
+        let end = (*order.get(&range.end.paragraph)?, range.end.offset);
+        (start <= here && here <= end).then_some((start, &comment.id))
+    }).min().map(|(_, id)| id.clone())
 }
 
-/// The comment the caret is in, if any.
-fn at_caret(state: &CanvasState) -> Option<NodeId> {
-    let focus = state.editor.focus_position()?;
-    threads(state).into_iter().filter(|c| !c.resolved)
-        .find(|c| c.range.as_ref().is_some_and(|r| contains(state, r, &focus.node_id, focus.byte_offset)))
-        .map(|c| c.id)
+fn status(comment: &ReviewComment) -> Option<&'static str> {
+    match comment.decision {
+        Some(CommentDecision::Accepted) => Some("Accepted"),
+        Some(CommentDecision::Rejected) => Some("Rejected"),
+        None if comment.is_closed() => Some("Resolved"),
+        None => None,
+    }
+}
+
+/// Resolve anchor positions in one pass through the visible pages. Repeated
+/// headers and footers use the first of their visible occurrences.
+fn visible_anchors(state: &CanvasState, list: &[ReviewComment], origin: i32) -> std::collections::BTreeMap<NodeId, i32> {
+    use std::collections::BTreeMap;
+    let mut result = BTreeMap::new();
+    if state.display_generation.is_none() || list.is_empty() { return result; }
+    let mut lookup: BTreeMap<&str, Vec<_>> = BTreeMap::new();
+    for c in list {
+        if let Some(range) = &c.range {
+            lookup.entry(&range.start.paragraph.0).or_default().push((&c.id, range.start.offset));
+        }
+    }
+    if lookup.is_empty() { return result; }
+    let document = &state.vector_document;
+    let physical_height = state.viewport.viewport_px.height;
+    let points_to_px = state.viewport.points_to_pixels();
+    for (page, rect) in document.pages.iter().zip(state.viewport.page_rects_px(document)) {
+        if rect.max_y() < 0.0 || rect.y > physical_height { continue; }
+        for hit in &page.hit_regions {
+            let Some(anchors) = lookup.get(hit.node_id.as_str()) else { continue };
+            let y = rect.y + hit.rect.y * points_to_px;
+            if y + hit.rect.height * points_to_px < 0.0 || y >= physical_height { continue; }
+            for &(id, offset) in anchors {
+                if hit.byte_range.contains(&offset) || hit.caret_stops.iter().any(|stop| stop.byte_offset == offset) {
+                    result.entry(id.clone()).or_insert((y / state.pixel_scale.max(1.0)).round() as i32 + origin);
+                }
+            }
+        }
+    }
+    result
 }
 
 /// The current comment: the one selected in the pane, else the caret's.
@@ -144,7 +195,7 @@ pub(crate) fn comment_marks(state: &mut CanvasState) {
     if state.display_generation != Some(state.layout_generation) { return; }
     let selected = current(state);
     let mut marks = Vec::new();
-    for comment in state.editor.document.review.comments.values().filter(|c| !c.resolved) {
+    for comment in state.editor.document.review.comments.values().filter(|c| !c.is_closed()) {
         let Some(range) = &comment.range else { continue; };
         let source = render::SourceSelection {
             anchor: render::SourcePosition { node_id: range.start.paragraph.0.clone(), byte_offset: range.start.offset },
@@ -152,8 +203,12 @@ pub(crate) fn comment_marks(state: &mut CanvasState) {
         };
         let alpha = if selected.as_ref() == Some(&comment.id) { 0.42 } else { 0.2 };
         let color = render::Color { r: MARK.0 as f32 / 255.0, g: MARK.1 as f32 / 255.0, b: MARK.2 as f32 / 255.0, a: alpha };
-        for area in render::overlay_for_selection(&state.vector_document, Some(&source), 1.0).selections {
-            marks.push(render::ColoredOverlayRect { area, color });
+        let overlay = render::overlay_for_selection(&state.vector_document, Some(&source), 1.0);
+        marks.extend(overlay.selections.into_iter().map(|area| render::ColoredOverlayRect { area, color }));
+        if range.start == range.end {
+            if let Some(area) = overlay.caret {
+                marks.push(render::ColoredOverlayRect { area, color });
+            }
         }
     }
     state.overlay.review_marks.extend(marks);
@@ -213,7 +268,22 @@ impl CommentsPane {
                 _ => 0,
             };
             let step = p.surface.from_dip_int(48);
-            { let mut inner = p.inner.borrow_mut(); inner.scroll = (inner.scroll - rotation.signum() * step).clamp(0, inner.content_height.max(0)); }
+            let scroll_document = {
+                let mut inner = p.inner.borrow_mut();
+                let prior = inner.scroll.max(0);
+                inner.scroll = (prior - rotation.signum() * step).clamp(0, inner.content_height.max(0));
+                !inner.all && inner.scroll == prior
+            };
+            if scroll_document {
+                if let Some(ribbon) = p.ribbon.upgrade() {
+                    let mut state = ribbon.state.borrow_mut();
+                    let document = Arc::clone(&state.vector_document);
+                    let distance = step as f32 * state.pixel_scale * rotation.signum() as f32;
+                    state.viewport.scroll_by(0.0, -distance, &document);
+                    state.needs_present = true;
+                    ribbon.ui.paper_canvas.refresh(false, None);
+                }
+            }
             p.surface.refresh(false, None);
             event.skip(false);
         });
@@ -240,6 +310,11 @@ impl CommentsPane {
         let Some(ribbon) = self.ribbon.upgrade() else { return; };
         if self.panel.is_shown() == shown { return; }
         self.panel.show(shown);
+        {
+            let mut inner = self.inner.borrow_mut();
+            inner.view_key = None;
+            inner.last_focus = None;
+        }
         if !shown { self.stop_writing(); ribbon.state.borrow_mut().comment_selected = None; }
         ribbon.ui.workspace_panel.layout(); ribbon.ui.body_panel.layout();
         self.refresh(&ribbon);
@@ -257,17 +332,55 @@ impl CommentsPane {
         let Some(ribbon) = self.ribbon.upgrade() else { return; };
         self.show(true);
         let range = id.as_ref().and_then(|id| ribbon.state.borrow().editor.document.review.comments.get(id).and_then(|c| c.range.clone()));
+        if id.is_some() && range.is_none() { self.inner.borrow_mut().all = true; }
         ribbon.state.borrow_mut().comment_selected = id;
-        if let Some(range) = range { let _ = ribbon.edit(|e| e.go_to_range(&range)); }
+        if let Some(range) = range {
+            let _ = ribbon.edit_without_focus(|e| e.go_to_range(&range));
+            reveal_review_caret(&mut ribbon.state.borrow_mut());
+        }
+        self.inner.borrow_mut().last_focus = ribbon.state.borrow().editor.focus_position();
         self.scroll_to_selected();
         self.refresh(&ribbon);
     }
 
-    /// Follows the caret into a comment, as the caret moves in the text.
+    /// Follow viewport changes even when the caret stays still (wheel, zoom,
+    /// or a new page arriving from the layout worker).
+    pub(super) fn sync_view(&self) {
+        let Some(ribbon) = self.ribbon.upgrade() else { return };
+        if !self.shown() { return; }
+        let key = {
+            let state = ribbon.state.borrow();
+            ViewKey { document: state.documents.active_id(), viewport: state.viewport, generation: state.display_generation,
+                revision: state.editor.revision, selected: state.comment_selected.clone() }
+        };
+        let mut inner = self.inner.borrow_mut();
+        if inner.view_key.as_ref() == Some(&key) { return; }
+        if !inner.all && inner.scroll >= 0 && inner.view_key.as_ref().is_some_and(|prior| prior.viewport != key.viewport) {
+            inner.scroll = 0;
+        }
+        let changed_document = inner.view_key.as_ref().is_some_and(|prior| prior.document != key.document);
+        if changed_document {
+            inner.scroll = 0;
+            inner.last_focus = None;
+        }
+        inner.view_key = Some(key);
+        drop(inner);
+        if changed_document { self.stop_writing(); }
+        self.surface.refresh(false, None);
+    }
+
     pub(super) fn follow_caret(&self) {
         let Some(ribbon) = self.ribbon.upgrade() else { return; };
         if !self.shown() || self.inner.borrow().compose.is_some() { return; }
-        let here = at_caret(&ribbon.state.borrow());
+        let state = ribbon.state.borrow();
+        let focus = state.editor.focus_position();
+        {
+            let mut inner = self.inner.borrow_mut();
+            if inner.last_focus == focus { return; }
+            inner.last_focus = focus;
+        }
+        let here = at_caret(&state);
+        drop(state);
         let changed = { let mut state = ribbon.state.borrow_mut(); let changed = here.is_some() && state.comment_selected != here; if changed { state.comment_selected = here; } changed };
         if changed { self.scroll_to_selected(); self.refresh(&ribbon); }
     }
@@ -284,7 +397,13 @@ impl CommentsPane {
     }
 
     fn write(&self, compose: Compose, text: &str) {
-        self.inner.borrow_mut().compose = Some(compose);
+        let Some(ribbon) = self.ribbon.upgrade() else { return };
+        let document = ribbon.state.borrow().documents.active_id();
+        {
+            let mut inner = self.inner.borrow_mut();
+            inner.compose = Some(compose);
+            inner.draft_document = Some(document);
+        }
         self.input.set_value(text);
         self.input.show(true);
         self.panel.layout();
@@ -294,7 +413,11 @@ impl CommentsPane {
     }
 
     fn stop_writing(&self) {
-        if self.inner.borrow_mut().compose.take().is_none() { return; }
+        {
+            let mut inner = self.inner.borrow_mut();
+            if inner.compose.take().is_none() { return; }
+            inner.draft_document = None;
+        }
         self.input.set_value("");
         self.input.show(false);
         self.panel.layout();
@@ -304,7 +427,15 @@ impl CommentsPane {
 
     fn post(&self) {
         let Some(ribbon) = self.ribbon.upgrade() else { return; };
-        let Some(compose) = self.inner.borrow().compose.clone() else { return; };
+        let (compose, document) = {
+            let inner = self.inner.borrow();
+            (inner.compose.clone(), inner.draft_document)
+        };
+        let Some(compose) = compose else { return };
+        if document != Some(ribbon.state.borrow().documents.active_id()) {
+            self.stop_writing();
+            return;
+        }
         let text = self.input.get_value();
         if text.trim().is_empty() { self.stop_writing(); return; }
         let name = author(&ribbon.state.borrow());
@@ -333,11 +464,44 @@ impl CommentsPane {
         self.refresh(&ribbon);
     }
 
-    pub(super) fn toggle_resolved(&self, id: &NodeId) {
-        let Some(ribbon) = self.ribbon.upgrade() else { return; };
-        let resolved = ribbon.state.borrow().editor.document.review.comments.get(id).is_some_and(|c| c.resolved);
-        if let Err(error) = ribbon.edit(|e| e.update_comment(id, None, Some(!resolved))) { ribbon.state.borrow_mut().action_status = Some(error); }
+    fn set_outcome(&self, id: &NodeId, decision: Option<CommentDecision>, closed: bool) {
+        let Some(ribbon) = self.ribbon.upgrade() else { return };
+        let result = ribbon.edit_without_focus(|e| match decision {
+            Some(decision) => e.decide_comment(id, decision),
+            None => e.update_comment(id, None, Some(closed)),
+        });
+        match result {
+            Ok(()) => {
+                let caption = match (decision, closed) {
+                    (Some(CommentDecision::Accepted), _) => "Comment accepted",
+                    (Some(CommentDecision::Rejected), _) => "Comment rejected",
+                    (None, true) => "Comment resolved",
+                    (None, false) => "Comment reopened",
+                };
+                let mut state = ribbon.state.borrow_mut();
+                state.action_status = Some(caption.into());
+                if closed && !self.inner.borrow().all { state.comment_selected = None; }
+            }
+            Err(error) => ribbon.state.borrow_mut().action_status = Some(error),
+        }
         self.refresh(&ribbon);
+    }
+
+    /// Keyboard-accessible equivalent of the actions on a comment card.
+    pub(super) fn review_decision(&self, id: &NodeId) {
+        let Some(ribbon) = self.ribbon.upgrade() else { return };
+        let closed = ribbon.state.borrow().editor.document.review.comments.get(id).is_some_and(ReviewComment::is_closed);
+        let actions: &[&str] = if closed { &["Reopen", "Accept comment", "Reject comment"] }
+            else { &["Accept comment", "Reject comment", "Resolve"] };
+        let choices = actions.iter().map(|label| crate::i18n::text(label)).collect::<Vec<_>>();
+        let choice = input_dialog::choice(&ribbon.ui.main_frame, "Comment decision", "", &choices);
+        match choice.map(|index| actions[index]) {
+            Some("Accept comment") => self.set_outcome(id, Some(CommentDecision::Accepted), true),
+            Some("Reject comment") => self.set_outcome(id, Some(CommentDecision::Rejected), true),
+            Some("Resolve") => self.set_outcome(id, None, true),
+            Some("Reopen") => self.set_outcome(id, None, false),
+            _ => (),
+        }
     }
 
     /// Selects the next (or previous) comment from the current one or the caret.
@@ -345,7 +509,9 @@ impl CommentsPane {
         let Some(ribbon) = self.ribbon.upgrade() else { return; };
         let next = {
             let state = ribbon.state.borrow();
-            let list = threads(&state);
+            let all = self.inner.borrow().all;
+            let list = threads(&state).into_iter().filter(|comment| all
+                || (!comment.is_closed() && comment.range.is_some())).collect::<Vec<_>>();
             if list.is_empty() { None } else {
                 let at = current(&state).and_then(|id| list.iter().position(|c| c.id == id));
                 let index = match (at, forward) {
@@ -364,13 +530,21 @@ impl CommentsPane {
         let Some(ribbon) = self.ribbon.upgrade() else { return; };
         match hit {
             Hit::Close => self.show(false),
+            Hit::View => {
+                let mut inner = self.inner.borrow_mut();
+                inner.all = !inner.all;
+                inner.scroll = -1;
+                drop(inner);
+                self.surface.refresh(false, None);
+            }
             Hit::Card(id) => self.select(Some(id)),
             Hit::Reply(id) => self.write(Compose::Reply(id), ""),
             Hit::Edit(id) => {
                 let text = ribbon.state.borrow().editor.document.review.comments.get(&id).map(|c| c.text.clone()).unwrap_or_default();
                 self.write(Compose::Edit(id), &text);
             }
-            Hit::Resolve(id) => self.toggle_resolved(&id),
+            Hit::Decide(id, result) => self.set_outcome(&id, Some(result), true),
+            Hit::Reopen(id) => self.set_outcome(&id, None, false),
             Hit::Delete(id) => self.delete(&id),
             Hit::Post => self.post(),
             Hit::Cancel => self.stop_writing(),
@@ -387,7 +561,17 @@ impl CommentsPane {
         let Some((mut pix, canvas)) = crate::crisp::Canvas::new(&self.surface, w, h) else { return; };
         pix.fill(tiny_skia::Color::from_rgba8(247, 249, 251, 255));
         let state = ribbon.state.borrow();
-        let list = threads(&state);
+        let all = self.inner.borrow().all;
+        let mut list = threads(&state);
+        let has_comments = !list.is_empty();
+        let anchors = if all { Default::default() } else {
+            list.retain(|comment| !comment.is_closed());
+            let origin = self.surface.screen_to_client(ribbon.ui.paper_canvas.client_to_screen(Point::new(0, 0))).y;
+            let anchors = visible_anchors(&state, &list, origin);
+            list.retain(|comment| anchors.contains_key(&comment.id));
+            list.sort_by_key(|comment| anchors[&comment.id]);
+            anchors
+        };
         let selected = current(&state);
         let compose = self.inner.borrow().compose.clone();
         let strip = if compose.is_some() { d(STRIP) } else { 0 };
@@ -402,32 +586,55 @@ impl CommentsPane {
             let mut lines = Vec::new();
             for paragraph in text.split('\n') {
                 let mut line = String::new();
-                for word in paragraph.split(' ') {
-                    let candidate = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
-                    if !line.is_empty() && dc.get_text_extent(&candidate).0 > width { lines.push(std::mem::take(&mut line)); line = word.to_string(); }
-                    else { line = candidate; }
+                for word in paragraph.split_whitespace() {
+                    let candidate = if line.is_empty() { word.to_owned() } else { format!("{line} {word}") };
+                    if dc.get_text_extent(&candidate).0 <= width {
+                        line = candidate;
+                        continue;
+                    }
+                    if !line.is_empty() { lines.push(std::mem::take(&mut line)); }
+                    if dc.get_text_extent(word).0 <= width {
+                        line.push_str(word);
+                        continue;
+                    }
+                    for ch in word.chars() {
+                        line.push(ch);
+                        if line.len() > ch.len_utf8() && dc.get_text_extent(&line).0 > width {
+                            line.pop();
+                            lines.push(std::mem::take(&mut line));
+                            line.push(ch);
+                        }
+                    }
                 }
                 lines.push(line);
             }
             lines
         };
         let card_w = w - 2 * d(PAD);
+        if card_w <= 2 * d(CARD_PAD) || bottom <= top {
+            self.inner.borrow_mut().hits.clear();
+            canvas.present(&dc, &pix, 0, 0);
+            return;
+        }
         let text_w = card_w - 2 * d(CARD_PAD);
         let line_h = d(17);
-        let mut y = top + d(4) - self.inner.borrow().scroll.max(0);
+        let scroll = self.inner.borrow().scroll.max(0);
+        let mut y = top + d(4) - scroll;
         let mut selected_span = None;
         let mut cards = Vec::new();
         for c in &list {
             let is_selected = selected.as_ref() == Some(&c.id);
+            if let Some(anchor) = anchors.get(&c.id) { y = y.max(*anchor - scroll); }
             let date = c.date.as_deref().map(when).unwrap_or_default();
             let mut lines = vec![Line { text: c.author.clone(), bold: true, small: false, color: INK, indent: 0 }];
-            let meta = format!("{}{}{}", date, if c.resolved { " · Resolved" } else { "" }, if c.range.is_none() { " · Text removed" } else { "" });
+            let meta = [(!date.is_empty()).then_some(date), status(c).map(crate::i18n::text),
+                c.range.is_none().then(|| crate::i18n::text("Text removed"))].into_iter().flatten().collect::<Vec<_>>().join(" · ");
             if !meta.is_empty() { lines.push(Line { text: meta, bold: false, small: true, color: MUTED, indent: 0 }); }
             let body = wrap(&c.text, text_w, false, false);
             let shown = if is_selected { body.len() } else { body.len().min(PREVIEW_LINES) };
             for (i, text) in body.iter().take(shown).enumerate() {
                 let text = if !is_selected && i + 1 == shown && body.len() > shown { format!("{text}…") } else { text.clone() };
-                lines.push(Line { text, bold: false, small: false, color: if c.resolved { MUTED } else { INK }, indent: 0 });
+                lines.push(Line { text, bold: false, small: false, color: if c.is_closed() { MUTED } else { INK }, indent: 0 });
             }
             if is_selected {
                 for reply in &c.replies {
@@ -437,19 +644,19 @@ impl CommentsPane {
             } else if !c.replies.is_empty() {
                 lines.push(Line { text: format!("{} {}", c.replies.len(), if c.replies.len() == 1 { "reply" } else { "replies" }), bold: false, small: true, color: ACCENT, indent: 0 });
             }
-            let actions = if is_selected { line_h + d(6) } else { 0 };
+            let actions = if is_selected { 2 * d(28) + d(6) } else { 0 };
             let height = 2 * d(CARD_PAD) + lines.len() as i32 * line_h + actions;
             if is_selected { selected_span = Some((y, y + height)); }
             cards.push((c.clone(), y, height, lines, is_selected));
             y += height + d(CARD_GAP);
         }
-        let content = y + self.inner.borrow().scroll.max(0) - top;
+        let content = y + scroll - top;
         // Bring the selected card into view when asked (scroll = -1).
         if self.inner.borrow().scroll < 0 {
             let mut scroll = 0;
             if let Some((a, b)) = selected_span {
-                let a = a + 0 - top; let b = b - top;
-                if b > bottom - top { scroll = (b - (bottom - top) + d(8)).min(a); }
+                let a = a - top; let b = b - top;
+                if b > bottom - top { scroll = (b - (bottom - top) + d(8)).min(a).max(0); }
             }
             drop(state);
             { let mut inner = self.inner.borrow_mut(); inner.scroll = scroll; inner.content_height = (content - (bottom - top)).max(0); }
@@ -478,10 +685,28 @@ impl CommentsPane {
             if cy + height < top || *cy > bottom { continue; }
             let hovered = hover.as_ref() == Some(&Hit::Card(c.id.clone()));
             let edge = if *is_selected { (ACCENT, f(1).max(1.5)) } else if hovered { ((168, 190, 222), 1.0) } else { (CARD_EDGE, 1.0) };
+            if let Some(anchor) = anchors.get(&c.id).filter(|anchor| **anchor >= top && **anchor <= bottom) {
+                let end = (*cy + d(15)).clamp(top, bottom.max(top));
+                let mut line = tiny_skia::PathBuilder::new();
+                line.move_to(f(4), *anchor as f32);
+                line.line_to(f(8), *anchor as f32);
+                line.line_to(x as f32 + 1.0, end as f32);
+                if let Some(path) = line.finish() {
+                    let mut color = tiny_skia::Paint::default();
+                    color.anti_alias = true;
+                    color.set_color_rgba8(MARK.0, MARK.1, MARK.2, if *is_selected { 255 } else { 175 });
+                    pix.stroke_path(&path, &color, &tiny_skia::Stroke { width: f(1).max(1.5), ..Default::default() },
+                        crate::crisp::transform(), None);
+                }
+            }
             fill(&mut pix, (x as f32 + 0.5, *cy as f32 + 0.5, card_w as f32 - 1.0, *height as f32 - 1.0), f(6), CARD, Some(edge));
             // The comment's mark colour along its left edge.
-            if !c.resolved { fill(&mut pix, (x as f32 + f(1), *cy as f32 + f(6), f(3), *height as f32 - f(12)), f(1), MARK, None); }
-            hits.push((Rect::new(x as f32, *cy as f32, card_w as f32, *height as f32), Hit::Card(c.id.clone())));
+            if !c.is_closed() { fill(&mut pix, (x as f32 + f(1), *cy as f32 + f(6), f(3), *height as f32 - f(12)), f(1), MARK, None); }
+            let hit_top = (*cy).max(top);
+            let hit_bottom = (*cy + height).min(bottom);
+            if hit_top < hit_bottom {
+                hits.push((Rect::new(x as f32, hit_top as f32, card_w as f32, (hit_bottom - hit_top) as f32), Hit::Card(c.id.clone())));
+            }
         }
         // Header and the writing strip cover the list where it scrolls under them.
         fill(&mut pix, (0.0, 0.0, w as f32, top as f32), 0.0, (247, 249, 251), None);
@@ -490,6 +715,7 @@ impl CommentsPane {
 
         dc.set_background_mode(wxdragon::dc::BackgroundMode::Transparent);
         for (c, cy, _, lines, is_selected) in &cards {
+            dc.set_clipping_region(x + 1, top, card_w - 2, bottom - top);
             let mut ly = cy + d(CARD_PAD);
             for line in lines {
                 if ly >= top && ly + line_h <= bottom {
@@ -499,26 +725,52 @@ impl CommentsPane {
                 }
                 ly += line_h;
             }
-            if *is_selected && ly + line_h <= bottom && ly >= top {
-                // Commands of the selected thread, as links.
-                let mut ax = x + d(CARD_PAD);
-                let commands = [("Reply", Hit::Reply(c.id.clone())), ("Edit", Hit::Edit(c.id.clone())),
-                    (if c.resolved { "Reopen" } else { "Resolve" }, Hit::Resolve(c.id.clone())), ("Delete", Hit::Delete(c.id.clone()))];
-                for (label, hit) in commands {
-                    if let Some(font) = font(9, hover.as_ref() == Some(&hit)) { dc.set_font(&font); }
-                    dc.set_text_foreground(rgb(if matches!(hit, Hit::Delete(_)) { (190, 42, 42) } else { ACCENT }));
-                    let (tw, th) = dc.get_text_extent(&crate::i18n::text(label));
-                    dc.draw_text(&crate::i18n::text(label), ax, ly + d(6));
-                    hits.push((Rect::new(ax as f32, (ly + d(4)) as f32, tw as f32, (th + d(4)) as f32), hit));
-                    ax += tw + d(16);
+            if *is_selected {
+                let mut primary = Vec::new();
+                if c.is_closed() {
+                    primary.push(("Reopen", Hit::Reopen(c.id.clone())));
+                } else {
+                    primary.extend([
+                        ("Accept", Hit::Decide(c.id.clone(), CommentDecision::Accepted)),
+                        ("Reject", Hit::Decide(c.id.clone(), CommentDecision::Rejected)),
+                    ]);
+                }
+                let secondary = vec![("Reply", Hit::Reply(c.id.clone())), ("Edit", Hit::Edit(c.id.clone())), ("Delete", Hit::Delete(c.id.clone()))];
+                for (row, commands) in [primary, secondary].into_iter().enumerate() {
+                    let by = ly + d(6 + 28 * row as i32);
+                    if by < top || by + d(24) > bottom { continue; }
+                    let mut bx = x + d(CARD_PAD);
+                    for (label, hit) in commands {
+                        let label = crate::i18n::text(label);
+                        if let Some(font) = font(9, row == 0 || hover.as_ref() == Some(&hit)) { dc.set_font(&font); }
+                        let (tw, th) = dc.get_text_extent(&label);
+                        let width = tw + d(16);
+                        let color = match &hit {
+                            Hit::Decide(_, CommentDecision::Rejected) | Hit::Delete(_) => (163, 42, 42),
+                            Hit::Decide(_, CommentDecision::Accepted) => (21, 109, 77),
+                            _ => ACCENT,
+                        };
+                        if row == 0 {
+                            dc.set_pen(rgb(CARD_EDGE), 1, PenStyle::Solid);
+                            dc.set_brush(rgb(if hover.as_ref() == Some(&hit) { (234, 240, 247) } else { (248, 250, 252) }), BrushStyle::Solid);
+                            dc.draw_rounded_rectangle(bx, by, width, d(23), f(4) as f64);
+                        }
+                        dc.set_text_foreground(rgb(color));
+                        dc.draw_text(&label, bx + d(8), by + (d(24) - th) / 2);
+                        hits.push((Rect::new(bx as f32, by as f32, width as f32, f(24)), hit));
+                        bx += width + d(3);
+                    }
                 }
             }
+            dc.destroy_clipping_region();
         }
         if list.is_empty() {
             if let Some(font) = font(9, false) { dc.set_font(&font); }
             dc.set_text_foreground(rgb(MUTED));
             let mut ly = top + d(8);
-            for text in wrap(&crate::i18n::text("No comments yet. Select text and choose Review > Comment to add one."), card_w, false, false) {
+            let empty = if has_comments && !all { "No open comments on this page." }
+                else { "No comments yet. Select text and choose Review > Comment to add one." };
+            for text in wrap(&crate::i18n::text(empty), card_w, false, false) {
                 if let Some(font) = font(9, false) { dc.set_font(&font); }
                 dc.draw_text(&text, x, ly); ly += line_h;
             }
@@ -534,6 +786,13 @@ impl CommentsPane {
             crate::crisp::draw(&dc, &bitmap, k, w - d(PAD) - side, (d(HEADER) - side) / 2);
         }
         hits.push((Rect::new((w - d(PAD) - side - d(4)) as f32, 0.0, (side + d(8)) as f32, d(HEADER) as f32), Hit::Close));
+        if let Some(font) = font(9, hover.as_ref() == Some(&Hit::View)) { dc.set_font(&font); }
+        let toggle = crate::i18n::text(if all { "On page" } else { "All comments" });
+        let (tw, th) = dc.get_text_extent(&toggle);
+        let tx = w - d(PAD) - side - d(12) - tw;
+        dc.set_text_foreground(rgb(ACCENT));
+        dc.draw_text(&toggle, tx, (top - th) / 2);
+        hits.push((Rect::new((tx - d(4)) as f32, 0.0, (tw + d(8)) as f32, top as f32), Hit::View));
         // Writing strip: what is being written, Post and Cancel.
         if let Some(compose) = &compose {
             let label = match compose {

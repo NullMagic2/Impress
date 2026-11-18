@@ -1,13 +1,31 @@
 //! OOXML annotations stay semantic: no deleted XML is silently accepted as final.
 use super::*;
-use model::{inline_text, AnchorRange, Bookmark, ReviewComment, ReviewState, TextAnchor};
+use model::{inline_text, AnchorRange, Bookmark, CommentDecision, CommentReply, ReviewComment, ReviewState, TextAnchor};
+
+#[derive(Clone, Debug)]
+struct ImportedComment {
+    source: String,
+    author: String,
+    text: String,
+    date: Option<String>,
+    para: Option<u32>,
+    decision: Option<CommentDecision>,
+}
+
+#[derive(Clone, Debug)]
+struct CommentExtension { parent: Option<u32>, done: Option<bool> }
+
+fn comment_para_id(value: Option<&str>) -> Option<u32> {
+    u32::from_str_radix(value?, 16).ok()
+}
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct ImportReview {
     pub(super) state: ReviewState,
     bookmarks: BTreeMap<String, (String, TextAnchor)>,
     starts: BTreeMap<String, TextAnchor>,
-    comments: BTreeMap<String, (String, String, Option<String>)>,
+    comments: Vec<ImportedComment>,
+    comment_extensions: BTreeMap<u32, CommentExtension>,
     ends: BTreeMap<String, TextAnchor>,
     active_moves: BTreeMap<String, String>,
     pub(super) previous_tabs: BTreeMap<NodeId, Vec<TabEdit>>,
@@ -59,50 +77,79 @@ impl ImportReview {
         );
     }
     pub(super) fn read_comments(&mut self, tree: &XmlNode) {
-        if let Some(root) = find_descendant(tree, "w:comments") {
-            for c in root.children_named("w:comment") {
-                let Some(id) = c.attr("w:id") else {
-                    continue;
-                };
-                let text = c
-                    .children_named("w:p")
-                    .map(|p| p.descendant_text())
-                    .collect::<Vec<_>>()
-                    .join("\n");
-                self.comments.insert(
-                    id.into(),
-                    (
-                        c.attr("w:author").unwrap_or("").into(),
-                        text,
-                        c.attr("w:date").map(str::to_owned),
-                    ),
-                );
-            }
+        let Some(root) = find_descendant(tree, "w:comments") else { return };
+        for comment in root.children_named("w:comment") {
+            let Some(source) = comment.attr("w:id") else { continue };
+            let paragraphs = comment.children_named("w:p").collect::<Vec<_>>();
+            let para = paragraphs.last().and_then(|p| comment_para_id(p.attr("w14:paraId")));
+            let decision = match comment.attr("impress:decision") {
+                Some("accepted") => Some(CommentDecision::Accepted),
+                Some("rejected") => Some(CommentDecision::Rejected),
+                _ => None,
+            };
+            self.comments.push(ImportedComment {
+                source: source.into(), author: comment.attr("w:author").unwrap_or("").into(),
+                text: paragraphs.iter().map(|p| p.descendant_text()).collect::<Vec<_>>().join("\n"),
+                date: comment.attr("w:date").map(str::to_owned), para, decision,
+            });
         }
     }
+
+    pub(super) fn read_comment_extensions(&mut self, tree: &XmlNode) {
+        let Some(root) = find_descendant(tree, "w15:commentsEx") else { return };
+        for entry in root.children_named("w15:commentEx") {
+            let Some(para) = comment_para_id(entry.attr("w15:paraId")) else { continue };
+            let parent = comment_para_id(entry.attr("w15:paraIdParent"));
+            let done = match entry.attr("w15:done") {
+                Some("true" | "1" | "on") => Some(true),
+                Some("false" | "0" | "off") => Some(false),
+                _ => None,
+            };
+            self.comment_extensions.insert(para, CommentExtension { parent, done });
+        }
+    }
+
     pub(super) fn finish(&mut self) -> ReviewState {
-        for (source, (author, text, date)) in &self.comments {
-            let id = NodeId::new();
-            let range = self
-                .starts
-                .get(source)
-                .zip(self.ends.get(source))
-                .map(|(start, end)| AnchorRange {
-                    start: start.clone(),
-                    end: end.clone(),
+        let comments = std::mem::take(&mut self.comments);
+        let para_to_index = comments.iter().enumerate().filter_map(|(index, comment)| comment.para.map(|id| (id, index)))
+            .collect::<BTreeMap<_, _>>();
+        let parents = comments.iter().map(|comment| comment.para
+            .and_then(|para| self.comment_extensions.get(&para)?.parent)
+            .and_then(|parent| para_to_index.get(&parent).copied())).collect::<Vec<_>>();
+        let mut replies = BTreeMap::<usize, Vec<CommentReply>>::new();
+        let mut roots = Vec::new();
+        for (index, comment) in comments.into_iter().enumerate() {
+            // Flatten nested replies into the native thread. Treat malformed
+            // parent cycles as standalone comments so their text is retained.
+            let mut root = index;
+            let mut valid = false;
+            for _ in 0..=256 {
+                match parents[root] {
+                    Some(parent) if parent != index => root = parent,
+                    None => { valid = true; break; }
+                    Some(_) => break,
+                }
+            }
+            if valid && root != index {
+                replies.entry(root).or_default().push(CommentReply {
+                    id: NodeId::new(), author: comment.author, date: comment.date.unwrap_or_default(), text: comment.text,
                 });
-            self.state.comments.insert(
-                id.clone(),
-                ReviewComment {
-                    date: date.clone(),
-                    replies: Vec::new(),
-                    id,
-                    author: author.clone(),
-                    text: text.clone(),
-                    range,
-                    resolved: false,
-                },
-            );
+            } else {
+                roots.push((index, comment));
+            }
+        }
+        for (index, comment) in roots {
+            let id = NodeId::new();
+            let range = self.starts.get(&comment.source).zip(self.ends.get(&comment.source))
+                .map(|(start, end)| AnchorRange { start: start.clone(), end: end.clone() });
+            let done = comment.para.and_then(|para| self.comment_extensions.get(&para)?.done);
+            // An explicit reopen in Word takes precedence over our old outcome.
+            let decision = comment.decision.filter(|_| done != Some(false));
+            self.state.comments.insert(id.clone(), ReviewComment {
+                id, author: comment.author, text: comment.text, range, date: comment.date,
+                replies: replies.remove(&index).unwrap_or_default(),
+                resolved: done.unwrap_or(decision.is_some()), decision,
+            });
         }
         // Keep malformed or unmatched bookmarks visible rather than pretending
         // their old character offsets survived regeneration of document.xml.

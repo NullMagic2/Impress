@@ -109,14 +109,47 @@ pub(super) fn paragraph_with_annotations(p:&Paragraph,document:&Document,context
     }
     format!("<w:p>{}{anchored}{content}</w:p>",super::tracked::paragraph_properties(p,document,context,paragraph_properties_xml(p,context,&document.styles.resolve_paragraph(p.style.as_ref()).tabs.unwrap_or_default())))
 }
-pub(super) fn comments_xml(document:&Document,context:&ExportContext)->String {
-    let mut body=String::new();
-    for c in document.review.comments.values(){let Some(id)=context.comment_ids.get(&c.id) else{continue;};
-        let mut text=c.text.clone();for reply in &c.replies{text.push_str(&format!("\n\n{} — {}\n{}",reply.author,reply.date,reply.text));}
-        let paragraphs=text.split('\n').map(|line|format!("<w:p><w:r><w:t xml:space=\"preserve\">{}</w:t></w:r></w:p>",xml_escape(line))).collect::<String>();
-        let date=c.date.as_ref().map(|s|format!(" w:date=\"{}\"",xml_escape(s))).unwrap_or_default();body.push_str(&format!("<w:comment w:id=\"{id}\" w:author=\"{}\"{date}>{paragraphs}</w:comment>",xml_escape(&c.author)));
+/// Word uses the final paragraph ID to associate reply and resolution metadata.
+pub(super) fn comments_xml(document: &Document, context: &ExportContext) -> (String, String) {
+    let mut body = String::new();
+    let mut extended = String::new();
+    let mut next_para = 1u32;
+    let mut next_reply = context.comment_ids.len() + 1;
+    for comment in document.review.comments.values() {
+        let Some(id) = context.comment_ids.get(&comment.id) else { continue };
+        let decision = match comment.decision {
+            Some(model::CommentDecision::Accepted) => r#" impress:decision="accepted""#,
+            Some(model::CommentDecision::Rejected) => r#" impress:decision="rejected""#,
+            None => "",
+        };
+        let para = append_comment(&mut body, &mut next_para, *id, &comment.author,
+            comment.date.as_deref(), &comment.text, decision);
+        let done = u8::from(comment.is_closed());
+        extended.push_str(&format!(r#"<w15:commentEx w15:paraId="{para}" w15:done="{done}"/>"#));
+        for reply in &comment.replies {
+            let date = (!reply.date.is_empty()).then_some(reply.date.as_str());
+            let reply_para = append_comment(&mut body, &mut next_para, next_reply, &reply.author, date, &reply.text, "");
+            next_reply += 1;
+            extended.push_str(&format!(r#"<w15:commentEx w15:paraId="{reply_para}" w15:paraIdParent="{para}" w15:done="0"/>"#));
+        }
     }
-    format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14">{body}</w:comments>"#)
+    (
+        format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:comments xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:impress="urn:impress:comments:1" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="w14 impress" mc:PreserveAttributes="impress:decision">{body}</w:comments>"#),
+        format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml">{extended}</w15:commentsEx>"#),
+    )
+}
+
+fn append_comment(body: &mut String, next_para: &mut u32, id: usize, author: &str, date: Option<&str>, text: &str, decision: &str) -> String {
+    let date = date.map(|date| format!(r#" w:date="{}""#, xml_escape(date))).unwrap_or_default();
+    body.push_str(&format!(r#"<w:comment w:id="{id}" w:author="{}"{date}{decision}>"#, xml_escape(author)));
+    let mut para = String::new();
+    for line in text.split('\n') {
+        para = format!("{:08X}", *next_para);
+        *next_para += 1;
+        body.push_str(&format!(r#"<w:p w14:paraId="{para}"><w:r><w:t xml:space="preserve">{}</w:t></w:r></w:p>"#, xml_escape(line)));
+    }
+    body.push_str("</w:comment>");
+    para
 }
 pub(super) fn styles_xml(document:&Document,context:&ExportContext)->String {
     super::styles::styles_xml(document,context)

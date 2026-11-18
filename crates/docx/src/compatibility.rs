@@ -72,8 +72,6 @@ pub fn export_warnings(document:&Document)->Vec<String> {
         }
     }
     if !document.review.history.is_empty(){warnings.push("Chronological native revision history (including formatting/structure and individual authors) is preserved only in .impress. DOCX exports the current document and separately supported net revisions, not the native journal. Keep a native copy.".into());}
-    if document.review.comments.values().any(|c|!c.replies.is_empty()){warnings.push("Comment replies are exported as readable text within their parent comment, not as Word modern threaded-comment metadata.".into());}
-    if document.review.comments.values().any(|c|c.resolved){warnings.push("Comment resolved status is native-only; DOCX comments will be exported as ordinary comments.".into());}
     if document.review.comments.values().any(|c|c.range.as_ref().is_none_or(|r|!model::valid_range(document,r))){warnings.push("Some comments have no live text anchor. Their text is retained in comments.xml, but Word may not display them in context.".into());}
     if document.review.bookmarks.values().any(|b|b.range.as_ref().is_none_or(|r|!model::valid_range(document,r))){warnings.push("Unanchored bookmarks cannot be placed in DOCX. Their metadata remains available in the native .impress file.".into());}
     if document.review.revisions.values().any(|r|!paragraphs.iter().any(|p|p.id==r.paragraph)){warnings.push("A pending revision belongs to a deleted paragraph and cannot be placed in DOCX. Save a native copy or resolve it first.".into());}

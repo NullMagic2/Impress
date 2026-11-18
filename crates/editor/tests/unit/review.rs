@@ -69,3 +69,45 @@ fn contents_can_be_inserted_before_any_headings_exist() {
     editor.set_contents_level(1).unwrap();
     assert_eq!(editor.document.review.contents_paragraphs.len(), 2);
 }
+
+#[test]
+fn comment_outcomes_keep_anchor_and_replies_and_can_be_undone() {
+    use model::CommentDecision;
+    let mut editor = editor();
+    editor.add_comment("Ada", "Check this").unwrap();
+    let id = editor.document.review.comments.keys().next().unwrap().clone();
+    editor.reply_to_comment(&id, "Lin", "Checked").unwrap();
+    let open = editor.document.clone();
+
+    editor.decide_comment(&id, CommentDecision::Accepted).unwrap();
+    let accepted = &editor.document.review.comments[&id];
+    assert!(accepted.is_closed());
+    assert_eq!(accepted.decision, Some(CommentDecision::Accepted));
+    assert_eq!(accepted.range, open.review.comments[&id].range);
+    assert_eq!(accepted.replies, open.review.comments[&id].replies);
+    let json = serde_json::to_vec(&editor.document).unwrap();
+    let saved: Document = serde_json::from_slice(&json).unwrap();
+    assert_eq!(saved, editor.document);
+
+    editor.update_comment(&id, None, Some(false)).unwrap();
+    assert_eq!(editor.document, open);
+    editor.decide_comment(&id, CommentDecision::Rejected).unwrap();
+    assert_eq!(editor.document.review.comments[&id].decision, Some(CommentDecision::Rejected));
+    assert!(editor.undo());
+    assert_eq!(editor.document, open);
+    assert!(editor.redo());
+    assert_eq!(editor.document.review.comments[&id].decision, Some(CommentDecision::Rejected));
+
+    let mut legacy = serde_json::to_value(accepted_fixture(&id, &open)).unwrap();
+    legacy.as_object_mut().unwrap().remove("decision");
+    let old: model::ReviewComment = serde_json::from_value(legacy).unwrap();
+    assert!(old.is_closed());
+    assert_eq!(old.decision, None);
+}
+
+fn accepted_fixture(id: &NodeId, document: &Document) -> model::ReviewComment {
+    let mut comment = document.review.comments[id].clone();
+    comment.resolved = true;
+    comment.decision = Some(model::CommentDecision::Accepted);
+    comment
+}

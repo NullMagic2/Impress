@@ -3199,6 +3199,16 @@
                                                 <tooltip>New comment (Ctrl+Alt+C)</tooltip>
                                               </object>
                                             </object>
+                                            <object class="sizeritem">
+                                              <option>0</option>
+                                              <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                              <object class="wxButton" name="comment_button">
+                                                <label></label>
+                                                <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                                <minsize>98,66</minsize>
+                                                <tooltip>Show comments</tooltip>
+                                              </object>
+                                            </object>
                                             <object class="spacer">
                                               <size>10,0</size>
                                               <option>0</option>
@@ -3225,7 +3235,7 @@
                                                     <label></label>
                                                     <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
                                                     <minsize>68,24</minsize>
-                                                    <tooltip>Resolve</tooltip>
+                                                    <tooltip>Comment decision</tooltip>
                                                   </object>
                                                 </object>
                                               </object>
@@ -6193,16 +6203,6 @@
               <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
               <minsize>68,66</minsize>
               <tooltip>Find…</tooltip>
-            </object>
-          </object>
-          <object class="sizeritem">
-            <option>0</option>
-            <flag>wxEXPAND</flag>
-            <object class="wxButton" name="comment_button">
-              <label></label>
-              <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
-              <minsize>98,66</minsize>
-              <tooltip>Comments</tooltip>
             </object>
           </object>
           <object class="sizeritem">

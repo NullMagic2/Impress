@@ -1103,6 +1103,12 @@
     "Linha de destaque",
     "Linha de destaque"
   ],
+  "Accept": [
+    "Αποδοχή",
+    "Aceptar",
+    "Aceitar",
+    "Aceitar"
+  ],
   "Accept change": [
     "Αποδοχή αλλαγής",
     "Aceptar cambio",
@@ -1114,6 +1120,12 @@
     "Aceptar cambio — No disponible en esta versión alfa",
     "Aceitar alteração — Não disponível nesta versão alfa",
     "Aceitar alteração — Não disponível nesta versão alfa"
+  ],
+  "Accept comment": [
+    "Αποδοχή σχολίου",
+    "Aceptar comentario",
+    "Aceitar comentário",
+    "Aceitar comentário"
   ],
   "Accept current text / discard original": [
     "Αποδοχή τρέχοντος κειμένου / απόρριψης πρωτότυπου",
@@ -1156,6 +1168,12 @@
     "Acepte esta palabra en los controles de ortografía futuros",
     "Aceitar esta palavra em futuras verificações de ortografia",
     "Aceite esta palavra nos futuros controlos ortográficos"
+  ],
+  "Accepted": [
+    "Αποδεκτό",
+    "Aceptado",
+    "Aceito",
+    "Aceite"
   ],
   "Action buttons": [
     "Κουμπιά ενεργειών",
@@ -1360,6 +1378,12 @@
     "Todas mayúsculas",
     "Todas em maiúsculas",
     "Todas em maiúsculas"
+  ],
+  "All comments": [
+    "Όλα τα σχόλια",
+    "Todos los comentarios",
+    "Todos os comentários",
+    "Todos os comentários"
   ],
   "All files": [
     "Όλα τα αρχεία",
@@ -3431,6 +3455,18 @@
     "Comandos:",
     "Comandos:"
   ],
+  "Comment accepted": [
+    "Το σχόλιο έγινε αποδεκτό",
+    "Comentario aceptado",
+    "Comentário aceito",
+    "Comentário aceite"
+  ],
+  "Comment decision": [
+    "Απόφαση για το σχόλιο",
+    "Decisión sobre el comentario",
+    "Decisão sobre o comentário",
+    "Decisão sobre o comentário"
+  ],
   "Comment no longer exists": [
     "Σχόλιο δεν υπάρχει πια",
     "Comentario ya no existe",
@@ -3443,11 +3479,29 @@
     "Comentário não encontrado",
     "Comentário não encontrado"
   ],
+  "Comment rejected": [
+    "Το σχόλιο απορρίφθηκε",
+    "Comentario rechazado",
+    "Comentário rejeitado",
+    "Comentário rejeitado"
+  ],
+  "Comment reopened": [
+    "Το σχόλιο άνοιξε ξανά",
+    "Comentario reabierto",
+    "Comentário reaberto",
+    "Comentário reaberto"
+  ],
   "Comment replies are exported as readable text within their parent comment, not as Word modern threaded-comment metadata.": [
     "Οι απαντήσεις σχολίων εξάγονται ως ευανάγνωστο κείμενο μέσα στο μητρικό τους σχόλιο, όχι ως σύγχρονα μεταδεδομένα βιδωτό-σχόλιο Word.",
     "Las respuestas de comentarios se exportan como texto legible dentro de su comentario principal, no como metadatos de comentarios roscados modernos de Word.",
     "As respostas dos comentários são exportadas como texto legível dentro do seu comentário pai, não como metadados modernos do comentário roscado do Word.",
     "As respostas dos comentários são exportadas como texto legível dentro do seu comentário pai, não como metadados de comentários roscados modernos do Word."
+  ],
+  "Comment resolved": [
+    "Το σχόλιο επιλύθηκε",
+    "Comentario resuelto",
+    "Comentário resolvido",
+    "Comentário resolvido"
   ],
   "Comment resolved status is native-only; DOCX comments will be exported as ordinary comments.": [
     "Σχόλιο Λύθηκε κατάσταση είναι μόνο ιθαγενή; DOCX σχόλια θα εξάγονται ως συνηθισμένα σχόλια.",
@@ -10247,6 +10301,12 @@
     "Nenhuma correspondência encontrada no escopo selecionado.",
     "Nenhuma correspondência encontrada no escopo seleccionado."
   ],
+  "No open comments on this page.": [
+    "Δεν υπάρχουν ανοιχτά σχόλια σε αυτή τη σελίδα.",
+    "No hay comentarios abiertos en esta página.",
+    "Não há comentários abertos nesta página.",
+    "Não há comentários abertos nesta página."
+  ],
   "No page": [
     "Χωρίς σελίδα",
     "Sin página",
@@ -10594,6 +10654,12 @@
     "Omega",
     "Ómega",
     "Ómega"
+  ],
+  "On page": [
+    "Στη σελίδα",
+    "En la página",
+    "Na página",
+    "Na página"
   ],
   "One": [
     "Μία",
@@ -12065,6 +12131,12 @@
     "Normal",
     "Normal"
   ],
+  "Reject": [
+    "Απόρριψη",
+    "Rechazar",
+    "Rejeitar",
+    "Rejeitar"
+  ],
   "Reject and restore original text": [
     "Απορρίψτε και αποκαταστήστε το πρωτότυπο κείμενο",
     "Rechazar y restaurar el texto original",
@@ -12082,6 +12154,12 @@
     "Rechazar cambio — No disponible en esta versión alfa",
     "Rejeitar alteração — Não disponível nesta versão alfa",
     "Rejeitar alteração — Não disponível nesta versão alfa"
+  ],
+  "Reject comment": [
+    "Απόρριψη σχολίου",
+    "Rechazar comentario",
+    "Rejeitar comentário",
+    "Rejeitar comentário"
   ],
   "Reject revision": [
     "Απόρριψη αναθεώρησης",
@@ -12112,6 +12190,12 @@
     "Rechazar este evento (conflicto comprobado)",
     "Rejeitar este evento (conflicto assinalado)",
     "Rejeitar este evento (conflicto verificado)"
+  ],
+  "Rejected": [
+    "Απορρίφθηκε",
+    "Rechazado",
+    "Rejeitado",
+    "Rejeitado"
   ],
   "Rejoin words hyphenated at line ends": [
     "Επανένωση λέξεων με συλλαβισμό στο τέλος γραμμής",
@@ -12262,6 +12346,12 @@
     "Reabrir",
     "Reabrir",
     "Reabrir"
+  ],
+  "Reopen comment": [
+    "Εκ νέου άνοιγμα σχολίου",
+    "Reabrir comentario",
+    "Reabrir comentário",
+    "Reabrir comentário"
   ],
   "Repeat header": [
     "Επαναλάβετε την επικεφαλίδα",
@@ -12514,6 +12604,12 @@
     "Resolver",
     "Resolver",
     "Resolver"
+  ],
+  "Resolve comment": [
+    "Επίλυση σχολίου",
+    "Resolver comentario",
+    "Resolver comentário",
+    "Resolver comentário"
   ],
   "Resolve native revision": [
     "Επίλυση της τοπικής αναθεώρησης",
@@ -13612,6 +13708,12 @@
     "Mostrar la cinta",
     "Mostrar a Rubana",
     "Mostrar a Rubana"
+  ],
+  "Show comments": [
+    "Εμφάνιση σχολίων",
+    "Mostrar comentarios",
+    "Mostrar comentários",
+    "Mostrar comentários"
   ],
   "Show errors": [
     "Εμφάνιση σφαλμάτων",

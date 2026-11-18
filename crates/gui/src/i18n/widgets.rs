@@ -174,7 +174,7 @@ self.compatibility_button.set_tooltip(&text("Review document format limitations"
 self.i18n_control_141.set_label(&text("Proofing"));
 self.new_comment_button.set_tooltip(&text("New comment (Ctrl+Alt+C)"));
 self.delete_comment_button.set_tooltip(&text("Delete"));
-self.resolve_comment_button.set_tooltip(&text("Resolve"));
+self.resolve_comment_button.set_tooltip(&text("Comment decision"));
 self.previous_comment_button.set_tooltip(&text("Previous"));
 self.next_comment_button.set_tooltip(&text("Next"));
 self.i18n_control_147.set_label(&text("Comments"));
@@ -366,7 +366,7 @@ if let Some(index) = selected { self.space_after_combo.set_selection(index); } e
 self.outline_button.set_tooltip(&text("Show the heading navigation pane"));
 self.footnote_button.set_tooltip(&text("Footnotes"));
 self.find_button.set_tooltip(&text("Find…"));
-self.comment_button.set_tooltip(&text("Comments"));
+self.comment_button.set_tooltip(&text("Show comments"));
 self.changes_button.set_tooltip(&text("Text changes"));
 self.view_graphical_button.set_tooltip(&text("Graphical"));
 self.view_typst_button.set_tooltip(&text("Typst source"));

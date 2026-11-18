@@ -17,7 +17,7 @@ pub(super) fn export(document: &Document) -> Vec<String> {
         .review
         .comments
         .values()
-        .any(|comment| comment.resolved || comment.date.is_some() || !comment.replies.is_empty())
+        .any(|comment| comment.is_closed() || comment.date.is_some() || !comment.replies.is_empty())
     {
         warnings.push("Native DOC comments retain their author, text and range; threaded replies, dates and resolved state are not preserved.".into());
     }

@@ -82,7 +82,7 @@ def adopt(env):
         'next_footnote_button':'NextFootnote(true)','show_notes_button':'ShowNotes',
         # Comments: the pane's commands on the current comment.
         'new_comment_button':'CommentNew','delete_comment_button':'CommentDelete',
-        'resolve_comment_button':'CommentResolve','previous_comment_button':'CommentStep(false)',
+        'resolve_comment_button':'CommentDecision','previous_comment_button':'CommentStep(false)',
         'next_comment_button':'CommentStep(true)',
         # Both insert at the caret: Equation in the equation pane, Inline in
         # a box in the text line.

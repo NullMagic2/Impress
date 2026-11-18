@@ -42,15 +42,34 @@ impl EditorState {
     pub fn add_comment(&mut self,author:&str,text:&str)->Result<(),String> {
         if text.trim().is_empty() || text.len()>65536 {return Err("Enter a comment of at most 64 KiB".into());}
         let range=self.selection_anchor_range()?;let id=NodeId::new();let mut after=self.document.review.clone();
-        after.comments.insert(id.clone(),ReviewComment{date:Some(model::utc_timestamp()),replies:Vec::new(),id,author:author.trim().chars().take(100).collect(),text:text.into(),range:Some(range),resolved:false});
+        after.comments.insert(id.clone(),ReviewComment{date:Some(model::utc_timestamp()),replies:Vec::new(),id,author:author.trim().chars().take(100).collect(),text:text.into(),range:Some(range),resolved:false,decision:None});
         self.commit_review("Add comment",after)
     }
     pub fn update_comment(&mut self,id:&NodeId,text:Option<&str>,resolved:Option<bool>)->Result<(),String> {
         let mut after=self.document.review.clone();let comment=after.comments.get_mut(id).ok_or("Comment not found")?;
         if let Some(text)=text {if text.trim().is_empty()||text.len()>65536{return Err("Invalid comment length".into());}comment.text=text.into();}
-        if let Some(resolved)=resolved{comment.resolved=resolved;}
-        self.commit_review("Edit comment",after)
+        if let Some(resolved)=resolved{
+            comment.resolved=resolved;
+            comment.decision=None;
+        }
+        let label = match resolved { Some(true) => "Resolve comment", Some(false) => "Reopen comment", None => "Edit comment" };
+        if after == self.document.review { return Ok(()); }
+        self.commit_review(label,after)
     }
+    /// Record the review outcome without editing the anchor or deleting its thread.
+    pub fn decide_comment(&mut self, id: &NodeId, decision: model::CommentDecision) -> Result<(), String> {
+        let mut after = self.document.review.clone();
+        let comment = after.comments.get_mut(id).ok_or("Comment not found")?;
+        if comment.decision == Some(decision) { return Ok(()); }
+        comment.decision = Some(decision);
+        comment.resolved = true;
+        let label = match decision {
+            model::CommentDecision::Accepted => "Accept comment",
+            model::CommentDecision::Rejected => "Reject comment",
+        };
+        self.commit_review(label, after)
+    }
+
     pub fn delete_comment(&mut self,id:&NodeId)->Result<(),String> {
         let mut after=self.document.review.clone();after.comments.remove(id).ok_or("Comment not found")?;self.commit_review("Delete comment",after)
     }
@@ -285,7 +304,9 @@ impl EditorState {
         let mut after=self.document.review.clone();let comment=after.comments.get_mut(id).ok_or("Comment no longer exists")?;
         if comment.replies.len()>=256{return Err("Comment thread is limited to 256 replies".into());}
         comment.replies.push(CommentReply{id:NodeId::new(),author:author.trim().chars().take(100).collect(),date:model::utc_timestamp(),text:text.into()});
-        comment.resolved=false;self.commit_review("Reply to comment",after)
+        comment.resolved=false;
+        comment.decision=None;
+        self.commit_review("Reply to comment",after)
     }
     pub fn delete_comment_reply(&mut self,id:&NodeId,reply:&NodeId)->Result<(),String>{
         let mut after=self.document.review.clone();let c=after.comments.get_mut(id).ok_or("Comment not found")?;

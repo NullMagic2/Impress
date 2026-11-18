@@ -1463,3 +1463,22 @@ space after pt	Διάστημα μετά (pt)	Espacio posterior (pt)	Espaço dep
 left indent mm	Αριστερή εσοχή (mm)	Sangría izquierda (mm)	Recuo à esquerda (mm)	Avanço à esquerda (mm)
 right indent mm	Δεξιά εσοχή (mm)	Sangría derecha (mm)	Recuo à direita (mm)	Avanço à direita (mm)
 first line indent mm	Εσοχή πρώτης γραμμής (mm)	Sangría de primera línea (mm)	Recuo da primeira linha (mm)	Avanço da primeira linha (mm)
+
+# Comment cards and decisions
+Accept	Αποδοχή	Aceptar	Aceitar	Aceitar
+Reject	Απόρριψη	Rechazar	Rejeitar	Rejeitar
+Accepted	Αποδεκτό	Aceptado	Aceito	Aceite
+Rejected	Απορρίφθηκε	Rechazado	Rejeitado	Rejeitado
+Comment decision	Απόφαση για το σχόλιο	Decisión sobre el comentario	Decisão sobre o comentário	Decisão sobre o comentário
+Accept comment	Αποδοχή σχολίου	Aceptar comentario	Aceitar comentário	Aceitar comentário
+Reject comment	Απόρριψη σχολίου	Rechazar comentario	Rejeitar comentário	Rejeitar comentário
+Resolve comment	Επίλυση σχολίου	Resolver comentario	Resolver comentário	Resolver comentário
+Reopen comment	Εκ νέου άνοιγμα σχολίου	Reabrir comentario	Reabrir comentário	Reabrir comentário
+Comment accepted	Το σχόλιο έγινε αποδεκτό	Comentario aceptado	Comentário aceito	Comentário aceite
+Comment rejected	Το σχόλιο απορρίφθηκε	Comentario rechazado	Comentário rejeitado	Comentário rejeitado
+Comment resolved	Το σχόλιο επιλύθηκε	Comentario resuelto	Comentário resolvido	Comentário resolvido
+Comment reopened	Το σχόλιο άνοιξε ξανά	Comentario reabierto	Comentário reaberto	Comentário reaberto
+On page	Στη σελίδα	En la página	Na página	Na página
+All comments	Όλα τα σχόλια	Todos los comentarios	Todos os comentários	Todos os comentários
+No open comments on this page.	Δεν υπάρχουν ανοιχτά σχόλια σε αυτή τη σελίδα.	No hay comentarios abiertos en esta página.	Não há comentários abertos nesta página.	Não há comentários abertos nesta página.
+Show comments	Εμφάνιση σχολίων	Mostrar comentarios	Mostrar comentários	Mostrar comentários

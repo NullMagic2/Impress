@@ -325,6 +325,7 @@ fn notes_comments_bookmarks_and_page_fields_keep_unicode_anchors() {
             text: "Check Ελληνικά".into(),
             range: Some(range),
             resolved: false,
+            decision: None,
             date: None,
             replies: Vec::new(),
         },

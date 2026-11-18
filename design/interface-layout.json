@@ -1191,6 +1191,14 @@
               "icon": "comment"
             },
             {
+              "kind": "button",
+              "name": "comment_button",
+              "style": "big-button",
+              "label": "Show comments",
+              "tip": "Show comments",
+              "icon": "comment"
+            },
+            {
               "kind": "v",
               "children": [
                 {
@@ -1205,8 +1213,8 @@
                   "kind": "button",
                   "name": "resolve_comment_button",
                   "style": "small-button",
-                  "label": "Resolve",
-                  "tip": "Resolve",
+                  "label": "Decision",
+                  "tip": "Comment decision",
                   "icon": "comment-check"
                 }
               ]

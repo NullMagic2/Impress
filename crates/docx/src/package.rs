@@ -124,7 +124,9 @@ pub fn export_docx(document: &Document, output: &mut dyn WriteSeek) -> FormatRes
     }
 
     if !document.review.comments.is_empty() {
-        write_member(&mut zip,"word/comments.xml",&review::comments_xml(document,&context),options)?;
+        let (comments, extended) = review::comments_xml(document, &context);
+        write_member(&mut zip, "word/comments.xml", &comments, options)?;
+        write_member(&mut zip, "word/commentsExtended.xml", &extended, options)?;
     }
     let mut drawing_id = 1u32;
     for (stem,kind) in [("footnote",model::NoteKind::Footnote),("endnote",model::NoteKind::Endnote)] {
@@ -700,13 +702,16 @@ fn document_relationships(document: &Document, context: &ExportContext) -> Strin
     for (stem,kind,rid) in [("footnote",model::NoteKind::Footnote,"rIdImpressFootnotes"),("endnote",model::NoteKind::Endnote,"rIdImpressEndnotes")] {
         if document.review.footnotes.values().any(|n|n.kind==kind) {body.push_str(&format!("<Relationship Id=\"{rid}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/{stem}s\" Target=\"{stem}s.xml\"/>"));reserved.insert(rid.into());}
     }
-    if !document.review.comments.is_empty(){body.push_str("<Relationship Id=\"rIdImpressComments\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments\" Target=\"comments.xml\"/>");reserved.insert("rIdImpressComments".into());}
+    if !document.review.comments.is_empty(){body.push_str("<Relationship Id=\"rIdImpressComments\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/comments\" Target=\"comments.xml\"/>");reserved.insert("rIdImpressComments".into());
+        body.push_str(r#"<Relationship Id="rIdImpressCommentsExtended" Type="http://schemas.microsoft.com/office/2011/relationships/commentsExtended" Target="commentsExtended.xml"/>"#);
+        reserved.insert("rIdImpressCommentsExtended".into());
+    }
     body.push_str("<Relationship Id=\"rIdImpressSettings\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/settings\" Target=\"settings.xml\"/>");reserved.insert("rIdImpressSettings".into());
     body.push_str(&preserved_relationship_elements(
         document,
         "word/_rels/document.xml.rels",
         &reserved,
-        &["/fontTable", "/styles", "/numbering", "/image", "/header", "/footer", "/hyperlink", "/comments", "/footnotes", "/endnotes", "/settings"],
+        &["/fontTable", "/styles", "/numbering", "/image", "/header", "/footer", "/hyperlink", "/comments", "/commentsExtended", "/footnotes", "/endnotes", "/settings"],
     ));
     format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{body}</Relationships>"#)
 }
@@ -742,7 +747,7 @@ fn content_types(document: &Document, context: &ExportContext) -> String {
     for (stem,kind) in [("footnote",model::NoteKind::Footnote),("endnote",model::NoteKind::Endnote)] {
         if document.review.footnotes.values().any(|n|n.kind==kind) {notes.push_str(&format!("<Override PartName=\"/word/{stem}s.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.{stem}s+xml\"/>"));}
     }
-    let comments=if document.review.comments.is_empty(){""}else{"<Override PartName=\"/word/comments.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml\"/>"};
+    let comments=if document.review.comments.is_empty(){""}else{"<Override PartName=\"/word/comments.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.comments+xml\"/><Override PartName=\"/word/commentsExtended.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.wordprocessingml.commentsExtended+xml\"/>"};
     let preserved = preserved_content_type_elements(document);
     let embedded=context.embedded.iter().map(|(id,(_,target))|{
         let media=&document.resources[id].media_type;
@@ -752,7 +757,7 @@ fn content_types(document: &Document, context: &ExportContext) -> String {
 }
 
 fn generated_part_name(name: &str) -> bool {
-    name == "word/fontTable.xml" || name == "word/_rels/fontTable.xml.rels" || name.starts_with("word/fonts/") || name == "word/endnotes.xml" || name == "word/_rels/endnotes.xml.rels" || name == "word/settings.xml" || name == "word/footnotes.xml" || name == "word/_rels/footnotes.xml.rels" || name == "word/comments.xml" || name == "[Content_Types].xml" || name == "_rels/.rels" || name == "word/document.xml"
+    name == "word/fontTable.xml" || name == "word/_rels/fontTable.xml.rels" || name.starts_with("word/fonts/") || name == "word/endnotes.xml" || name == "word/_rels/endnotes.xml.rels" || name == "word/settings.xml" || name == "word/footnotes.xml" || name == "word/_rels/footnotes.xml.rels" || name == "word/comments.xml" || name == "word/commentsExtended.xml" || name == "[Content_Types].xml" || name == "_rels/.rels" || name == "word/document.xml"
         || name == "word/_rels/document.xml.rels" || name == "word/styles.xml"
         || name == "word/numbering.xml" || name.starts_with("word/header") || name.starts_with("word/footer")
         || name.starts_with("word/_rels/header") || name.starts_with("word/_rels/footer")

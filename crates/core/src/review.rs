@@ -14,9 +14,19 @@ pub struct Bookmark { pub id: NodeId, pub name: String, pub range: Option<Anchor
 pub struct ReviewComment {
     pub id: NodeId, pub author: String, pub text: String, pub range: Option<AnchorRange>,
     #[serde(default)] pub resolved: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision: Option<CommentDecision>,
     #[serde(default)] pub date: Option<String>,
     #[serde(default)] pub replies: Vec<CommentReply>,
 }
+impl ReviewComment {
+    pub fn is_closed(&self) -> bool { self.resolved || self.decision.is_some() }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CommentDecision { Accepted, Rejected }
+
 #[derive(Clone,Debug,PartialEq,Eq,Serialize,Deserialize)]
 pub struct CommentReply { pub id:NodeId, pub author:String, pub date:String, pub text:String }
 #[derive(Clone,Copy,Debug,Default,PartialEq,Eq,Serialize,Deserialize)]

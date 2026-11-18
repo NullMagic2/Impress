@@ -144,6 +144,7 @@ struct CanvasState {
     /// The comment selected in the Comments pane.
     comment_selected: Option<NodeId>,
     pending_comment: Option<NodeId>,
+    pending_new_comment: bool,
     /// The Layout Options button beside a selected picture was pressed: its
     /// rectangle in view pixels, for the Ribbon to open the Wrap Text menu below.
     layout_menu_request: Option<render::Rect>,
@@ -286,6 +287,7 @@ fn main() {
             comment_selected: None,
             equation_pane_slot: None,
             pending_comment: None,
+            pending_new_comment: false,
             layout_menu_request: None,
             pending_find: None,
             pending_print: false,
@@ -779,6 +781,11 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
         // Esc on a selected picture deselects it, which closes the Picture tools.
         if code == WXK_ESCAPE && objects_ui::deselect(&mut key_state.borrow_mut()) {
             key_canvas.refresh(false, None); event.skip(false); return;
+        }
+        if key.cmd_down() && key.alt_down() && !key.shift_down() && shortcut_letter == Some('C') {
+            key_state.borrow_mut().pending_new_comment = true;
+            event.skip(false);
+            return;
         }
         // Word's Insert Footnote (Ctrl+Alt+F) and Insert Endnote (Ctrl+Alt+D).
         if key.cmd_down() && key.alt_down() && matches!(shortcut_letter, Some('F' | 'D')) {

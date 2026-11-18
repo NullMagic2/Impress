@@ -119,8 +119,16 @@ pub fn import_docx(input: &mut dyn ReadSeek) -> FormatResult<Document> {
     let mut context = ImportContext { part: "word/document.xml".into(), ..Default::default() };
     context.links = relationship_links(&relationships);
     context.theme_fonts = theme_fonts::ThemeFonts::load(&mut zip,&relationships)?;
-    if let Some(comments) = read_optional_text(&mut zip,"word/comments.xml")? {
+    let comment_part = |kind, fallback: &str| relationships.values()
+        .find(|rel| !rel.external && rel.kind.ends_with(kind))
+        .map(|rel| relationship_path(&rel.target)).unwrap_or_else(|| fallback.to_owned());
+    if let Some(comments) = read_optional_text(&mut zip, &comment_part("/comments", "word/comments.xml"))? {
         context.annotations.borrow_mut().read_comments(&parse_supported_tree(&comments)?);
+        if let Some(extra) = read_optional_text(&mut zip, &comment_part("/commentsExtended", "word/commentsExtended.xml"))? {
+            if let Ok(tree) = parse_supported_tree(&extra) {
+                context.annotations.borrow_mut().read_comment_extensions(&tree);
+            }
+        }
     }
     load_relationship_resources(&mut zip, &relationships, &mut context)?;
     let font_parts=fonts::load(&mut zip,&relationships,&mut context)?;
@@ -308,7 +316,7 @@ fn should_preserve_part(name: &str) -> bool {
         return true;
     }
     if name == "word/fontTable.xml" || name == "word/_rels/fontTable.xml.rels" || name.starts_with("word/fonts/") { return false; }
-    if name == "word/endnotes.xml" || name == "word/_rels/endnotes.xml.rels" || name == "word/footnotes.xml" || name == "word/_rels/footnotes.xml.rels" || name == "word/comments.xml" || name == "word/document.xml" || name == "word/numbering.xml" || name.starts_with("word/media/")
+    if name == "word/endnotes.xml" || name == "word/_rels/endnotes.xml.rels" || name == "word/footnotes.xml" || name == "word/_rels/footnotes.xml.rels" || name == "word/comments.xml" || name == "word/commentsExtended.xml" || name == "word/document.xml" || name == "word/numbering.xml" || name.starts_with("word/media/")
         || name.starts_with("word/header") || name.starts_with("word/footer")
         || name.starts_with("word/_rels/header") || name.starts_with("word/_rels/footer") {
         return false;
@@ -549,10 +557,11 @@ fn canonical_name(name:&str,scope:&BTreeMap<String,String>,attribute:bool)->Stri
     let Some(uri)=scope.get(prefix) else {return name.into();};
     let canonical=match uri.as_str() {
         "http://schemas.openxmlformats.org/markup-compatibility/2006" => "mc",
-        "urn:impress:revisions:1" => "impress",
+        "urn:impress:revisions:1" | "urn:impress:comments:1" => "impress",
         "urn:schemas-microsoft-com:vml" => "v",
         "http://schemas.microsoft.com/office/word/2010/wordprocessingShape" => "wps",
         "http://schemas.microsoft.com/office/word/2010/wordml" => "w14",
+        "http://schemas.microsoft.com/office/word/2012/wordml" => "w15",
         "http://schemas.openxmlformats.org/wordprocessingml/2006/main"|"http://purl.oclc.org/ooxml/wordprocessingml/main"=>"w",
         "http://schemas.openxmlformats.org/officeDocument/2006/relationships"|"http://purl.oclc.org/ooxml/officeDocument/relationships"=>"r",
         "http://schemas.openxmlformats.org/officeDocument/2006/math"|"http://purl.oclc.org/ooxml/officeDocument/math"=>"m",

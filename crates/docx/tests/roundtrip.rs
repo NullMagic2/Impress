@@ -158,3 +158,50 @@ fn gallery_designs_survive_docx_with_their_distinctive_formatting() {
         }
     }
 }
+
+#[test]
+fn comment_decisions_and_threaded_replies_survive_docx() {
+    use model::{CommentDecision, CommentReply, ReviewComment, TextAnchor, AnchorRange};
+    let mut document = Document::default();
+    let paragraph = Paragraph::plain("Accepted and rejected");
+    let paragraph_id = paragraph.id.clone();
+    document.sections[0].blocks = vec![Block::Paragraph(paragraph)].into();
+    for (name, decision, offset) in [
+        ("Ada", CommentDecision::Accepted, 0),
+        ("Lin", CommentDecision::Rejected, 13),
+    ] {
+        let id = NodeId::new();
+        document.review.comments.insert(id.clone(), ReviewComment {
+            id, author: name.into(), text: "Check this\nSecond line".into(),
+            date: Some("2026-11-20T10:00:00Z".into()), resolved: true, decision: Some(decision),
+            range: Some(AnchorRange {
+                start: TextAnchor { paragraph: paragraph_id.clone(), offset },
+                end: TextAnchor { paragraph: paragraph_id.clone(), offset: offset + 8 },
+            }),
+            replies: vec![CommentReply {
+                id: NodeId::new(), author: "Reviewer".into(), date: "2026-11-20T12:00:00Z".into(), text: "Reply\nSecond line".into(),
+            }],
+        });
+    }
+    let mut data = Cursor::new(Vec::new());
+    DocxFormat.export(&document, &mut data).unwrap();
+    data.set_position(0);
+    let mut zip = zip::ZipArchive::new(&mut data).unwrap();
+    let mut metadata = String::new();
+    std::io::Read::read_to_string(&mut zip.by_name("word/commentsExtended.xml").unwrap(), &mut metadata).unwrap();
+    assert!(metadata.contains(r#"w15:done="1""#));
+    assert_eq!(metadata.matches("w15:paraIdParent=").count(), 2);
+    drop(zip);
+    data.set_position(0);
+    let reopened = DocxFormat.import(&mut data).unwrap();
+    assert_eq!(reopened.review.comments.len(), 2);
+    for comment in document.review.comments.values() {
+        let actual = reopened.review.comments.values().find(|c| c.author == comment.author).unwrap();
+        assert!(actual.is_closed());
+        assert_eq!(actual.decision, comment.decision);
+        assert_eq!(actual.text, comment.text);
+        assert_eq!(actual.range.as_ref().unwrap().start.offset, comment.range.as_ref().unwrap().start.offset);
+        assert_eq!(actual.replies[0].text, comment.replies[0].text);
+        assert_eq!(actual.replies[0].author, comment.replies[0].author);
+    }
+}
