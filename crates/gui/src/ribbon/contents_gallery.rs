@@ -5,7 +5,7 @@ use render::{Affine2D, VectorPage};
 use std::sync::atomic::AtomicBool;
 use wxdragon::{
     bitmap_bundle::BitmapBundle, sizers::FlexGridSizer,
-    widgets::button::ButtonBitmapPosition, Bitmap,
+    event::WindowEvents, widgets::bitmaptogglebutton::BitmapToggleButton, Bitmap,
 };
 
 const PAPER_WIDTH: u32 = 170;
@@ -78,17 +78,33 @@ pub(super) fn choose(ribbon: &Ribbon, options: &ContentsOptions, insert: bool) -
     let mut editor = sample_editor();
     let mut initial = None;
     for (template, name) in TEMPLATES {
-        let button = Button::builder(&dialog).with_label(&text(name)).build();
-        if let Some(bitmap) = sample_fragment(&mut editor, template).as_ref().and_then(thumbnail) {
-            button.set_bitmap_bundle(&bitmap, ButtonBitmapPosition::Top);
-        }
-        let choice = Rc::clone(&choice);
-        button.on_click(move |_| {
-            choice.set(Some(template));
+        let label = text(name);
+        let selected = Rc::clone(&choice);
+        let apply = move || {
+            selected.set(Some(template));
             dialog.end_modal(ID_OK);
-        });
-        if template == options.template && !insert { initial = Some(button); }
-        grid.add(&button, 0, SizerFlag::Expand, 0);
+        };
+        let bitmap = sample_fragment(&mut editor, template).as_ref()
+            .and_then(thumbnail).and_then(|bundle| bundle.get_bitmap_for(&dialog));
+        if let Some(bitmap) = bitmap {
+            let card = BoxSizer::builder(Orientation::Vertical).build();
+            let button = BitmapToggleButton::builder(&dialog).with_bitmap(Some(bitmap)).build();
+            button.set_accessibility_label(&label);
+            let current = template == options.template && !insert;
+            button.set_value(current);
+            if current { initial = Some(button); }
+            let activate = apply.clone();
+            button.on_toggle(move |_| activate());
+            let caption = StaticText::builder(&dialog).with_label(&label).build();
+            caption.on_mouse_left_up(move |_| apply());
+            card.add(&button, 0, SizerFlag::Expand, 0);
+            card.add(&caption, 0, SizerFlag::AlignCenterHorizontal | SizerFlag::Top, gap / 2);
+            grid.add_sizer(&card, 0, SizerFlag::Expand, 0);
+        } else {
+            let button = Button::builder(&dialog).with_label(&label).build();
+            button.on_click(move |_| apply());
+            grid.add(&button, 0, SizerFlag::Expand, 0);
+        }
     }
     root.add_sizer(&grid, 0, SizerFlag::Expand | SizerFlag::All, gap * 2);
     let cancel = Button::builder(&dialog).with_id(ID_CANCEL).with_label(&text("Cancel")).build();
