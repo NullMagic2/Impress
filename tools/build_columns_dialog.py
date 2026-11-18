@@ -6,15 +6,14 @@ table (one row per column, scrolling past three); "Equal column width";
 "Apply to" with "Start new column"; and a preview. The controller is
 crates/gui/src/ribbon/columns_dialog.rs; the vocabulary is tools/dialog_kit.py.
 """
-import xml.etree.ElementTree as ET
 from dialog_kit import (Dialog, MUTED, checkbox, combo, entry, item, node, notext, painted, section, sizer,
-                        spacer, spin, text, with_unit, form_grid, field)
+                        spin, text)
 
 # Must match editor::MAX_COLUMNS.
 MAX_COLUMNS = 12
 APPLY_TO = ['Whole document', 'This section', 'This point forward']
 # Sizes in device-independent pixels.
-PRESETS_W, PRESETS_H = 5 * 70, 86
+PRESETS_W, PRESETS_H = 5 * 70, 96
 PREVIEW_W, PREVIEW_H = 150, 196
 NUMBER_W = 70
 TABLE_H = 3 * 34 + 4
@@ -39,7 +38,7 @@ item(options, checkbox('col_line', 'Line between'), 0, 'wxALIGN_CENTER_VERTICAL'
 body = section(left, 'Width and spacing')
 header = node(None, 'wxFlexGridSizer', rows=0, cols=3, vgap=ROW_GAP, hgap=16, growablecols='')
 item(body, header, 0, 'wxBOTTOM', 4)
-for caption, width in (('Col #', 44), ('Width', 120), ('Spacing', 120)):
+for caption, width in (('Col #', 44), ('Width (cm)', 110), ('Spacing (cm)', 110)):
     item(header, text(caption, fg=MUTED, size=f'{width},-1'), 0)
 table = node(None, 'wxScrolledWindow', 'col_table', style='wxVSCROLL', scrollrate='0,12', size=f'-1,{TABLE_H}', bg='#ffffff')
 item(body, table, 0, 'wxEXPAND')
@@ -47,8 +46,8 @@ grid = node(None, 'wxFlexGridSizer', rows=0, cols=3, vgap=ROW_GAP, hgap=16, grow
 table.append(grid)
 for index in range(1, MAX_COLUMNS + 1):
     item(grid, text(f'{index}:', f'col_label_{index}', size='44,-1'), 0, 'wxALIGN_CENTER_VERTICAL')
-    item(grid, with_unit(entry(f'col_width_{index}', 80), 'cm'), 0, 'wxALIGN_CENTER_VERTICAL')
-    item(grid, with_unit(entry(f'col_spacing_{index}', 80), 'cm'), 0, 'wxALIGN_CENTER_VERTICAL')
+    item(grid, entry(f'col_width_{index}', 110), 0, 'wxALIGN_CENTER_VERTICAL')
+    item(grid, entry(f'col_spacing_{index}', 110), 0, 'wxALIGN_CENTER_VERTICAL')
 item(body, checkbox('col_equal', 'Equal column width'), 0, 'wxTOP', 10)
 
 body = section(left, 'Apply')

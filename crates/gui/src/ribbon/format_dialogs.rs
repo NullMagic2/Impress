@@ -271,7 +271,9 @@ impl Tiles {
         let (gap, inset) = (dip(&self.panel, 6), dip(&self.panel, 6));
         let cols = self.cols.max(1) as i32;
         let w = (size.width - 2 * inset - (cols - 1) * gap) / cols;
-        let h = dip(&self.panel, self.tile_h);
+        let rows = self.count.div_ceil(cols as usize).max(1) as i32;
+        let available = (size.height - 2 * inset - (rows - 1) * gap) / rows;
+        let h = dip(&self.panel, self.tile_h).min(available).max(1);
         (0..self.count).map(|i| {
             let (c, r) = ((i as i32) % cols, (i as i32) / cols);
             (inset + c * (w + gap), inset + r * (h + gap), w, h)
@@ -1053,6 +1055,7 @@ const LANGUAGES: [(&str, &str); 36] = [
 fn language_dialog(parent: Dialog, style: &mut Style, sheet: &StyleSheet, pending: &Pending) -> bool {
     let ui = Rc::new(crate::i18n::localized(LanguageDialogUi::new(Some(&parent), false)));
     let chrome = Chrome::new(ui.lng_dialog, ui.lng_card, &[], &[], (ui.lng_ok, "OK"), Some(ui.lng_cancel), &[(ui.lng_default, "Set As Default")], &[]);
+    ui.lng_note.wrap(ui.lng_dialog.from_dip_int(400));
     ui.lng_default.set_tooltip(&crate::i18n::text(&("Use this language for the document's Normal style")));
     for (name, tag) in LANGUAGES { ui.lng_list.append(&format!("{}  ·  {tag}",crate::i18n::text(name))); }
     let shown = style.character.language.clone().or(sheet.resolve_character(style.based_on.as_ref()).language).unwrap_or_default();
@@ -1073,6 +1076,8 @@ fn language_dialog(parent: Dialog, style: &mut Style, sheet: &StyleSheet, pendin
         if !tag.is_empty() && tag.len()<=64 && tag.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'-') {
             pending.borrow_mut().values.insert("lng_make_default".into(),tag.clone());
             ui2.lng_note.set_label(&crate::i18n::text(&(&format!("{tag} will be used by the Normal style after you save."))));
+            ui2.lng_note.wrap(ui2.lng_dialog.from_dip_int(400));
+            ui2.lng_dialog.layout();
         }
       }); }
     let accepted = chrome.show();
@@ -1345,7 +1350,8 @@ fn text_effects_dialog(parent: Dialog, pending: &Pending) -> bool {
             let colour = |combo: BitmapComboBox, fallback: Colour| colour_value(&combo.get_value()).and_then(|h| hex_colour(&h)).unwrap_or(fallback);
             let blend = |c: Colour, alpha: f64| { let a = alpha.clamp(0.0, 1.0); let mix = |v: u8| (v as f64 * a + 255.0 * (1.0 - a)).round() as u8; Colour::rgb(mix(c.r), mix(c.g), mix(c.b)) };
             let size = panel.get_client_size();
-            let Some(font) = face_font(26.0, true, false, false, "Linux Libertine G") else { return };
+            let points = ((size.height - dip(panel, 6)).max(1) as f32 / (1.3 * px_per_pt(panel))).clamp(1.0, 26.0);
+            let Some(font) = face_font(points, true, false, false, "Linux Libertine G") else { return };
             dc.set_font(&font);
             let text = "AaBbCc"; let (tw, th) = dc.get_text_extent(&crate::i18n::text(&(text)));
             let (x, y) = ((size.width - tw) / 2, (size.height - th) / 2);

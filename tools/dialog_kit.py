@@ -201,15 +201,15 @@ def rule(colour=LINE, vertical=False, length=18):
 
 
 # Layout ------------------------------------------------------------------------
-def section(parent, caption, first=False, name=None, grow=False):
+def section(parent, caption, first=False, name=None, grow=False, section_gap=SECTION, heading_gap=HEAD):
     """Heading: accent caption and a hairline to the card edge.
     Returns the body sizer, indented by IND."""
     head = sizer('wxHORIZONTAL')
-    item(parent, head, 0, 'wxEXPAND' if first else 'wxEXPAND|wxTOP', 0 if first else SECTION)
+    item(parent, head, 0, 'wxEXPAND' if first else 'wxEXPAND|wxTOP', 0 if first else section_gap)
     item(head, text(caption, name, fg=ACCENT_INK, bold=True), 0, 'wxALIGN_CENTER_VERTICAL|wxRIGHT', 10)
     item(head, rule(), 1, 'wxALIGN_CENTER_VERTICAL')
     indent = sizer('wxHORIZONTAL')
-    item(parent, indent, 1 if grow else 0, 'wxEXPAND|wxTOP', HEAD)
+    item(parent, indent, 1 if grow else 0, 'wxEXPAND|wxTOP', heading_gap)
     spacer(indent, IND)
     body = sizer()
     item(indent, body, 1, 'wxEXPAND')
@@ -321,7 +321,7 @@ class Dialog:
             for index, caption in enumerate(tabs):
                 width = max(88, 16 + 7 * len(caption))
                 item(strip, node(None, 'wxButton', f'{prefix}_tab_{index}', label=caption,
-                                 size=f'{width},{TAB_H}', style='wxBU_EXACTFIT|wxBORDER_NONE', bg=CHROME),
+                                 size=f'{width},{TAB_H}', style=SKINNED, bg=CHROME),
                      0, 'wxALIGN_BOTTOM')
         card = rounded(f'{prefix}_card', CARD)
         item(self.outer, card, 1, 'wxEXPAND|wxLEFT|wxRIGHT' + ('' if tabs else '|wxTOP'), M)

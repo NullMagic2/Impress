@@ -100,12 +100,12 @@ fn parse_cm(text: &str) -> Option<f32> {
 fn format_cm(mm: f32) -> String { format!("{:.2}", mm / MM_PER_CM) }
 
 /// The preset tile under `x` in the presets panel.
-fn preset_at(panel: &Panel, x: i32) -> Option<ColumnPreset> {
-    let index = (x / panel.from_dip_int(TILE_STEP)) as usize;
+fn preset_at(step: i32, x: i32) -> Option<ColumnPreset> {
+    let index = usize::try_from(x.div_euclid(step)).ok()?;
     ColumnPreset::ALL.get(index).copied()
 }
 
-fn paint_presets(panel: &Panel, form: &ColumnsForm) {
+fn paint_presets(panel: &Panel, step: i32, form: &ColumnsForm) {
     let dc = AutoBufferedPaintDC::new(panel);
     let size = panel.get_client_size();
     let (width, height) = (size.width.max(1), size.height.max(1));
@@ -114,7 +114,7 @@ fn paint_presets(panel: &Panel, form: &ColumnsForm) {
     pixmap.fill(tiny_skia::Color::WHITE);
     let selected = form.layout.matching_preset(form.text_width_mm);
     for (index, preset) in ColumnPreset::ALL.into_iter().enumerate() {
-        let x = index as i32 * d(TILE_STEP) + d(4);
+        let x = index as i32 * step + (step - d(TILE.0)) / 2;
         if Some(preset) == selected {
             let mut paint = tiny_skia::Paint::default();
             paint.set_color_rgba8(TILE_SELECTED.0, TILE_SELECTED.1, TILE_SELECTED.2, 255);
@@ -129,10 +129,12 @@ fn paint_presets(panel: &Panel, form: &ColumnsForm) {
     canvas.present(&dc, &pixmap, 0, 0);
     dc.set_background_mode(wxdragon::dc::BackgroundMode::Transparent);
     dc.set_text_foreground(Colour::rgb(36, 48, 66));
+    if let Some(font) = panel.get_font() { dc.set_font(&font); }
     for (index, preset) in ColumnPreset::ALL.into_iter().enumerate() {
-        let (text_width, _) = dc.get_text_extent(&crate::i18n::text(&(preset.label())));
-        let x = index as i32 * d(TILE_STEP) + d(4) + (d(TILE.0) - text_width) / 2;
-        dc.draw_text(&crate::i18n::text(&(preset.label())), x, d(TILE.1) + d(10));
+        let label = crate::i18n::text(preset.label());
+        let (text_width, _) = dc.get_text_extent(&label);
+        let x = index as i32 * step + (step - text_width) / 2;
+        dc.draw_text(&label, x, d(TILE.1) + d(10));
     }
 }
 
@@ -158,6 +160,16 @@ pub(super) fn show(ribbon: &Ribbon) -> Result<(), String> {
         (ColumnLayout::of(&properties), properties.text_width_mm())
     };
     let ui = Rc::new(crate::i18n::localized(ColumnsDialogUi::new(Some(&ribbon.ui.main_frame), false)));
+    let panel = ui.col_presets;
+    let mut step = panel.from_dip_int(TILE_STEP);
+    let mut caption_height = 0;
+    for preset in ColumnPreset::ALL {
+        let size = panel.get_text_extent(&crate::i18n::text(preset.label()));
+        step = step.max(size.width + panel.from_dip_int(8));
+        caption_height = caption_height.max(size.height);
+    }
+    panel.set_min_size(Size::new(step * ColumnPreset::ALL.len() as i32,
+        panel.from_dip_int(TILE.1) + panel.from_dip_int(10) + caption_height + panel.from_dip_int(4)));
     let chrome = Chrome::new(ui.col_dialog, ui.col_card, &[], &[], (ui.col_ok, "OK"), Some(ui.col_cancel), &[], &[]);
     let form = Rc::new(RefCell::new(ColumnsForm::new(layout, text_width_mm)));
     let labels = [ui.col_label_1, ui.col_label_2, ui.col_label_3, ui.col_label_4, ui.col_label_5, ui.col_label_6,
@@ -177,9 +189,7 @@ pub(super) fn show(ribbon: &Ribbon) -> Result<(), String> {
                 let shown = index < count;
                 labels[index].show(shown);
                 widths[index].show(shown);
-                spacings[index].show(shown);
-                // The unit labels sit beside the fields in the same sizer row.
-                if let Some(parent) = widths[index].get_parent() { parent.layout(); }
+                spacings[index].show(index + 1 < count);
                 if !shown { continue; }
                 widths[index].change_value(&format_cm(columns[index].width_mm));
                 spacings[index].change_value(&if index + 1 < count { format_cm(columns[index].spacing_mm) } else { String::new() });
@@ -192,8 +202,8 @@ pub(super) fn show(ribbon: &Ribbon) -> Result<(), String> {
             ui.col_equal.enable(count > 1);
             ui.col_line.set_value(form.layout.line_between);
             ui.col_line.enable(count > 1);
-            // A scrolled window with a sizer takes its scroll area from it on layout.
-            ui.col_table.layout();
+            // The viewport stays three rows tall as the virtual table grows or shrinks.
+            unsafe { wxdragon::ffi::wxd_Window_FitInside(ui.col_table.handle_ptr().cast()) };
             ui.col_presets.refresh(false, None);
             ui.col_preview.refresh(false, None);
             let message = form.layout.validate(form.text_width_mm).err().unwrap_or_default();
@@ -202,12 +212,12 @@ pub(super) fn show(ribbon: &Ribbon) -> Result<(), String> {
         }) };
 
     for panel in [ui.col_presets, ui.col_preview] { panel.set_background_style(BackgroundStyle::Paint); }
-    { let form = Rc::clone(&form); let panel = ui.col_presets; panel.on_paint(move |_| paint_presets(&panel, &form.borrow())); }
+    { let form = Rc::clone(&form); let panel = ui.col_presets; panel.on_paint(move |_| paint_presets(&panel, step, &form.borrow())); }
     { let form = Rc::clone(&form); let panel = ui.col_preview; panel.on_paint(move |_| paint_preview(&panel, &form.borrow())); }
     { let form = Rc::clone(&form); let refresh = Rc::clone(&refresh); let panel = ui.col_presets;
       panel.on_mouse_left_up(move |event| {
         let WindowEventData::MouseButton(m) = &event else { return; };
-        let Some(preset) = m.event.get_position().and_then(|p| preset_at(&panel, p.x)) else { return; };
+        let Some(preset) = m.event.get_position().and_then(|p| preset_at(step, p.x)) else { return; };
         form.borrow_mut().set_preset(preset); refresh();
       }); }
     { let form = Rc::clone(&form); let refresh = Rc::clone(&refresh); let ui2 = Rc::clone(&ui);

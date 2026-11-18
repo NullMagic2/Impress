@@ -1,3 +1,8 @@
+## 0.8.6-66 — Dialog layout
+
+- Size column preset captions to the interface font and show units in the table headings. Update the scroll range when the column count changes.
+- Give Find and Replace, Manage Styles, and the formatting dialogs room for their controls and keep gallery captions readable on smaller displays.
+
 ## 0.8.6-65 — Recent files keyboard focus
 
 - Keep editing the document when Recent files settings opens. Click the settings window to edit the history limit.

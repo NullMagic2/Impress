@@ -3150,10 +3150,10 @@
     "Bloqueio de código"
   ],
   "Col #": [
-    "Col #",
-    "Col #",
-    "Col #",
-    "Col #"
+    "Στήλη",
+    "Col.",
+    "Col.",
+    "Col."
   ],
   "Collapsed by default": [
     "Συμπτυγμένο από προεπιλογή",
@@ -10001,6 +10001,12 @@
     "Ómega",
     "Ómega"
   ],
+  "One": [
+    "Μία",
+    "Una",
+    "Uma",
+    "Uma"
+  ],
   "One page": [
     "Μία σελίδα",
     "Una página",
@@ -13223,6 +13229,12 @@
     "Espaçamento",
     "Espaçamento"
   ],
+  "Spacing (cm)": [
+    "Διάκενο (cm)",
+    "Espaciado (cm)",
+    "Espaçamento (cm)",
+    "Espaçamento (cm)"
+  ],
   "Spacing between columns cannot be negative.": [
     "Η διασπορά μεταξύ στηλών δεν μπορεί να είναι αρνητική.",
     "El espacio entre columnas no puede ser negativo.",
@@ -15035,6 +15047,12 @@
     "Este dicionário de sistema já está instalado. Impress não reivindicará a propriedade de uma instalação existente.",
     "Este dicionário de sistema já está instalado. Impress não reivindicará a propriedade de uma instalação existente."
   ],
+  "Three": [
+    "Τρεις",
+    "Tres",
+    "Três",
+    "Três"
+  ],
   "Three columns": [
     "Τρεις στήλες",
     "Tres columnas",
@@ -15400,6 +15418,12 @@
     "Gire la imagen por 90° o 180°",
     "Vire a imagem por 90° ou 180°",
     "Vire a imagem por 90° ou 180°"
+  ],
+  "Two": [
+    "Δύο",
+    "Dos",
+    "Duas",
+    "Duas"
   ],
   "Two rounded corners": [
     "Δύο στρογγυλεμένες γωνίες",
@@ -16006,6 +16030,12 @@
     "Ancho",
     "Largura",
     "Largura"
+  ],
+  "Width (cm)": [
+    "Πλάτος (cm)",
+    "Ancho (cm)",
+    "Largura (cm)",
+    "Largura (cm)"
   ],
   "Width and spacing": [
     "Πλάτος και διάστημα",

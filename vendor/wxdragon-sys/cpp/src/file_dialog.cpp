@@ -3,6 +3,9 @@
 #include "wx/filedlg.h"
 #include "wx/filedlgcustomize.h"
 #include "wx/arrstr.h"
+#ifdef __WXGTK3__
+#include <gtk/gtk.h>
+#endif
 #include "../include/wxdragon.h"
 #include "wxd_utils.h" // For WXD_STR_TO_WX_STRING_UTF8_NULL_OK and GET_WX_STRING_RESULT
 
@@ -41,6 +44,42 @@ class ImpressFileDialog : public wxFileDialog {
 public:
     using wxFileDialog::wxFileDialog;
     ImpressFontSaveHook fontHook{this};
+#ifdef __WXGTK3__
+    // GTK restores the previous chooser size, even on a smaller monitor.
+    // wxFileDialog::SetSize is a no-op on GTK. Resize the mapped GTK chooser.
+    int ShowModal() override {
+        GSource* fit = g_idle_source_new();
+        g_source_set_callback(fit, FitChooser, GetParent() ? GetParent()->GetHandle() : nullptr, nullptr);
+        g_source_attach(fit, nullptr);
+        int result = wxFileDialog::ShowModal();
+        g_source_destroy(fit);
+        g_source_unref(fit);
+        return result;
+    }
+private:
+    static gboolean FitChooser(gpointer parent) {
+        GList* windows = gtk_window_list_toplevels();
+        for (GList* item = windows; item; item = item->next) {
+            auto* widget = GTK_WIDGET(item->data);
+            if (!GTK_IS_FILE_CHOOSER_DIALOG(widget) || !gtk_widget_get_mapped(widget)) continue;
+            auto* window = GTK_WINDOW(widget);
+            if (parent != gtk_window_get_transient_for(window)) continue;
+            auto* monitor = gdk_display_get_monitor_at_window(gtk_widget_get_display(widget), gtk_widget_get_window(widget));
+            if (!monitor) continue;
+            GdkRectangle area;
+            gdk_monitor_get_workarea(monitor, &area);
+            int width, height;
+            gtk_window_get_size(window, &width, &height);
+            // Leave room for server-side borders and the title bar.
+            int max_width = wxMax(1, area.width - 16);
+            int max_height = wxMax(1, area.height - 48);
+            if (width > max_width || height > max_height)
+                gtk_window_resize(window, wxMin(width, max_width), wxMin(height, max_height));
+        }
+        g_list_free(windows);
+        return G_SOURCE_REMOVE;
+    }
+#endif
 };
 
 WXD_EXPORTED int

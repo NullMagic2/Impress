@@ -1293,3 +1293,9 @@ Words (whitespace-delimited)	Λέξεις (με διαχωρισμό βάσει 
 Unicode characters, including spaces	Χαρακτήρες Unicode, μαζί με τα κενά	Caracteres Unicode, incluidos los espacios	Caracteres Unicode, incluindo espaços	Caracteres Unicode, incluindo espaços
 Paragraphs	Παράγραφοι	Párrafos	Parágrafos	Parágrafos
 Equations and image contents are not counted as text.	Οι εξισώσεις και τα περιεχόμενα εικόνων δεν υπολογίζονται ως κείμενο.	Las ecuaciones y el contenido de las imágenes no se cuentan como texto.	As equações e o conteúdo das imagens não são contados como texto.	As equações e o conteúdo das imagens não são contabilizados como texto.
+Width (cm)	Πλάτος (cm)	Ancho (cm)	Largura (cm)
+Spacing (cm)	Διάκενο (cm)	Espaciado (cm)	Espaçamento (cm)
+One	Μία	Una	Uma
+Two	Δύο	Dos	Duas
+Three	Τρεις	Tres	Três
+Col #	Στήλη	Col.	Col.

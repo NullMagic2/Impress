@@ -45,8 +45,6 @@ impl Manager {
             .with_style(DialogStyle::DefaultDialogStyle | DialogStyle::ResizeBorder)
             .build();
         let dip = |value| window.from_dip_int(value);
-        window.set_size(window.from_dip(Size::new(WIDTH_DIP, HEIGHT_DIP)));
-        window.set_min_size(window.from_dip(Size::new(WIDTH_DIP, HEIGHT_DIP)));
         window.set_escape_id(ID_CANCEL);
         let root = BoxSizer::builder(Orientation::Vertical).build();
         let heading = StaticText::builder(&window)
@@ -105,10 +103,12 @@ impl Manager {
         root.add(
             &close,
             0,
-            SizerFlag::AlignCenterHorizontal | SizerFlag::Left | SizerFlag::Right | SizerFlag::Bottom,
+            SizerFlag::AlignCenterHorizontal | SizerFlag::All,
             dip(GAP_DIP),
         );
-        window.set_sizer(root, true);
+        window.set_sizer_and_fit(root, true);
+        let fitted = window.get_size();
+        window.set_size(Size::new(fitted.width.max(dip(WIDTH_DIP)), fitted.height.max(dip(HEIGHT_DIP))));
         let manager = Rc::new(Self {
             ribbon: Rc::downgrade(ribbon),
             window,

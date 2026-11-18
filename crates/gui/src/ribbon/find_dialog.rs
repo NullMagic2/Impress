@@ -25,8 +25,12 @@ pub(super) struct FindDialog {
 impl FindDialog {
     fn new(ribbon:&Rc<Ribbon>) -> Rc<Self> {
         let controls=crate::i18n::localized(FindDialogUi::new(Some(&ribbon.ui.main_frame),false));
-        controls.find_window.set_min_size(controls.find_window.from_dip(Size::new(610,290)));
-        controls.find_window.set_size(controls.find_window.from_dip(Size::new(650,310)));
+        let window = controls.find_window;
+        window.fit();
+        let fitted = window.get_size();
+        let minimum = Size::new(fitted.width.max(window.from_dip_int(610)), fitted.height.max(window.from_dip_int(410)));
+        window.set_min_size(minimum);
+        window.set_size(Size::new(minimum.width.max(window.from_dip_int(650)), minimum.height));
         controls.find_window.set_escape_id(FindDialogUi::xrc_id("find_close"));
         let this=Rc::new(Self {controls,replacing:Cell::new(false),syncing:Cell::new(false),
             status:RefCell::new(String::new()),last_search_caption:RefCell::new(String::new())});

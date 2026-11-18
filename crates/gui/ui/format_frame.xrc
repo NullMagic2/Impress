@@ -52,7 +52,7 @@
                 <object class="sizeritem">
                   <option>0</option>
                   <flag>wxEXPAND|wxTOP</flag>
-                  <border>10</border>
+                  <border>6</border>
                   <object class="wxBoxSizer">
                     <orient>wxHORIZONTAL</orient>
                     <object class="spacer">
@@ -82,7 +82,7 @@
                 <object class="sizeritem">
                   <option>0</option>
                   <flag>wxEXPAND|wxTOP</flag>
-                  <border>24</border>
+                  <border>14</border>
                   <object class="wxBoxSizer">
                     <orient>wxHORIZONTAL</orient>
                     <object class="sizeritem">
@@ -111,7 +111,7 @@
                 <object class="sizeritem">
                   <option>0</option>
                   <flag>wxEXPAND|wxTOP</flag>
-                  <border>10</border>
+                  <border>6</border>
                   <object class="wxBoxSizer">
                     <orient>wxHORIZONTAL</orient>
                     <object class="spacer">
@@ -274,7 +274,7 @@
                 <object class="sizeritem">
                   <option>0</option>
                   <flag>wxEXPAND|wxTOP</flag>
-                  <border>24</border>
+                  <border>14</border>
                   <object class="wxBoxSizer">
                     <orient>wxHORIZONTAL</orient>
                     <object class="sizeritem">
@@ -303,7 +303,7 @@
                 <object class="sizeritem">
                   <option>0</option>
                   <flag>wxEXPAND|wxTOP</flag>
-                  <border>10</border>
+                  <border>6</border>
                   <object class="wxBoxSizer">
                     <orient>wxHORIZONTAL</orient>
                     <object class="spacer">
@@ -427,7 +427,7 @@
                 <object class="sizeritem">
                   <option>0</option>
                   <flag>wxEXPAND|wxTOP</flag>
-                  <border>24</border>
+                  <border>14</border>
                   <object class="wxBoxSizer">
                     <orient>wxHORIZONTAL</orient>
                     <object class="sizeritem">
@@ -456,7 +456,7 @@
                 <object class="sizeritem">
                   <option>0</option>
                   <flag>wxEXPAND|wxTOP</flag>
-                  <border>10</border>
+                  <border>6</border>
                   <object class="wxBoxSizer">
                     <orient>wxHORIZONTAL</orient>
                     <object class="spacer">

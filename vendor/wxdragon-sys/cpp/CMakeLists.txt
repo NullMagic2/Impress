@@ -288,6 +288,12 @@ message(STATUS "wxDragon sources: ${WXDRAGON_SOURCES}")
 
 # --- Create wxDragon Static Library ---
 add_library(wxdragon STATIC ${WXDRAGON_SOURCES})
+if(wxUSE_GUI AND wxBUILD_TOOLKIT STREQUAL "gtk3")
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(IMPRESS_GTK3 REQUIRED gtk+-3.0)
+    list(REMOVE_ITEM IMPRESS_GTK3_INCLUDE_DIRS ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
+    set_property(SOURCE src/file_dialog.cpp APPEND PROPERTY INCLUDE_DIRECTORIES ${IMPRESS_GTK3_INCLUDE_DIRS})
+endif()
 
 # --- Set Include Directories ---
 target_include_directories(wxdragon PRIVATE 

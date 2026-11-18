@@ -474,8 +474,8 @@ self.i18n_control_32.set_label(&text("cm"));
 self.i18n_control_33.set_label(&text("Width:"));
 self.i18n_control_34.set_label(&text("cm"));
 self.lay_ratio.set_label(&text("Lock aspect ratio"));
-self.lay_ok.set_label(&text("OK"));
 self.lay_cancel.set_label(&text("Cancel"));
+self.lay_ok.set_label(&text("OK"));
 self.lay_dialog.layout();} }
 impl Localize for crate::CitationDialogUi { fn localize(&self) {
 self.citation_manager_dialog.set_label(&text("Citation Manager"));
@@ -514,8 +514,8 @@ self.i18n_control_20.set_label(&text("Publisher"));
 self.save_source_button.set_label(&text("Save source"));
 self.cancel_source_button.set_label(&text("Cancel"));
 self.citation_hint.set_label(&text("Choose a source and citation style."));
-self.citation_manager_ok.set_label(&text("Insert citation"));
 self.citation_manager_cancel.set_label(&text("Cancel"));
+self.citation_manager_ok.set_label(&text("Insert citation"));
 self.citation_manager_dialog.layout();} }
 impl Localize for crate::StyleEditorUi { fn localize(&self) {
 self.style_editor.set_label(&text("Modify Style"));
@@ -606,8 +606,8 @@ self.style_indent_increase.set_label(&text(">"));
 self.style_indent_increase.set_tooltip(&text("Increase indent (5 mm)"));
 self.style_summary.set_label(&text("Font:"));
 self.style_format.set_label(&text("Format ▾"));
-self.style_save.set_label(&text("OK"));
 self.style_cancel.set_label(&text("Cancel"));
+self.style_save.set_label(&text("OK"));
 self.style_editor.layout();} }
 impl Localize for crate::StyleColorPaletteUi { fn localize(&self) {
 self.style_color_palette_dialog.set_label(&text("Font color"));
@@ -787,8 +787,8 @@ if let Some(index) = selected { self.fnt_stylistic_set.set_selection(index); } e
 self.fnt_contextual_alternates.set_label(&text("Use Contextual Alternates"));
 self.i18n_control_52.set_label(&text("Preview"));
 self.fnt_text_effects.set_label(&text("Text Effects…"));
-self.fnt_ok.set_label(&text("OK"));
 self.fnt_cancel.set_label(&text("Cancel"));
+self.fnt_ok.set_label(&text("OK"));
 self.fnt_dialog.layout();} }
 impl Localize for crate::PdfExportDialogUi { fn localize(&self) {
 self.pdf_export_dialog.set_label(&text("Export PDF"));
@@ -808,8 +808,8 @@ self.i18n_control_15.set_label(&text("Keywords"));
 self.i18n_control_16.set_label(&text("Options"));
 self.pdf_export_links.set_label(&text("Keep links and cross-references clickable"));
 self.pdf_export_open.set_label(&text("Open the PDF when the export finishes"));
-self.pdf_export_ok.set_label(&text("Export"));
 self.pdf_export_cancel.set_label(&text("Cancel"));
+self.pdf_export_ok.set_label(&text("Export"));
 self.pdf_export_dialog.layout();} }
 impl Localize for crate::PdfImportDialogUi { fn localize(&self) {
 self.pdf_import_dialog.set_label(&text("Import PDF"));
@@ -831,8 +831,8 @@ self.pdf_import_running.set_label(&text("Move page numbers and running headers i
 self.pdf_import_hyphens.set_label(&text("Rejoin words hyphenated at line ends"));
 self.pdf_import_breaks.set_label(&text("Start each PDF page on a new page"));
 self.pdf_import_note.set_label(&text("Fonts, lists, tables, columns and pictures are kept; the layout may differ from the PDF."));
-self.pdf_import_ok.set_label(&text("Import"));
 self.pdf_import_cancel.set_label(&text("Cancel"));
+self.pdf_import_ok.set_label(&text("Import"));
 self.pdf_import_dialog.layout();} }
 impl Localize for crate::PrintDialogUi { fn localize(&self) {
 self.print_dialog.set_label(&text("Print"));
@@ -849,8 +849,8 @@ self.print_collate.set_label(&text("Collate"));
 self.i18n_control_13.set_label(&text("Scale"));
 self.print_fit.set_label(&text("Fit each page to the paper"));
 self.print_actual.set_label(&text("Actual size (100%)"));
-self.print_ok.set_label(&text("Print…"));
 self.print_cancel.set_label(&text("Cancel"));
+self.print_ok.set_label(&text("Print…"));
 self.print_dialog.layout();} }
 impl Localize for crate::TablePositionDialogUi { fn localize(&self) {
 self.tpos_dialog.set_label(&text("Table Position"));
@@ -910,8 +910,8 @@ self.i18n_control_26.set_label(&text("Text wrapping"));
 self.tpos_around.set_label(&text("Text flows around the table"));
 self.tpos_topbottom.set_label(&text("Text stops above and continues below"));
 self.tpos_overlap.set_label(&text("Allow other floating tables to overlap"));
-self.tpos_ok.set_label(&text("OK"));
 self.tpos_cancel.set_label(&text("Cancel"));
+self.tpos_ok.set_label(&text("OK"));
 self.tpos_dialog.layout();} }
 impl Localize for crate::NoteDialogUi { fn localize(&self) {
 self.note_dialog.set_label(&text("Footnotes and Endnotes"));
@@ -925,8 +925,8 @@ self.i18n_control_8.set_label(&text("Insert at the caret"));
 self.note_kind_footnote.set_label(&text("Footnote, at the bottom of the page"));
 self.note_kind_endnote.set_label(&text("Endnote, at the end of the document"));
 self.note_text_caption.set_label(&text("Note text"));
-self.note_ok.set_label(&text("Insert"));
 self.note_cancel.set_label(&text("Close"));
+self.note_ok.set_label(&text("Insert"));
 self.note_dialog.layout();} }
 impl Localize for crate::ColumnsDialogUi { fn localize(&self) {
 self.col_dialog.set_label(&text("Columns"));
@@ -935,47 +935,23 @@ self.i18n_control_3.set_label(&text("Number of columns:"));
 self.col_line.set_label(&text("Line between"));
 self.i18n_control_5.set_label(&text("Width and spacing"));
 self.i18n_control_6.set_label(&text("Col #"));
-self.i18n_control_7.set_label(&text("Width"));
-self.i18n_control_8.set_label(&text("Spacing"));
+self.i18n_control_7.set_label(&text("Width (cm)"));
+self.i18n_control_8.set_label(&text("Spacing (cm)"));
 self.col_label_1.set_label(&text("1:"));
-self.i18n_control_10.set_label(&text("cm"));
-self.i18n_control_11.set_label(&text("cm"));
 self.col_label_2.set_label(&text("2:"));
-self.i18n_control_13.set_label(&text("cm"));
-self.i18n_control_14.set_label(&text("cm"));
 self.col_label_3.set_label(&text("3:"));
-self.i18n_control_16.set_label(&text("cm"));
-self.i18n_control_17.set_label(&text("cm"));
 self.col_label_4.set_label(&text("4:"));
-self.i18n_control_19.set_label(&text("cm"));
-self.i18n_control_20.set_label(&text("cm"));
 self.col_label_5.set_label(&text("5:"));
-self.i18n_control_22.set_label(&text("cm"));
-self.i18n_control_23.set_label(&text("cm"));
 self.col_label_6.set_label(&text("6:"));
-self.i18n_control_25.set_label(&text("cm"));
-self.i18n_control_26.set_label(&text("cm"));
 self.col_label_7.set_label(&text("7:"));
-self.i18n_control_28.set_label(&text("cm"));
-self.i18n_control_29.set_label(&text("cm"));
 self.col_label_8.set_label(&text("8:"));
-self.i18n_control_31.set_label(&text("cm"));
-self.i18n_control_32.set_label(&text("cm"));
 self.col_label_9.set_label(&text("9:"));
-self.i18n_control_34.set_label(&text("cm"));
-self.i18n_control_35.set_label(&text("cm"));
 self.col_label_10.set_label(&text("10:"));
-self.i18n_control_37.set_label(&text("cm"));
-self.i18n_control_38.set_label(&text("cm"));
 self.col_label_11.set_label(&text("11:"));
-self.i18n_control_40.set_label(&text("cm"));
-self.i18n_control_41.set_label(&text("cm"));
 self.col_label_12.set_label(&text("12:"));
-self.i18n_control_43.set_label(&text("cm"));
-self.i18n_control_44.set_label(&text("cm"));
 self.col_equal.set_label(&text("Equal column width"));
-self.i18n_control_46.set_label(&text("Apply"));
-self.i18n_control_47.set_label(&text("Apply to:"));
+self.i18n_control_22.set_label(&text("Apply"));
+self.i18n_control_23.set_label(&text("Apply to:"));
 let selected = self.col_apply.get_selection();
 let current = self.col_apply.get_value();
 self.col_apply.clear();
@@ -984,9 +960,9 @@ self.col_apply.append(&text("This section"));
 self.col_apply.append(&text("This point forward"));
 if let Some(index) = selected { self.col_apply.set_selection(index); } else { self.col_apply.change_value(&current); }
 self.col_new_column.set_label(&text("Start new column"));
-self.i18n_control_50.set_label(&text("Preview"));
-self.col_ok.set_label(&text("OK"));
+self.i18n_control_26.set_label(&text("Preview"));
 self.col_cancel.set_label(&text("Cancel"));
+self.col_ok.set_label(&text("OK"));
 self.col_dialog.layout();} }
 impl Localize for crate::RecoveryDialogUi { fn localize(&self) {
 self.rec_dialog.set_label(&text("Recover Documents"));
@@ -994,8 +970,8 @@ self.rec_heading.set_label(&text("Impress kept copies of documents that were not
 self.rec_hint.set_label(&text("Choose one to restore. It opens as a new, unsaved document and never replaces the original file."));
 self.rec_preview_caption.set_label(&text("Preview"));
 self.rec_delete.set_label(&text("Delete"));
-self.rec_ok.set_label(&text("Restore"));
 self.rec_cancel.set_label(&text("Cancel"));
+self.rec_ok.set_label(&text("Restore"));
 self.rec_dialog.layout();} }
 impl Localize for crate::ParagraphDialogUi { fn localize(&self) {
 self.par_dialog.set_label(&text("Paragraph"));
@@ -1096,8 +1072,8 @@ self.par_tight_wrap.append(&text("Last line only"));
 if let Some(index) = selected { self.par_tight_wrap.set_selection(index); } else { self.par_tight_wrap.change_value(&current); }
 self.i18n_control_48.set_label(&text("Preview"));
 self.par_tabs.set_label(&text("Tabs…"));
-self.par_ok.set_label(&text("OK"));
 self.par_cancel.set_label(&text("Cancel"));
+self.par_ok.set_label(&text("OK"));
 self.par_dialog.layout();} }
 impl Localize for crate::TabsDialogUi { fn localize(&self) {
 self.tab_dialog.set_label(&text("Tabs"));
@@ -1125,8 +1101,8 @@ self.tab_set.set_label(&text("Set"));
 self.tab_clear.set_label(&text("Clear"));
 self.tab_clear_all.set_label(&text("Clear All"));
 self.tab_status.set_label(&text(" "));
-self.tab_ok.set_label(&text("OK"));
 self.tab_cancel.set_label(&text("Cancel"));
+self.tab_ok.set_label(&text("OK"));
 self.tab_dialog.layout();} }
 impl Localize for crate::BordersDialogUi { fn localize(&self) {
 self.bdr_dialog.set_label(&text("Borders and Shading"));
@@ -1218,8 +1194,8 @@ self.shd_apply.append(&text("Text"));
 if let Some(index) = selected { self.shd_apply.set_selection(index); } else { self.shd_apply.change_value(&current); }
 self.i18n_control_35.set_label(&text("Preview"));
 self.bdr_options.set_label(&text("Horizontal Line…"));
-self.bdr_ok.set_label(&text("OK"));
 self.bdr_cancel.set_label(&text("Cancel"));
+self.bdr_ok.set_label(&text("OK"));
 self.bdr_dialog.layout();} }
 impl Localize for crate::LanguageDialogUi { fn localize(&self) {
 self.lng_dialog.set_label(&text("Language"));
@@ -1230,8 +1206,8 @@ self.i18n_control_6.set_label(&text("Proofing"));
 self.lng_no_proof.set_label(&text("Do not check spelling or grammar"));
 self.lng_detect.set_label(&text("Detect language automatically"));
 self.lng_default.set_label(&text("Set As Default"));
-self.lng_ok.set_label(&text("OK"));
 self.lng_cancel.set_label(&text("Cancel"));
+self.lng_ok.set_label(&text("OK"));
 self.lng_dialog.layout();} }
 impl Localize for crate::FrameDialogUi { fn localize(&self) {
 self.frm_dialog.set_label(&text("Frame"));
@@ -1301,8 +1277,8 @@ self.i18n_control_25.set_label(&text("mm"));
 self.frm_move.set_label(&text("Move with text"));
 self.frm_lock.set_label(&text("Lock anchor"));
 self.frm_remove.set_label(&text("Remove Frame"));
-self.frm_ok.set_label(&text("OK"));
 self.frm_cancel.set_label(&text("Cancel"));
+self.frm_ok.set_label(&text("OK"));
 self.frm_dialog.layout();} }
 impl Localize for crate::NumberingDialogUi { fn localize(&self) {
 self.num_dialog.set_label(&text("Numbering and Bullets"));
@@ -1330,8 +1306,8 @@ self.num_level.append(&text("8"));
 self.num_level.append(&text("9"));
 if let Some(index) = selected { self.num_level.set_selection(index); } else { self.num_level.change_value(&current); }
 self.num_define_number.set_label(&text("Define New Number Format…"));
-self.num_ok.set_label(&text("OK"));
 self.num_cancel.set_label(&text("Cancel"));
+self.num_ok.set_label(&text("OK"));
 self.num_dialog.layout();} }
 impl Localize for crate::ShortcutDialogUi { fn localize(&self) {
 self.key_dialog.set_label(&text("Customize Keyboard"));
@@ -1510,8 +1486,8 @@ self.fx_lighting.append(&text("Flood"));
 self.fx_lighting.append(&text("Contrasting"));
 if let Some(index) = selected { self.fx_lighting.set_selection(index); } else { self.fx_lighting.change_value(&current); }
 self.i18n_control_65.set_label(&text("Preview"));
-self.fx_ok.set_label(&text("OK"));
 self.fx_cancel.set_label(&text("Cancel"));
+self.fx_ok.set_label(&text("OK"));
 self.fx_dialog.layout();} }
 pub(super) fn canonical_choice(name:&str,value:&str)->String { match name {
 "bdr_apply" => super::choice_source(value,&["Paragraph", "Text"]),

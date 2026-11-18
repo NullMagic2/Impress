@@ -145,6 +145,14 @@ wxd_Window_Fit(wxd_Window_t* window)
 }
 
 WXD_EXPORTED void
+wxd_Window_FitInside(wxd_Window_t* window)
+{
+    if (window) {
+        reinterpret_cast<wxWindow*>(window)->FitInside();
+    }
+}
+
+WXD_EXPORTED void
 wxd_Window_Layout(wxd_Window_t* window)
 {
     wxWindow* win = (wxWindow*)window;

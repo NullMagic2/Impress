@@ -15,6 +15,8 @@ wxd_Window_GetId(wxd_Window_t* window);
 WXD_EXPORTED void
 wxd_Window_Fit(wxd_Window_t* window);
 WXD_EXPORTED void
+wxd_Window_FitInside(wxd_Window_t* window);
+WXD_EXPORTED void
 wxd_Window_Layout(wxd_Window_t* window);
 WXD_EXPORTED wxd_Size
 wxd_Window_GetBestSize(wxd_Window_t* window);
