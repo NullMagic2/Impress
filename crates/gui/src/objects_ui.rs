@@ -61,7 +61,7 @@ impl Drag {
 /// Shown when a picture is selected; the keys match picture_chrome's controls.
 const PICTURE_SELECTED_STATUS: &str = "Picture selected";
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Pointer { Arrow, ResizeNwSe, ResizeNeSw, ResizeColumn, ResizeRow, Move, Hand, Rotate }
+pub enum Pointer { Arrow, Text, ResizeNwSe, ResizeNeSw, ResizeColumn, ResizeRow, Move, Hand, Rotate }
 pub(crate) fn contains(r: Rect, p: Point) -> bool { p.x >= r.x && p.x <= r.x+r.width && p.y >= r.y && p.y <= r.y+r.height }
 pub(crate) fn page_point(state: &CanvasState, page: usize, p: Point) -> Option<Point> {
     let rect = state.viewport.page_rect_px(&state.vector_document, page)?;
@@ -178,8 +178,18 @@ pub fn resize_guide(state:&CanvasState)->Option<(usize,String,bool,f32)> {
     let r=region.rect;
     Some((page,info.table_id.clone(),column,if column{r.x+r.width}else{r.y+r.height}))
 }
+fn paper_pointer(viewport: &render::ViewportState, document: &render::VectorDocument, point: Point) -> Pointer {
+    if viewport.page_rects_px(document).into_iter().any(|page| contains(page, point)) {
+        Pointer::Text
+    } else {
+        Pointer::Arrow
+    }
+}
+
 pub fn hover(state:&CanvasState,p:Point)->Pointer {
-    if crate::equation_ui::previewing(state) {return Pointer::Arrow;}
+    if crate::equation_ui::previewing(state) {
+        return paper_pointer(&state.viewport, &state.vector_document, p);
+    }
     if let Some(drag)=&state.object_drag {
         match &drag.kind {
             DragKind::Resize{handle,..}=>return handle_pointer(*handle),
@@ -197,7 +207,7 @@ pub fn hover(state:&CanvasState,p:Point)->Pointer {
     if let Some(pointer)=crate::table_ui::pointer(state) {return pointer;}
     if let Some((_,_,column))=table_boundary(state,p){return if column{Pointer::ResizeColumn}else{Pointer::ResizeRow};}
     if picture_or_equation(state,p).is_some_and(|(_,r)|matches!(r.kind,ObjectKind::Picture{source:Some(_)})||state.editor.picture_anchor(&NodeId::from(r.node_id.as_str())).is_some()){return Pointer::Move;}
-    Pointer::Arrow
+    paper_pointer(&state.viewport, &state.vector_document, p)
 }
 /// The cell of `table` under `point`, or, past the table's edge, the nearest
 /// one, so a drag beyond the table keeps selecting its outer cells.

@@ -292,6 +292,9 @@ impl Card {
     fn new(notes: &Rc<CommentNotes>, id: &NoteId, parent: Panel, draft: Option<&str>) -> Rc<Self> {
         let panel = Panel::builder(&parent).with_pos(Point::new(-500, -500)).with_size(Size::new(1, 1)).build();
         panel.set_background_style(BackgroundStyle::Paint);
+        if let Some(cursor) = wxdragon::cursor::Cursor::from_stock(wxdragon::cursor::StockCursor::Arrow) {
+            panel.set_cursor(Some(&cursor));
+        }
         if draft.is_none() { panel.set_can_focus(false); }
         panel.on_erase_background(|_| {});
         let input = draft.map(|text| TextCtrl::builder(&panel).with_value(text)

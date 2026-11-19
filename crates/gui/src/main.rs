@@ -684,7 +684,7 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
             .then(|| picture_chrome::tooltip(&state).unwrap_or_else(|| table_ui::tooltip(&state)).to_string())
             .or_else(|| (NOTE_TOOLTIP.with(|t| t.replace(note_tip.clone())) != note_tip).then(|| note_tip.clone().unwrap_or_default()));
         let mut pointer = objects_ui::hover(&state, view_point);
-        if pointer==objects_ui::Pointer::Arrow && link.is_some() && wxdragon::utils::get_key_state(WXK_CONTROL) {
+        if pointer==objects_ui::Pointer::Text && link.is_some() && wxdragon::utils::get_key_state(WXK_CONTROL) {
             pointer=objects_ui::Pointer::Hand;
         }
         let needs_present = state.needs_present;
@@ -695,7 +695,8 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
         if CANVAS_POINTER.with(|p| p.replace(Some(pointer))) != Some(pointer) {
             use objects_ui::Pointer::*;
             let stock = match pointer {
-                Arrow => wxdragon::cursor::StockCursor::IBeam, Hand => wxdragon::cursor::StockCursor::Hand,
+                Arrow => wxdragon::cursor::StockCursor::Arrow, Text => wxdragon::cursor::StockCursor::IBeam,
+                Hand => wxdragon::cursor::StockCursor::Hand,
                 ResizeColumn => wxdragon::cursor::StockCursor::SizeWE, ResizeRow => wxdragon::cursor::StockCursor::SizeNS,
                 ResizeNwSe => wxdragon::cursor::StockCursor::SizeNWSE, ResizeNeSw => wxdragon::cursor::StockCursor::SizeNESW,
                 Move => wxdragon::cursor::StockCursor::Sizing,

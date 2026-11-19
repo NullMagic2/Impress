@@ -139,7 +139,7 @@ pub fn position(_hwnd: *mut std::ffi::c_void, _state: &InputState, _x: i32, _y: 
 pub fn set_pointer(pointer: crate::objects_ui::Pointer) {
     use windows_sys::Win32::UI::WindowsAndMessaging::*;
     use crate::objects_ui::Pointer::*;
-    let id = match pointer { Arrow => IDC_ARROW, ResizeNwSe => IDC_SIZENWSE, ResizeNeSw => IDC_SIZENESW,
+    let id = match pointer { Arrow => IDC_ARROW, Text => IDC_IBEAM, ResizeNwSe => IDC_SIZENWSE, ResizeNeSw => IDC_SIZENESW,
         ResizeColumn => IDC_SIZEWE, ResizeRow => IDC_SIZENS, Move => IDC_SIZEALL, Hand => IDC_HAND,
         // Windows has no stock rotate cursor.
         Rotate => IDC_CROSS };
