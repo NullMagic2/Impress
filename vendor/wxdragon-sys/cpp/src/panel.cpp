@@ -24,6 +24,17 @@ wxd_Panel_Create(wxd_Window_t* parent, wxd_Id id, wxd_Point pos, wxd_Size size, 
     return (wxd_Panel_t*)panel;
 }
 
+// The document panel paints its own caret and owns keyboard shortcuts,
+// even when it has children such as an inline comment editor.
+WXD_EXPORTED void
+wxd_Panel_FocusSelf(wxd_Panel_t* window)
+{
+    if (auto* panel = reinterpret_cast<wxPanel*>(window)) {
+        panel->SetCanFocus(true);
+        panel->SetFocusIgnoringChildren();
+    }
+}
+
 // TODO: Add wxd_Panel_Destroy if needed, or confirm wxWindow_Destroy works.
 // Panels, like most widgets, are typically destroyed when their parent frame/dialog is destroyed.
 // Explicit destruction might only be necessary if dynamically removing panels without destroying the parent.

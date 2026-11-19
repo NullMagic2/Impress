@@ -207,7 +207,7 @@ impl Ribbon {
                     TableMenuTarget::at(&state, view_point)
                 }
             };
-            canvas.set_focus();
+            focus_canvas(&canvas);
             canvas.refresh(false, None);
             show(&ribbon, crate::gtk_native::to_screen(&canvas, position), target);
         });

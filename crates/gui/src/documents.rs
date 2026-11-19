@@ -166,7 +166,7 @@ fn shown(s: &mut CanvasState) {
     s.table_pointer = None; s.table_hover = None; s.picture_hover = None; s.table_band = None;
     s.table_drag = None; s.band_drag = None; s.cell_drag_anchor = None;
     s.key_repeat = None; s.dragging_selection = false; s.wheel_glide = (0.0, 0.0);
-    s.pending_equation = None; s.pending_comment = None; s.comment_selected = None; s.pending_new_comment = false;
+    s.pending_equation = None; s.pending_comment = None; s.comment_selected = None; s.pending_new_comment = false; s.comment_leaders.clear();
     s.overlay = CanvasOverlay::default(); s.display_generation = None; s.typing_layout_pending = false;
     s.documents.epoch = s.documents.epoch.wrapping_add(1);
     submit_layout(s); refresh_overlay(s); wake_caret(s);

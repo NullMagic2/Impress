@@ -12,6 +12,8 @@ pub struct ViewportState {
     pub scroll_px: Point,
     pub page_gap_pt: f32,
     pub outer_margin_px: f32,
+    /// Extra horizontal scrolling room for attached review notes.
+    pub right_inset_px: f32,
 }
 
 impl Default for ViewportState {
@@ -23,6 +25,7 @@ impl Default for ViewportState {
             scroll_px: Point::new(0.0, 0.0),
             page_gap_pt: 22.0,
             outer_margin_px: 32.0,
+            right_inset_px: 0.0,
         }
     }
 }
@@ -98,7 +101,7 @@ impl ViewportState {
             height += page.size.height * scale;
             if i + 1 < document.pages.len() { height += self.page_gap_pt * scale; }
         }
-        Size::new(max_width + self.outer_margin_px * 2.0, height)
+        Size::new(max_width + self.outer_margin_px * 2.0 + self.right_inset_px, height)
     }
 
     /// Center the whole page stack in spare viewport space. At high zoom the

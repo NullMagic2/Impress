@@ -1213,8 +1213,8 @@
                   "kind": "button",
                   "name": "resolve_comment_button",
                   "style": "small-button",
-                  "label": "Decision",
-                  "tip": "Comment decision",
+                  "label": "Resolve",
+                  "tip": "Resolve comment",
                   "icon": "comment-check"
                 }
               ]

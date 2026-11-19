@@ -141,8 +141,10 @@ struct CanvasState {
     /// The equation the equation pane edits and the slot its cursor is in,
     /// shown on the page with the same blue box as a slot selected there.
     equation_pane_slot: Option<(NodeId, Vec<(usize, usize)>)>,
-    /// The comment selected in the Comments pane.
+    /// The selected sticky comment on the page.
     comment_selected: Option<NodeId>,
+    comments_visible: bool,
+    comment_leaders: Vec<render::ChromeShape>,
     pending_comment: Option<NodeId>,
     pending_new_comment: bool,
     /// The Layout Options button beside a selected picture was pressed: its
@@ -285,6 +287,8 @@ fn main() {
             equation_slot_click: None,
             equation_slot: None,
             comment_selected: None,
+            comments_visible: true,
+            comment_leaders: Vec::new(),
             equation_pane_slot: None,
             pending_comment: None,
             pending_new_comment: false,
@@ -353,7 +357,7 @@ fn main() {
         timer.on_tick(move |_| {
             // The first event-loop tick follows ribbon setup and any recovery
             // dialog. Focusing before those steps left a ribbon control active.
-            if initial_focus.replace(false) { timer_canvas.set_focus(); }
+            if initial_focus.replace(false) { focus_canvas(&timer_canvas); }
             drain_native_input(&mut timer_state.borrow_mut());
             let mut state = timer_state.borrow_mut();
             if run_key_repeat(&mut state) { timer_canvas.refresh(false, None); }
@@ -487,6 +491,7 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
         overlay.chrome.extend(table_ui::chrome(&state));
         overlay.chrome.extend(slot_ui::chrome(&state));
         overlay.chrome.extend(picture_chrome::chrome(&state));
+        overlay.chrome.extend(state.comment_leaders.iter().cloned());
         let dirty = state.needs_present;
         // Keep painting on the next ticks while visible tiles are still missing.
         let scale = state.pixel_scale;
@@ -595,20 +600,20 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
                     if !state.input.installed() && !state.shift_click && unsafe { wxd_DispatchingLeftDoubleClick() } {
                         objects_ui::double_click(&mut state, view_point);
                         drop(state);
-                        down_canvas.set_focus(); down_canvas.refresh(false, None);
+                        focus_canvas(&down_canvas); down_canvas.refresh(false, None);
                         event.skip(false); return;
                     }
                     state.table_pointer = Some(view_point);
                     if picture_chrome::down(&mut state, view_point) {
                         drop(state);
-                        down_canvas.set_focus(); down_canvas.refresh(false, None);
+                        focus_canvas(&down_canvas); down_canvas.refresh(false, None);
                         event.skip(false); return;
                     }
                     if table_ui::down(&mut state, view_point) {
                         let capture = state.table_drag.is_some() || state.band_drag.is_some();
                         drop(state);
                         if capture && !down_canvas.has_capture() { down_canvas.capture_mouse(); }
-                        down_canvas.set_focus(); down_canvas.refresh(false, None);
+                        focus_canvas(&down_canvas); down_canvas.refresh(false, None);
                         event.skip(false); return;
                     }
                     state.table_band = None;
@@ -645,7 +650,7 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
                 };
                 // Capture/focus may synchronously dispatch native callbacks.
                 if capture && !down_canvas.has_capture() { down_canvas.capture_mouse(); }
-                down_canvas.set_focus(); down_canvas.refresh(false, None);
+                focus_canvas(&down_canvas); down_canvas.refresh(false, None);
             }
         }
         event.skip(false);
@@ -1138,6 +1143,12 @@ unsafe extern "C" {
     /// From the vendored wxdragon-sys (see vendor/wxdragon-sys/IMPRESS_CHANGES.md).
     fn wxd_UpdateUIEvent_SetMode(mode: i32);
     fn wxd_DispatchingLeftDoubleClick() -> bool;
+    fn wxd_Panel_FocusSelf(panel: *mut std::ffi::c_void);
+}
+
+fn focus_canvas(canvas: &wxdragon::widgets::panel::Panel) {
+    // Normal panel focus forwards to children, including sticky-note editors.
+    unsafe { wxd_Panel_FocusSelf(canvas.as_ptr().cast()); }
 }
 
 fn refresh_overlay(state: &mut CanvasState) {

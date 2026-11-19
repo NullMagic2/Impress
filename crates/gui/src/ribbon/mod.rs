@@ -23,8 +23,8 @@ mod picture_shapes;
 mod table_picker;
 mod symbol_picker;
 mod inline_equation;
-mod comments_pane;
-pub(crate) use comments_pane::comment_marks;
+mod comment_notes;
+pub(crate) use comment_notes::comment_marks;
 mod symbol_table;
 mod output_dialogs;
 mod output_progress;
@@ -126,7 +126,7 @@ pub enum ViewMode { Graphical, Typst, Split }
 enum Action {
     InterfaceLanguage,
     New, Open, RecentFiles, Save, SaveAs, Recovery, Editor(AppCommand),
-    Pdf, ImportPdf, Print, CommentNew, CommentDelete, CommentDecision, CommentStep(bool), StyleManager, ManageStyles, StyleGalleryMore, StylesClose, StyleNew, StyleModify, StyleApply, StyleInspect, StyleDelete, ClearDirect, Highlight, Hyphenation, TextLanguage,
+    Pdf, ImportPdf, Print, CommentNew, CommentDelete, CommentResolve, CommentStep(bool), StyleManager, ManageStyles, StyleGalleryMore, StylesClose, StyleNew, StyleModify, StyleApply, StyleInspect, StyleDelete, ClearDirect, Highlight, Hyphenation, TextLanguage,
     SearchOptions, SearchStep(bool), ReplaceOne, ReplaceAll,
     Contents, ContentsUpdate, ContentsLevel, Footnotes, Bookmarks, Comments, TextTracking, Spelling, Compatibility,
     EquationClose,
@@ -258,7 +258,7 @@ pub struct Ribbon {
     /// the same text, invalidates its layout and repaints it.
     label_text: RefCell<HashMap<&'static str, String>>,
     equation: RefCell<Option<Rc<crate::equation_editor::EquationEditor>>>,
-    comments: RefCell<Option<Rc<comments_pane::CommentsPane>>>,
+    comments: RefCell<Option<Rc<comment_notes::CommentNotes>>>,
     style_gallery: RefCell<Option<Rc<style_gallery::Gallery>>>,
     style_context: RefCell<Option<(model::StyleId,u64,Option<editor::Selection>)>>,
     tab_strip: RefCell<Option<Rc<tab_strip::TabStrip>>>,
@@ -288,7 +288,7 @@ impl Ribbon {
         }
         ui.source_panel.hide();
         ui.canvas_context_bar.hide();
-        ui.equation_panel.hide(); ui.comments_panel.hide(); ui.table_context_tools.hide();
+        ui.equation_panel.hide(); ui.table_context_tools.hide();
         ui.picture_context_tools.hide();
         ui.navigator_panel.hide();
         ui.styles_resize_handle.hide();
@@ -319,7 +319,7 @@ impl Ribbon {
             this.ui.equation_surface, this.ui.equation_panel, this.ui.equation_input, Rc::clone(&this.state),
             Box::new(move || { if let Some(r) = close.upgrade() { r.run(Action::EquationClose); } }),
         )));
-        this.comments.replace(Some(comments_pane::CommentsPane::install(&this)));
+        this.comments.replace(Some(comment_notes::CommentNotes::install(&this)));
         this.bind();
         this.style_gallery.replace(Some(style_gallery::install(&this)));
         this.tab_strip.replace(Some(tab_strip::install(&this)));
@@ -714,10 +714,10 @@ impl Ribbon {
             Action::Footnotes => self.footnotes()?, Action::Bookmarks => self.bookmarks()?,
             Action::Comments => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.show(!p.shown()); } }
             Action::CommentNew => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.new_comment(); } }
-            Action::CommentDelete | Action::CommentDecision => {
-                let id = comments_pane::current(&self.state.borrow()).ok_or("Select a comment first")?;
+            Action::CommentDelete | Action::CommentResolve => {
+                let id = comment_notes::current(&self.state.borrow()).ok_or("Select a comment first")?;
                 let pane = self.comments.borrow().clone();
-                if let Some(p) = pane { if matches!(action, Action::CommentDelete) { p.delete(&id); } else { p.review_decision(&id); } }
+                if let Some(p) = pane { if matches!(action, Action::CommentDelete) { p.delete(&id); } else { p.toggle_resolved(&id); } }
             }
             Action::CommentStep(forward) => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.step(forward); } }
             Action::TextTracking => self.text_tracking()?,
@@ -1109,7 +1109,7 @@ impl Ribbon {
     fn focus_document(&self) {
         if self.find_has_focus() { return; }
         if self.mode.get() == ViewMode::Typst { self.ui.typst_editor.set_focus(); }
-        else { self.ui.paper_canvas.set_focus(); self.ui.paper_canvas.refresh(false, None); }
+        else { focus_canvas(&self.ui.paper_canvas); self.ui.paper_canvas.refresh(false, None); }
     }
 
     fn set_view(&self, mode: ViewMode) {
@@ -1137,7 +1137,7 @@ impl Ribbon {
             return;
         }
         let mut total = self.ui.workspace_panel.get_client_size().width - self.ui.split_handle.get_size().width;
-        for side in [self.ui.equation_panel, self.ui.comments_panel, self.ui.styles_panel, self.ui.styles_resize_handle] {
+        for side in [self.ui.equation_panel, self.ui.styles_panel, self.ui.styles_resize_handle] {
             if side.is_shown() { total -= side.get_size().width; }
         }
         let minimum = self.ui.workspace_panel.from_dip_int(240);
@@ -1494,6 +1494,7 @@ impl Ribbon {
         if self.last_poll.get().elapsed() < Duration::from_millis(80) { return; }
         self.last_poll.set(Instant::now());
         self.refresh_art(); self.poll_source(); self.poll_spelling(); self.poll_dictionary_install(); self.poll_dictionary_manager(); self.sync_spelling_status();
+        if let Some(notes) = self.comments.borrow().as_ref() { notes.sync_view(); }
         if let Some(ruler) = self.tab_ruler.borrow().as_ref() { ruler.refresh(); }
         let (key, title, status, zoom, metrics, can_undo, can_redo, page, pages, section, editing_header_footer) = {
             let state = self.state.borrow();
@@ -1570,11 +1571,8 @@ impl Ribbon {
                 bar.set_scrollbar(position, thumb, range, thumb, true); bar.enable(range > thumb);
             }
         }
-        if let Some(pane) = self.comments.borrow().as_ref() { pane.sync_view(); }
         let changed = self.last_key.borrow().as_ref() != Some(&key) || self.state.borrow().equation_draft.is_some();
         if changed {
-            let pane = self.comments.borrow().clone();
-            if let Some(pane) = pane { pane.follow_caret(); }
             if let Some(gallery) = self.style_gallery.borrow().as_ref() { gallery.refresh(); }
             self.sync_style_caption();
             self.refresh_styles_pane();
@@ -1624,13 +1622,18 @@ impl Ribbon {
                 Action::Landscape(value) => section.is_some_and(|p| (p.page_width_mm > p.page_height_mm) == value),
                 Action::View(mode) => self.mode.get() == mode,
                 Action::ToggleNavigation | Action::ShowNavigation => self.ui.navigator_panel.is_shown(),
-                Action::Comments => self.ui.comments_panel.is_shown(),
+                Action::Comments => self.comments.borrow().as_ref().is_some_and(|notes| notes.shown()),
                 _ => false,
             };
             let enabled = !spec.disabled && match spec.action {
                 Action::StyleApply | Action::StyleModify | Action::StyleInspect | Action::StyleDelete => self.styles_view.borrow().has_selection(),
                 Action::Editor(AppCommand::Undo) => undo,
-                Action::CommentDelete | Action::CommentDecision => comments_pane::current(&self.state.borrow()).is_some(),
+                Action::CommentDelete => comment_notes::current(&self.state.borrow()).is_some(),
+                Action::CommentResolve => {
+                    let state = self.state.borrow();
+                    comment_notes::current(&state).and_then(|id|
+                        state.editor.document.review.comments.get(&id)).is_some_and(|c| !c.is_closed())
+                }
                 Action::CommentStep(_) => !self.state.borrow().editor.document.review.comments.is_empty(),
                 Action::Editor(AppCommand::Redo) => redo,
                 Action::Editor(AppCommand::Cut | AppCommand::Copy) => selection,

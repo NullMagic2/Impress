@@ -344,7 +344,7 @@ size(ruler,'tab_ruler',-1,34)
 canvas_row=sizer(item(cf,1))
 vertical_ruler=obj(item(canvas_row,0,'wxEXPAND'),'wxPanel','vertical_ruler',bg='#e8ecf2',tooltip='Vertical ruler · centimetres')
 size(vertical_ruler,'vertical_ruler',34,-1)
-cv=obj(item(canvas_row,1),'wxPanel','paper_canvas',bg=COLORS['canvas'],style='wxWANTS_CHARS')
+cv=obj(item(canvas_row,1),'wxPanel','paper_canvas',bg=COLORS['canvas'],style='wxWANTS_CHARS|wxCLIP_CHILDREN')
 obj(item(canvas_row),'wxScrollBar','vertical_scroll',style='wxSB_VERTICAL',value='0',thumbsize='100',range='100',pagesize='100')
 obj(item(cf),'wxScrollBar','horizontal_scroll',style='wxSB_HORIZONTAL',value='0',thumbsize='100',range='100',pagesize='100')
 # Split view: the document on the left, its Typst source on the right, with
@@ -371,11 +371,6 @@ font=E.SubElement(et,'font');prop(font,'face','Consolas');prop(font,'size','10')
 # Comments pane: one owner-painted surface (the threads as cards, their
 # commands; ribbon/comments_pane.rs) above a field for writing a comment, a
 # reply or an edit, shown while one is written.
-cp,cs=panel(workrow,'comments_panel','wxVERTICAL',bg=COLORS['source'],style='wxBORDER_NONE|wxTAB_TRAVERSAL')
-size(cp,'comments_panel',320,-1)
-obj(item(cs,1,'wxEXPAND'),'wxPanel','comments_surface',bg=COLORS['source'],style='wxWANTS_CHARS|wxBORDER_NONE')
-ci=obj(item(cs,0,'wxLEFT|wxRIGHT|wxBOTTOM|wxEXPAND',12),'wxTextCtrl','comments_input',style='wxTE_MULTILINE|wxTE_PROCESS_ENTER',hidden='1')
-size(ci,'comments_input',-1,72)
 # Docked document Styles pane, in the Home tab's design language: a bold
 # heading with a flat close icon, a 28-DIP filter, a painted style list (names
 # previewed in their own fonts, Ribbon-style selection) and outlined commands. Sizing remains logical DIP, like the Ribbon.

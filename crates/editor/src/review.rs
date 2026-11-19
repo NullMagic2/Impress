@@ -56,20 +56,6 @@ impl EditorState {
         if after == self.document.review { return Ok(()); }
         self.commit_review(label,after)
     }
-    /// Record the review outcome without editing the anchor or deleting its thread.
-    pub fn decide_comment(&mut self, id: &NodeId, decision: model::CommentDecision) -> Result<(), String> {
-        let mut after = self.document.review.clone();
-        let comment = after.comments.get_mut(id).ok_or("Comment not found")?;
-        if comment.decision == Some(decision) { return Ok(()); }
-        comment.decision = Some(decision);
-        comment.resolved = true;
-        let label = match decision {
-            model::CommentDecision::Accepted => "Accept comment",
-            model::CommentDecision::Rejected => "Reject comment",
-        };
-        self.commit_review(label, after)
-    }
-
     pub fn delete_comment(&mut self,id:&NodeId)->Result<(),String> {
         let mut after=self.document.review.clone();after.comments.remove(id).ok_or("Comment not found")?;self.commit_review("Delete comment",after)
     }

@@ -2368,11 +2368,11 @@
     },
     {
       "name": "resolve_comment_button",
-      "label": "Decision",
+      "label": "Resolve",
       "icon": "comment-check",
-      "action": "CommentDecision",
+      "action": "CommentResolve",
       "kind": "small",
-      "tip": "Comment decision",
+      "tip": "Resolve comment",
       "disabled": false,
       "width_dip": 68,
       "height_dip": 24,
@@ -3609,16 +3609,6 @@
       "equation_input",
       -1,
       84
-    ],
-    [
-      "comments_panel",
-      320,
-      -1
-    ],
-    [
-      "comments_input",
-      -1,
-      72
     ],
     [
       "styles_resize_handle",

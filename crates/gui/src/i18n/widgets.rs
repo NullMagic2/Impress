@@ -174,7 +174,7 @@ self.compatibility_button.set_tooltip(&text("Review document format limitations"
 self.i18n_control_141.set_label(&text("Proofing"));
 self.new_comment_button.set_tooltip(&text("New comment (Ctrl+Alt+C)"));
 self.delete_comment_button.set_tooltip(&text("Delete"));
-self.resolve_comment_button.set_tooltip(&text("Comment decision"));
+self.resolve_comment_button.set_tooltip(&text("Resolve comment"));
 self.previous_comment_button.set_tooltip(&text("Previous"));
 self.next_comment_button.set_tooltip(&text("Next"));
 self.i18n_control_147.set_label(&text("Comments"));

@@ -175,7 +175,7 @@ pub fn buttons(ui: &MainUi) -> Vec<ButtonSpec> {
         ButtonSpec { button: ui.thesaurus_button, name: "thesaurus_button", label: "Thesaurus", icon: "thesaurus", action: Action::Unavailable, segment: "single", kind: "small", tip: "Thesaurus (Shift+F7) — Not available in this alpha", disabled: true, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.new_comment_button, name: "new_comment_button", label: "Comment", icon: "comment", action: Action::CommentNew, segment: "single", kind: "large", tip: "New comment (Ctrl+Alt+C)", disabled: false, width_dip: 62, height_dip: 78, art_width_dip: 32, art_height_dip: 32 },
         ButtonSpec { button: ui.delete_comment_button, name: "delete_comment_button", label: "Delete", icon: "comment-x", action: Action::CommentDelete, segment: "single", kind: "small", tip: "Delete", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
-        ButtonSpec { button: ui.resolve_comment_button, name: "resolve_comment_button", label: "Decision", icon: "comment-check", action: Action::CommentDecision, segment: "single", kind: "small", tip: "Comment decision", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
+        ButtonSpec { button: ui.resolve_comment_button, name: "resolve_comment_button", label: "Resolve", icon: "comment-check", action: Action::CommentResolve, segment: "single", kind: "small", tip: "Resolve comment", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.previous_comment_button, name: "previous_comment_button", label: "Previous", icon: "arrow-up", action: Action::CommentStep(false), segment: "single", kind: "small", tip: "Previous", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.next_comment_button, name: "next_comment_button", label: "Next", icon: "arrow-down", action: Action::CommentStep(true), segment: "single", kind: "small", tip: "Next", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.track_changes_button, name: "track_changes_button", label: "Track changes", icon: "track", action: Action::TextTracking, segment: "single", kind: "large", tip: "Track changes (Ctrl+Shift+E)", disabled: false, width_dip: 62, height_dip: 78, art_width_dip: 32, art_height_dip: 32 },
@@ -350,8 +350,6 @@ pub fn scale_controls(ui: &MainUi) {
     ui.source_close_button.set_min_size(ui.source_close_button.from_dip(Size::new(28, 28)));
     ui.equation_panel.set_min_size(ui.equation_panel.from_dip(Size::new(340, -1)));
     ui.equation_input.set_min_size(ui.equation_input.from_dip(Size::new(-1, 84)));
-    ui.comments_panel.set_min_size(ui.comments_panel.from_dip(Size::new(320, -1)));
-    ui.comments_input.set_min_size(ui.comments_input.from_dip(Size::new(-1, 72)));
     ui.styles_resize_handle.set_min_size(ui.styles_resize_handle.from_dip(Size::new(6, -1)));
     ui.styles_panel.set_min_size(ui.styles_panel.from_dip(Size::new(280, -1)));
     ui.styles_close_button.set_min_size(ui.styles_close_button.from_dip(Size::new(28, 28)));

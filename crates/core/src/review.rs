@@ -14,6 +14,7 @@ pub struct Bookmark { pub id: NodeId, pub name: String, pub range: Option<Anchor
 pub struct ReviewComment {
     pub id: NodeId, pub author: String, pub text: String, pub range: Option<AnchorRange>,
     #[serde(default)] pub resolved: bool,
+    /// Legacy comment outcome, kept so older native and DOCX files round trip.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decision: Option<CommentDecision>,
     #[serde(default)] pub date: Option<String>,

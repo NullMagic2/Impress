@@ -3235,7 +3235,7 @@
                                                     <label></label>
                                                     <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
                                                     <minsize>68,24</minsize>
-                                                    <tooltip>Comment decision</tooltip>
+                                                    <tooltip>Resolve comment</tooltip>
                                                   </object>
                                                 </object>
                                               </object>
@@ -5398,7 +5398,7 @@
                                     <flag>wxEXPAND</flag>
                                     <object class="wxPanel" name="paper_canvas">
                                       <bg>#e3e7ed</bg>
-                                      <style>wxWANTS_CHARS</style>
+                                      <style>wxWANTS_CHARS|wxCLIP_CHILDREN</style>
                                     </object>
                                   </object>
                                   <object class="sizeritem">
@@ -5518,36 +5518,6 @@
                               </object>
                             </object>
                             <minsize>340,-1</minsize>
-                          </object>
-                        </object>
-                        <object class="sizeritem">
-                          <option>0</option>
-                          <flag>wxEXPAND</flag>
-                          <object class="wxPanel" name="comments_panel">
-                            <bg>#f7f9fb</bg>
-                            <style>wxBORDER_NONE|wxTAB_TRAVERSAL</style>
-                            <object class="wxBoxSizer">
-                              <orient>wxVERTICAL</orient>
-                              <object class="sizeritem">
-                                <option>1</option>
-                                <flag>wxEXPAND</flag>
-                                <object class="wxPanel" name="comments_surface">
-                                  <bg>#f7f9fb</bg>
-                                  <style>wxWANTS_CHARS|wxBORDER_NONE</style>
-                                </object>
-                              </object>
-                              <object class="sizeritem">
-                                <option>0</option>
-                                <flag>wxLEFT|wxRIGHT|wxBOTTOM|wxEXPAND</flag>
-                                <border>12</border>
-                                <object class="wxTextCtrl" name="comments_input">
-                                  <style>wxTE_MULTILINE|wxTE_PROCESS_ENTER</style>
-                                  <hidden>1</hidden>
-                                  <minsize>-1,72</minsize>
-                                </object>
-                              </object>
-                            </object>
-                            <minsize>320,-1</minsize>
                           </object>
                         </object>
                         <object class="sizeritem">

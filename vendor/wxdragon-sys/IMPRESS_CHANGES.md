@@ -26,3 +26,7 @@ Every change is marked with an `Impress:` comment in `build.rs`.
   callbacks, since wxDragon does not expose a window double-click enum.
   The paired binding is removed when the corresponding closure is unbound.
   While translating the event, Impress can query its native double-click flag.
+
+
+- `cpp/src/panel.cpp` exposes focus for the document panel itself when it
+  contains inline review controls.
