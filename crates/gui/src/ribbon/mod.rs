@@ -420,6 +420,7 @@ impl Ribbon {
                 if contents_menu::handle(&ribbon, event.get_id()) { return; }
                 if section_break_menu::handle(&ribbon, event.get_id()) { return; }
                 if ribbon.handle_recent_files(event.get_id()) { return; }
+                if ribbon.handle_review_menu(event.get_id()) { return; }
                 if ribbon.handle_table_context_menu(event.get_id()) { return; }
                 if ribbon.handle_spelling_menu(event.get_id()) { return; }
                 if let Some(mode) = ligature_mode { ribbon.commit_ligature_mode(mode); }
@@ -720,7 +721,7 @@ impl Ribbon {
                 if let Some(p) = pane { if matches!(action, Action::CommentDelete) { p.delete(&id); } else { p.toggle_resolved(&id); } }
             }
             Action::CommentStep(forward) => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.step(forward); } }
-            Action::TextTracking => self.text_tracking()?,
+            Action::TextTracking => self.show_review_menu(),
             Action::Spelling => self.start_spelling()?, Action::Compatibility => self.compatibility(),
             Action::Unavailable => return Err("This command is not available in the current alpha.".into()),
         }

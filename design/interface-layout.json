@@ -1251,9 +1251,9 @@
             {
               "kind": "button",
               "name": "track_changes_button",
-              "style": "big-button",
+              "style": "file-menu",
               "label": "Track changes",
-              "tip": "Track changes (Ctrl+Shift+E)",
+              "tip": "Track changes",
               "icon": "track"
             },
             {

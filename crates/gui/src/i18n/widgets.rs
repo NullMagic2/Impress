@@ -178,7 +178,7 @@ self.resolve_comment_button.set_tooltip(&text("Resolve comment"));
 self.previous_comment_button.set_tooltip(&text("Previous"));
 self.next_comment_button.set_tooltip(&text("Next"));
 self.i18n_control_147.set_label(&text("Comments"));
-self.track_changes_button.set_tooltip(&text("Track changes (Ctrl+Shift+E)"));
+self.track_changes_button.set_tooltip(&text("Track changes"));
 self.markup_mode_combo.set_tooltip(&text("markup mode combo"));
 let selected = self.markup_mode_combo.get_selection();
 let current = self.markup_mode_combo.get_value();

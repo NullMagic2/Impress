@@ -3334,8 +3334,8 @@
                                               <object class="wxButton" name="track_changes_button">
                                                 <label></label>
                                                 <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
-                                                <minsize>62,78</minsize>
-                                                <tooltip>Track changes (Ctrl+Shift+E)</tooltip>
+                                                <minsize>78,78</minsize>
+                                                <tooltip>Track changes</tooltip>
                                               </object>
                                             </object>
                                             <object class="spacer">

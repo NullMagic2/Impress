@@ -1,8 +1,13 @@
 //! Native reference/review dialogs. Clone the small dialog model, release the
 //! RefCell borrow, then show a modal dialog (wx timers continue during dialogs).
 use super::*;
+use crate::i18n::text;
 use model::{AnchorRange,TextAnchor,inline_text};
+use wxdragon::geometry::Point;
 
+const WORD_REVISIONS: i32 = 32_700;
+const NATIVE_HISTORY: i32 = 32_701;
+const PARAGRAPH_TEXT_CHANGES: i32 = 32_702;
 
 pub(super) struct SpellJob { pub generation:u64, pub revision:u64, pub selection_only:bool, pub dictionary:crate::spelling::Dictionary, pub receiver:Receiver<Result<crate::spelling::Report,String>> }
 impl Ribbon {
@@ -22,10 +27,38 @@ impl Ribbon {
         let b=&entries[index-1];let actions=["Go to selection".into(),"Delete bookmark".into(),"Insert page reference at current caret".into(),"Attach bookmark to current selection".into()];
         match self.choose_review("Bookmark",&b.name,&actions){Some(0)=>{let range=b.range.as_ref().ok_or("This bookmark no longer has a text anchor")?;self.edit(|e|e.go_to_range(range))?;},Some(1)=>self.edit(|e|e.delete_bookmark(&b.id))?,Some(2)=>self.edit(|e|e.insert_page_reference(&b.id))?,Some(3)=>self.edit(|e|e.reanchor_bookmark(&b.id))?,_=>{}}Ok(())
     }
-    pub(super) fn text_tracking(&self)->Result<(),String>{
-        let modes=["Word revisions…".into(),"Chronological native history (all edit kinds)…".into(),"DOCX-compatible net paragraph-text changes…".into()];
-        match self.choose_review("Review changes","Choose a review mode.",&modes){Some(0)=>return self.word_revisions(),Some(1)=>return self.native_history(),Some(2)=>{},_=>return Ok(())}
+    pub(super) fn show_review_menu(&self) {
+        let (button, tooltip) = if shown_in_hierarchy(&self.ui.track_changes_button) {
+            (self.ui.track_changes_button, "Track changes")
+        } else {
+            (self.ui.changes_button, "Text changes")
+        };
+        let mut menu = Menu::builder()
+            .append_item(WORD_REVISIONS, &text("Word revisions…"), "")
+            .append_item(NATIVE_HISTORY, &text("Chronological native history (all edit kinds)…"), "")
+            .append_item(PARAGRAPH_TEXT_CHANGES, &text("DOCX-compatible net paragraph-text changes…"), "")
+            .build();
+        let anchor = crate::gtk_native::to_screen(&button, Point::new(0, button.get_size().height));
+        button.set_tooltip("");
+        self.ui.main_frame.popup_menu(&mut menu, Some(anchor));
+        button.set_tooltip(&text(tooltip));
+    }
 
+    pub(super) fn handle_review_menu(&self, id: i32) -> bool {
+        let result = match id {
+            WORD_REVISIONS => self.word_revisions(),
+            NATIVE_HISTORY => self.native_history(),
+            PARAGRAPH_TEXT_CHANGES => self.paragraph_text_changes(),
+            _ => return false,
+        };
+        if let Err(error) = result {
+            self.state.borrow_mut().action_status = Some(error);
+        }
+        self.focus_document();
+        true
+    }
+
+    fn paragraph_text_changes(&self)->Result<(),String>{
         let (review,current)={let state=self.state.borrow();(state.editor.document.review.clone(),model::document_paragraphs(&state.editor.document).iter().map(|p|(p.id.clone(),inline_text(&p.content))).collect::<std::collections::BTreeMap<_,_>>())};
         let revisions=review.revisions.values().collect::<Vec<_>>();
         let mut items=vec![if review.track_text{"Turn OFF paragraph-text tracking".into()}else{"Turn ON paragraph-text tracking…".into()}];

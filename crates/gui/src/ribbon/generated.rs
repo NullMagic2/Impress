@@ -178,7 +178,7 @@ pub fn buttons(ui: &MainUi) -> Vec<ButtonSpec> {
         ButtonSpec { button: ui.resolve_comment_button, name: "resolve_comment_button", label: "Resolve", icon: "comment-check", action: Action::CommentResolve, segment: "single", kind: "small", tip: "Resolve comment", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.previous_comment_button, name: "previous_comment_button", label: "Previous", icon: "arrow-up", action: Action::CommentStep(false), segment: "single", kind: "small", tip: "Previous", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.next_comment_button, name: "next_comment_button", label: "Next", icon: "arrow-down", action: Action::CommentStep(true), segment: "single", kind: "small", tip: "Next", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
-        ButtonSpec { button: ui.track_changes_button, name: "track_changes_button", label: "Track changes", icon: "track", action: Action::TextTracking, segment: "single", kind: "large", tip: "Track changes (Ctrl+Shift+E)", disabled: false, width_dip: 62, height_dip: 78, art_width_dip: 32, art_height_dip: 32 },
+        ButtonSpec { button: ui.track_changes_button, name: "track_changes_button", label: "Track changes", icon: "track", action: Action::TextTracking, segment: "single", kind: "file-menu", tip: "Track changes", disabled: false, width_dip: 78, height_dip: 78, art_width_dip: 32, art_height_dip: 32 },
         ButtonSpec { button: ui.show_markup_button, name: "show_markup_button", label: "Show markup", icon: "markup", action: Action::Unavailable, segment: "single", kind: "small", tip: "Show markup — Not available in this alpha", disabled: true, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.reviewing_pane_button, name: "reviewing_pane_button", label: "Reviewing pane", icon: "pane-right", action: Action::Unavailable, segment: "single", kind: "small", tip: "Reviewing pane — Not available in this alpha", disabled: true, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.accept_change_button, name: "accept_change_button", label: "Accept", icon: "accept", action: Action::Unavailable, segment: "single", kind: "large", tip: "Accept change — Not available in this alpha", disabled: true, width_dip: 62, height_dip: 78, art_width_dip: 32, art_height_dip: 32 },
@@ -461,7 +461,7 @@ pub fn scale_controls(ui: &MainUi) {
     ui.previous_comment_button.set_min_size(ui.previous_comment_button.from_dip(Size::new(68, 24)));
     ui.next_comment_button.set_min_size(ui.next_comment_button.from_dip(Size::new(68, 24)));
     ui.review_tracking_2_group_caption.set_min_size(ui.review_tracking_2_group_caption.from_dip(Size::new(-1, 18)));
-    ui.track_changes_button.set_min_size(ui.track_changes_button.from_dip(Size::new(62, 78)));
+    ui.track_changes_button.set_min_size(ui.track_changes_button.from_dip(Size::new(78, 78)));
     ui.markup_mode_combo.set_min_size(ui.markup_mode_combo.from_dip(Size::new(154, 28)));
     ui.show_markup_button.set_min_size(ui.show_markup_button.from_dip(Size::new(68, 24)));
     ui.reviewing_pane_button.set_min_size(ui.reviewing_pane_button.from_dip(Size::new(68, 24)));
