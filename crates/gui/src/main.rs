@@ -658,9 +658,13 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
 
     let motion_state = Rc::clone(&state);
     let motion_canvas = canvas.clone();
-    canvas.on_mouse_motion(move |event| {
-        let WindowEventData::MouseMotion(mouse) = &event else { return; };
-        let Some(position) = mouse.get_position() else { return; };
+    let hover_canvas = Rc::new(move |event: &WindowEventData| {
+        let position = match event {
+            WindowEventData::MouseMotion(mouse) => mouse.get_position(),
+            WindowEventData::MouseEnter(mouse) => mouse.get_position(),
+            _ => None,
+        };
+        let Some(position) = position else { return; };
         let mut state = motion_state.borrow_mut();
         drain_native_input(&mut state);
         let view_point = logical_to_view(position, state.pixel_scale);
@@ -707,6 +711,13 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
             if let Some(cursor) = cursor { motion_canvas.set_cursor(Some(&cursor)); }
         }
         if needs_present { motion_canvas.refresh(false, None); }
+    });
+    let hover_on_motion = Rc::clone(&hover_canvas);
+    canvas.on_mouse_motion(move |event| hover_on_motion(&event));
+    // Crossing from a sticky-note child can deliver an enter before motion.
+    canvas.on_mouse_enter(move |event| {
+        hover_canvas(&event);
+        event.skip(true);
     });
 
     let leave_state = Rc::clone(&state);
