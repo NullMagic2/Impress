@@ -20,9 +20,9 @@ Choose the release matching your Linux distribution (64-bit x86 / amd64):
 
 | System | Download |
 | --- | --- |
-| Linux Mint 22.x | [Mint packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-59-mint22) |
-| Ubuntu 24.04 / 26.04 LTS | [Ubuntu packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-59-ubuntu) |
-| Debian 13 | [Debian packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-59-debian13) |
+| Linux Mint 22.x | [Mint packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-84-mint22) |
+| Ubuntu 24.04 / 26.04 LTS | [Ubuntu packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-84-ubuntu) |
+| Debian 13 | [Debian packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-84-debian13) |
 
 The packages include the desktop editor and command-line converter. See [Linux packages](docs/LINUX-PACKAGES.md) for installation and validation details. Windows build scripts are included in the source; see the [build guide](docs/BUILDING.md).
 
