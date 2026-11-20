@@ -43,7 +43,7 @@ Download the `.deb` matching your distribution, then install it with `sudo apt i
 
 Each package was installed with its target distribution's package manager, checked for unresolved shared libraries, exercised through a DOCX conversion round trip, and launched under Xvfb. Rust and UI resource tests passed before publication. The verification archives include test logs, library checks and an empty-document screenshot. These are container/X11 checks, not a claim of testing every desktop configuration.
 
-The application includes recent files (five by default), table margin snapping, page-aligned rulers, style and shortcut fixes, optional font embedding, and improved DOCX table pagination.
+See the [release notes](https://github.com/{repo}/releases/tag/v{args.version}) for changes in this version.
 
 Source commit: `{commit}`. See the repository [README](https://github.com/{repo}#readme) for an introduction and [HISTORY.md](https://github.com/{repo}/blob/{commit}/HISTORY.md) for changes.
 ''')

@@ -3290,7 +3290,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_147">
+                                        <object class="wxStaticText" name="i18n_control_148">
                                           <label>Comments</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -3407,7 +3407,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_152">
+                                        <object class="wxStaticText" name="i18n_control_153">
                                           <label>Tracking</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -3519,7 +3519,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_157">
+                                        <object class="wxStaticText" name="i18n_control_158">
                                           <label>Changes</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -3580,7 +3580,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_159">
+                                        <object class="wxStaticText" name="i18n_control_160">
                                           <label>Compare</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -3641,7 +3641,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_161">
+                                        <object class="wxStaticText" name="i18n_control_162">
                                           <label>Protect</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -3754,7 +3754,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_166">
+                                        <object class="wxStaticText" name="i18n_control_167">
                                           <label>Views</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -3889,7 +3889,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_173">
+                                        <object class="wxStaticText" name="i18n_control_174">
                                           <label>Show</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -3997,7 +3997,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_178">
+                                        <object class="wxStaticText" name="i18n_control_179">
                                           <label>Zoom</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -4086,7 +4086,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_182">
+                                        <object class="wxStaticText" name="i18n_control_183">
                                           <label>Window</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -4200,7 +4200,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_186">
+                                        <object class="wxStaticText" name="i18n_control_187">
                                           <label>Compile</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -4310,7 +4310,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_191">
+                                        <object class="wxStaticText" name="i18n_control_192">
                                           <label>Source</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -4444,7 +4444,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_197">
+                                        <object class="wxStaticText" name="i18n_control_198">
                                           <label>Scripting</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -4505,7 +4505,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_199">
+                                        <object class="wxStaticText" name="i18n_control_200">
                                           <label>Template</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -4595,7 +4595,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_203">
+                                        <object class="wxStaticText" name="i18n_control_204">
                                           <label>Diagnostics</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -4706,7 +4706,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_208">
+                                        <object class="wxStaticText" name="i18n_control_209">
                                           <label>Export</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -4806,7 +4806,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_211">
+                                        <object class="wxStaticText" name="i18n_control_212">
                                           <label>Navigation</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -4893,7 +4893,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_215">
+                                        <object class="wxStaticText" name="i18n_control_216">
                                           <label>Options</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -4980,7 +4980,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_219">
+                                        <object class="wxStaticText" name="i18n_control_220">
                                           <label>Insert</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -5040,7 +5040,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_221">
+                                        <object class="wxStaticText" name="i18n_control_222">
                                           <label>Edit</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>
@@ -5100,7 +5100,7 @@
                                         <option>1</option>
                                         <flag>wxALL|wxALIGN_CENTER_VERTICAL</flag>
                                         <border>1</border>
-                                        <object class="wxStaticText" name="i18n_control_223">
+                                        <object class="wxStaticText" name="i18n_control_224">
                                           <label>Close</label>
                                           <style>wxALIGN_CENTRE</style>
                                           <hidden>1</hidden>

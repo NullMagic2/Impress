@@ -1193,7 +1193,7 @@
             {
               "kind": "button",
               "name": "comment_button",
-              "style": "big-button",
+              "style": "wide-button",
               "label": "Show comments",
               "tip": "Show comments",
               "icon": "comment"

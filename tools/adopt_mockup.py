@@ -88,7 +88,7 @@ def adopt(env):
         # a box in the text line.
         'display_equation_button':'Editor(AppCommand::InsertEquation)',
         'insert_inline_equation_button':'Editor(AppCommand::InsertInlineEquation)'}
-    styles={'big-button':('large',62,78,32,32),
+    styles={'big-button':('large',62,78,32,32), 'wide-button':('wide',98,66,30,30),
             'file-main':('file-main',78,78,32,32), 'file-menu':('file-menu',78,78,32,32), 'file-minor':('file-minor',98,36,18,18),
             'small-button':('small',68,24,16,16),
             'tool-button':('icon',30,28,18,18), 'style-choice':('gallery',74,70,64,30)}
