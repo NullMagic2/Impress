@@ -76,6 +76,8 @@ fn linked_table_and_list_styles_round_trip_as_ooxml() {
                 shading: None,
                 borders: None,
                 vertical_alignment: Default::default(),
+                margins: None,
+                text_direction: None,
             }],
         }],
     };

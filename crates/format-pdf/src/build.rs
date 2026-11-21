@@ -248,7 +248,7 @@ impl Builder<'_> {
                 let mut paragraph = Paragraph::plain("");
                 paragraph.content = self.inlines(lines, &normal).into();
                 TableCell { id: NodeId::new(), blocks: vec![Block::Paragraph(paragraph)].into(), column_span: 1, row_span: 1,
-                    width_mm: Some(*width), shading: None, borders: None, vertical_alignment: Default::default() }
+                    width_mm: Some(*width), shading: None, borders: None, vertical_alignment: Default::default(), margins: None, text_direction: None }
             }).collect(),
             repeat_as_header: false, allow_break_across_pages: true, height_mm: None,
         }).collect();

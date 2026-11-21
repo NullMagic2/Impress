@@ -1,5 +1,5 @@
 use super::*;
-use crate::{CaretStop, Size, TextHitRegion, VectorPage};
+use crate::{CaretStop, Rect, Size, TextHitRegion, VectorPage};
 
 fn region(node: &str, start: usize, end: usize, y: f32) -> TextHitRegion {
     TextHitRegion {
@@ -7,6 +7,7 @@ fn region(node: &str, start: usize, end: usize, y: f32) -> TextHitRegion {
         visual_line: 0,
         byte_range: start..end,
         rect: Rect::new(10.0, y, 40.0, 12.0),
+        vertical: false,
         caret_stops: vec![
             CaretStop { byte_offset: start, x_pt: 10.0 },
             CaretStop { byte_offset: end, x_pt: 50.0 },

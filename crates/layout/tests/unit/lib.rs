@@ -6,7 +6,7 @@ fn floating_table_is_placed_by_position_and_text_wraps_around_it(){
     use model::{HorizontalFrom,HorizontalPlacement,TablePosition,TableWrap,VerticalFrom,VerticalPlacement};
     let long="Wrapping text flows beside the floating table and continues below it. ".repeat(12);
     let cell=||TableCell{id:NodeId::new(),blocks:vec![Block::Paragraph(Paragraph::plain("Cell"))].into(),column_span:1,row_span:1,
-        width_mm:None,shading:None,borders:None,vertical_alignment:CellVerticalAlignment::Top};
+        width_mm:None,shading:None,borders:None,vertical_alignment:CellVerticalAlignment::Top, margins: None, text_direction: None};
     let make=|position:Option<TablePosition>|{
         let table=Table{id:NodeId::new(),properties:model::TableProperties{grid_column_widths_mm:vec![25.0,25.0],position,..Default::default()},
             rows:(0..3).map(|_|model::TableRow{id:NodeId::new(),cells:vec![cell(),cell()],repeat_as_header:false,allow_break_across_pages:true,height_mm:None}).collect()};
@@ -97,6 +97,8 @@ fn a_row_split_across_pages_is_closed_with_padding_on_both_pages() {
         id: NodeId::new(), blocks: (vec![Block::Paragraph(Paragraph::plain(text))]).into(),
         column_span: 1, row_span: 1, width_mm: None, shading: None, borders: None,
         vertical_alignment: CellVerticalAlignment::Top,
+        margins: None,
+        text_direction: None,
     };
     let long = cell(&text);
     let long_id = long.id.0.to_string();
@@ -168,7 +170,7 @@ fn embedded_fonts_shape_body_headers_notes_and_parallel_table_cells() {
     let mut body=paragraph.clone();body.content.push(Inline::Field(model::Field{id:NodeId::new(),kind:model::FieldKind::FootnoteReference{note},display_text:None,color:None}));
     document.sections[0].blocks.push(Block::Paragraph(body));
     document.sections[0].headers.default=Some(model::HeaderFooter{id:NodeId::new(),blocks:vec![Block::Paragraph(paragraph.clone())].into()});
-    let cell=||model::TableCell{id:NodeId::new(),blocks:vec![Block::Paragraph(paragraph.clone())].into(),column_span:1,row_span:1,width_mm:None,shading:None,borders:None,vertical_alignment:CellVerticalAlignment::Top};
+    let cell=||model::TableCell{id:NodeId::new(),blocks:vec![Block::Paragraph(paragraph.clone())].into(),column_span:1,row_span:1,width_mm:None,shading:None,borders:None,vertical_alignment:CellVerticalAlignment::Top, margins: None, text_direction: None};
     document.sections[0].blocks.push(Block::Table(model::Table{id:NodeId::new(),properties:Default::default(),rows:(0..4).map(|_|model::TableRow{id:NodeId::new(),cells:vec![cell()],repeat_as_header:false,allow_break_across_pages:true,height_mm:None}).collect()}));
     let layout=LayoutEngine::default().layout_document(&document).unwrap();
     let fonts=FontCatalog::for_resources(&document.resources);let mut props=CharacterProperties::default();props.font_family=Some("Impress Layout Test Alias".into());props.font_size_pt=Some(12.0);

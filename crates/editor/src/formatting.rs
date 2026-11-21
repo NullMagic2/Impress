@@ -489,7 +489,7 @@ impl EditorState {
                 id: NodeId::new(), repeat_as_header: row == 0, allow_break_across_pages: true, height_mm: None,
                 cells: (0..columns).map(|_| TableCell {
                     id: NodeId::new(), blocks: (vec![Block::Paragraph(Paragraph::plain(""))]).into(), column_span: 1, row_span: 1,
-                    width_mm: None, shading: None, borders: None, vertical_alignment: CellVerticalAlignment::Top,
+                    width_mm: None, shading: None, borders: None, vertical_alignment: CellVerticalAlignment::Top, margins: None, text_direction: None,
                 }).collect(),
             }).collect(),
         };
@@ -1410,6 +1410,8 @@ fn blank_table_cell() -> TableCell {
         shading: None,
         borders: None,
         vertical_alignment: CellVerticalAlignment::Top,
+        margins: None,
+        text_direction: None,
     }
 }
 
@@ -1423,6 +1425,8 @@ fn blank_cell_like(template: &TableCell) -> TableCell {
         shading: template.shading.clone(),
         borders: template.borders.clone(),
         vertical_alignment: template.vertical_alignment,
+        margins: template.margins,
+        text_direction: template.text_direction,
     }
 }
 

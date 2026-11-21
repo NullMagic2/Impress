@@ -35,6 +35,8 @@ fn cell(blocks: Vec<Block>) -> TableCell {
         shading: None,
         borders: None,
         vertical_alignment: CellVerticalAlignment::Top,
+        margins: None,
+        text_direction: None,
     }
 }
 fn row(cells: Vec<TableCell>) -> TableRow {
@@ -100,6 +102,70 @@ fn unbroken_text_wraps_and_keeps_every_source_byte() {
 fn geometry() -> SectionGeometry<'static> {
     SectionGeometry::single_column(160.0, 180.0, 10.0, 10.0, 170.0, 140.0)
 }
+
+#[test]
+fn nested_floating_tables_keep_text_and_cells_inside_the_parent() {
+    use model::{HorizontalPlacement, TablePosition, VerticalFrom, VerticalPlacement};
+    let mm = |pt| pt / MM_TO_PT;
+    let nested = |text, horizontal, width, positioned| {
+        let mut grid = table(vec![row(vec![cell(vec![Block::Paragraph(Paragraph::plain(text))])])]);
+        grid.properties.preferred_width_mm = Some(mm(width));
+        if positioned {
+            grid.properties.position = Some(TablePosition {
+                horizontal, vertical_from: VerticalFrom::Page, vertical: VerticalPlacement::Offset(mm(12.0)),
+                allow_overlap: false, ..Default::default()
+            });
+        }
+        grid
+    };
+    let right = nested("AV", HorizontalPlacement::Right, 70.0, true);
+    let left = nested("fist", HorizontalPlacement::Left, 75.0, true);
+    let wide = nested("AVfist", HorizontalPlacement::Left, 200.0, false);
+    let ids = [right.id.0.clone(), left.id.0.clone(), wide.id.0.clone()];
+    let label = Paragraph::plain("AV");
+    let label_id = label.id.0.clone();
+    let mut outer = table(vec![row(vec![cell(vec![Block::Table(right), Block::Paragraph(label), Block::Table(left), Block::Table(wide)])])]);
+    outer.rows[0].allow_break_across_pages = false;
+    let prepared = prepare_table(&outer, 140.0, &styles(), &mut context(), &BTreeMap::new(), &fields(), false).unwrap();
+    let g = geometry();
+    let mut pages = vec![new_page(g.page_width, g.page_height, false)];
+    let mut cursor = FlowCursor { page_index: 0, column_index: 0, y: g.content_top };
+    paginate_table(&prepared, &mut pages, &mut cursor, &g, false).unwrap();
+    assert_eq!(pages.len(), 1);
+    let page = &pages[0];
+    let find_cell = |id: &str| page.object_regions.iter().find(|r| {
+        matches!(&r.kind, ObjectKind::TableCell(cell) if cell.table_id == id)
+    }).unwrap().rect;
+    let parent = find_cell(&outer.id.0);
+    let [right, left, wide] = ids.each_ref().map(|id| find_cell(id));
+    assert!(right.x > left.x && left.y >= right.max_y());
+    assert!(wide.y >= left.max_y() && wide.max_x() < parent.max_x());
+    assert!((wide.width - (parent.width - 2.0 * model::TABLE_TEXT_PADDING_PT)).abs() < 0.01);
+    assert!(page.hit_regions.iter().filter(|r| r.node_id == label_id).all(|hit| hit.rect.max_x() < right.x));
+}
+
+#[test]
+fn rotated_cell_text_preserves_runs_and_uses_the_vertical_caret_axis() {
+    let label = Paragraph::plain("AVfist");
+    let label_id = label.id.0.clone();
+    let mut label_cell = cell(vec![Block::Paragraph(label)]);
+    label_cell.text_direction = Some(model::CellTextDirection::BottomToTop);
+    label_cell.margins = Some(model::TableCellMargins { left_mm: Some(2.0), ..Default::default() });
+    let mut t = table(vec![row(vec![label_cell])]);
+    t.rows[0].height_mm = Some(45.0);
+    let prepared = prepare_table(&t, 60.0, &styles(), &mut context(), &BTreeMap::new(), &fields(), false).unwrap();
+    let mut page = new_page(160.0, 180.0, false);
+    render_table_row(&mut page, &prepared.rows[0], 10.0, 10.0);
+    assert_eq!(command_text(&page.commands), "AVfist");
+    let hit = page.hit_regions.iter().find(|hit| hit.node_id == label_id).unwrap();
+    assert!(hit.vertical);
+    assert!(hit.rect.x >= 10.0 + 2.0 * MM_TO_PT);
+    let first = hit.caret_stops.first().unwrap();
+    let last = hit.caret_stops.last().unwrap();
+    assert!(first.x_pt > last.x_pt);
+    assert_eq!(hit.nearest_byte_offset(render::Point::new(hit.rect.x, last.x_pt)), last.byte_offset);
+    assert!(hit.inline_rect(last.x_pt, 0.8).width > hit.inline_rect(last.x_pt, 0.8).height);
+}
 #[test]
 fn unsplittable_oversized_rows_error_instead_of_painting_off_page() {
     let text = "AVfist ".repeat(100);
@@ -114,6 +180,7 @@ fn unsplittable_oversized_rows_error_instead_of_painting_off_page() {
         &mut context(),
         &BTreeMap::new(),
         &fields(),
+        false,
     )
     .unwrap();
     let g = geometry();
@@ -238,7 +305,7 @@ fn a_tall_row_with_offset_cell_lines_paginates_without_losing_text() {
     // horizontal split between cells, despite both having many legal breaks.
     second.properties.space_before_pt=Some(1.0);
     let t=table(vec![row(vec![cell(vec![Block::Paragraph(first)]),cell(vec![Block::Paragraph(second)])])]);
-    let prepared=prepare_table(&t,140.0,&styles(),&mut context(),&BTreeMap::new(),&fields()).unwrap();
+    let prepared=prepare_table(&t,140.0,&styles(),&mut context(),&BTreeMap::new(),&fields(),false).unwrap();
     let g=geometry();let mut pages=vec![new_page(g.page_width,g.page_height,false)];
     let mut cursor=FlowCursor{page_index:0,column_index:0,y:g.content_top};
     paginate_table(&prepared,&mut pages,&mut cursor,&g,false).unwrap();
@@ -262,7 +329,7 @@ fn independent_cell_breaks_keep_short_cell_once_and_repeat_headers_within_the_pa
     let short=Paragraph::plain("AV");let short_id=short.id.0.clone();
     let mut last=Paragraph::plain("AVfist ".repeat(130));last.properties.space_before_pt=Some(1.0);
     let t=table(vec![header,row(vec![cell(vec![Block::Paragraph(first)]),cell(vec![Block::Paragraph(short)]),cell(vec![Block::Paragraph(last)])])]);
-    let prepared=prepare_table(&t,140.0,&styles(),&mut context(),&BTreeMap::new(),&fields()).unwrap();
+    let prepared=prepare_table(&t,140.0,&styles(),&mut context(),&BTreeMap::new(),&fields(),false).unwrap();
     let g=geometry();let mut pages=vec![new_page(g.page_width,g.page_height,false)];let mut cursor=FlowCursor{page_index:0,column_index:0,y:g.content_top};
     paginate_table(&prepared,&mut pages,&mut cursor,&g,false).unwrap();
     assert!(pages.len()>2 && pages.len()<100,"continuations must make progress");

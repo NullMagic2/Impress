@@ -85,7 +85,7 @@ fn docx_tables_with_different_cell_line_origins_open_and_paginate_after_roundtri
     let mut second=Paragraph::plain("All text remains editable after the page break. ".repeat(90));
     second.properties.space_before_pt=Some(1.0);
     let expected=[model::inline_text(&first.content),model::inline_text(&second.content)];
-    let cell=|p|TableCell{id:model::NodeId::new(),blocks:vec![Block::Paragraph(p)].into(),column_span:1,row_span:1,width_mm:None,shading:None,borders:None,vertical_alignment:Default::default()};
+    let cell=|p|TableCell{id:model::NodeId::new(),blocks:vec![Block::Paragraph(p)].into(),column_span:1,row_span:1,width_mm:None,shading:None,borders:None,vertical_alignment:Default::default(), margins: None, text_direction: None};
     document.sections[0].blocks.push(Block::Table(Table{id:model::NodeId::new(),properties:Default::default(),rows:vec![TableRow{
         id:model::NodeId::new(),cells:vec![cell(first),cell(second)],repeat_as_header:false,allow_break_across_pages:true,height_mm:None}]}));
     let mut formats=FormatRegistry::default();formats.register(docx::DocxFormat);

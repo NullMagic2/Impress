@@ -132,6 +132,7 @@ impl DrawCommand {
 #[derive(Clone, Debug, PartialEq)]
 pub struct CaretStop {
     pub byte_offset: usize,
+    /// Position on the line's writing axis, x for horizontal text and y for vertical text.
     pub x_pt: f32,
 }
 
@@ -143,6 +144,7 @@ pub struct TextHitRegion {
     pub visual_line: usize,
     pub byte_range: Range<usize>,
     pub rect: Rect,
+    pub vertical: bool,
     pub caret_stops: Vec<CaretStop>,
 }
 
@@ -150,7 +152,9 @@ impl TextHitRegion {
     pub fn clipped(mut self, clip:Rect) -> Option<Self> {
         self.rect=self.rect.intersection(clip);
         if self.rect.is_empty(){return None;}
-        for caret in &mut self.caret_stops {caret.x_pt=caret.x_pt.clamp(self.rect.x,self.rect.max_x());}
+        let (start, end) = if self.vertical { (self.rect.y, self.rect.max_y()) }
+            else { (self.rect.x, self.rect.max_x()) };
+        for caret in &mut self.caret_stops { caret.x_pt = caret.x_pt.clamp(start, end); }
         Some(self)
     }
 
@@ -160,15 +164,31 @@ impl TextHitRegion {
             visual_line: self.visual_line,
             byte_range: self.byte_range.clone(),
             rect: Rect::new(self.rect.x + dx, self.rect.y + dy, self.rect.width, self.rect.height),
-            caret_stops: self.caret_stops.iter().map(|s| CaretStop { byte_offset: s.byte_offset, x_pt: s.x_pt + dx }).collect(),
+            vertical: self.vertical,
+            caret_stops: self.caret_stops.iter().map(|s| CaretStop { byte_offset: s.byte_offset, x_pt: s.x_pt + if self.vertical { dy } else { dx } }).collect(),
         }
     }
 
-    pub fn nearest_byte_offset(&self, x_pt: f32) -> usize {
+    pub fn inline_coordinate(&self, point: Point) -> f32 {
+        if self.vertical { point.y } else { point.x }
+    }
+
+    pub fn nearest_byte_offset(&self, point: Point) -> usize {
+        let coordinate = self.inline_coordinate(point);
         self.caret_stops.iter()
-            .min_by(|a, b| (a.x_pt - x_pt).abs().total_cmp(&(b.x_pt - x_pt).abs()))
+            .min_by(|a, b| (a.x_pt - coordinate).abs().total_cmp(&(b.x_pt - coordinate).abs()))
             .map(|s| s.byte_offset)
             .unwrap_or(self.byte_range.start)
+    }
+
+    pub fn inline_rect(&self, start: f32, size: f32) -> Rect {
+        if self.vertical { Rect::new(self.rect.x, start, self.rect.width, size) }
+        else { Rect::new(start, self.rect.y, size, self.rect.height) }
+    }
+
+    pub fn coordinate_for_offset(&self, offset: usize) -> f32 {
+        self.caret_stops.iter().min_by_key(|stop| stop.byte_offset.abs_diff(offset))
+            .map_or_else(|| self.inline_coordinate(Point::new(self.rect.x, self.rect.y)), |stop| stop.x_pt)
     }
 }
 

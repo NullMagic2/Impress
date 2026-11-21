@@ -6,7 +6,7 @@ use model::{
     ListDefinition, ListFormat, ListLevel,
     NodeId, Paragraph, ParagraphAlignment, ParagraphDirection, ParagraphProperties, Resource,
     PreservedPackagePart, ResourceId, Section, SectionStart, Table, TableAlignment, TableCell,
-    TableProperties, TableRow, TextRun, VerticalPosition,
+    TableCellMargins, TableProperties, TableRow, TextRun, VerticalPosition,
 };
 use format::{FormatError, FormatResult, ReadSeek};
 use std::{collections::BTreeMap, io::Read};
@@ -92,6 +92,7 @@ struct ImportContext {
     embedded: BTreeMap<String, ResourceId>,
     anchored: std::rc::Rc<std::cell::RefCell<Vec<model::BlockImage>>>,
     in_table:bool,
+    table_styles: std::rc::Rc<ImportedTableStyles>,
     links: BTreeMap<String, String>,
     note_ids: BTreeMap<String,NodeId>,
     annotations: std::rc::Rc<std::cell::RefCell<ImportReview>>,
@@ -117,6 +118,11 @@ pub fn import_docx(input: &mut dyn ReadSeek) -> FormatResult<Document> {
     let relationships = parse_relationships(&relationships_xml)?;
 
     let mut context = ImportContext { part: "word/document.xml".into(), ..Default::default() };
+    let style_tree = read_optional_text(&mut zip, "word/styles.xml")?
+        .map(|styles| parse_supported_tree(&styles)).transpose()?;
+    if let Some(root) = style_tree.as_ref().and_then(|tree| find_descendant(tree, "w:styles")) {
+        context.table_styles = std::rc::Rc::new(ImportedTableStyles::read(root));
+    }
     context.links = relationship_links(&relationships);
     context.theme_fonts = theme_fonts::ThemeFonts::load(&mut zip,&relationships)?;
     let comment_part = |kind, fallback: &str| relationships.values()
@@ -191,12 +197,11 @@ pub fn import_docx(input: &mut dyn ReadSeek) -> FormatResult<Document> {
     document.custom_xml = controls::load_stores(&mut zip)?;
     document.content_controls=context.content_controls.borrow().clone();
     let mut default_style=model::StyleId::from(model::STYLE_NORMAL);
-    if let Some(styles) = read_optional_text(&mut zip,"word/styles.xml")? {
-        let tree=parse_supported_tree(&styles)?;
-        if let Some(root)=find_descendant(&tree,"w:styles"){
+    if let Some(tree) = &style_tree {
+        if let Some(root)=find_descendant(tree,"w:styles"){
             if let Some(id)=root.children_named("w:style").find(|style|style.attr("w:type")==Some("paragraph")&&style.attr("w:default").is_some_and(|value|matches!(value,"1"|"true"|"on"))).and_then(|style|style.attr("w:styleId")){default_style=model::StyleId(id.into());}
         }
-        import_styles(&tree, &mut document, &context);
+        import_styles(tree, &mut document, &context);
     }
     for (id, mut named) in std::mem::take(&mut context.named_lists) {
         named.headings.retain(|_, heading| document.styles.get(heading).is_some_and(|style| {
@@ -916,6 +921,9 @@ fn parse_table(node: &XmlNode, context: &ImportContext) -> Table {
         table.properties.borders = pr.child("w:tblBorders").map(parse_border_set).filter(border_set_has_any);
         table.properties.position = pr.child("w:tblpPr").map(|p| parse_table_position(p, pr.child("w:tblOverlap")));
     }
+    let inherited_margins = context.table_styles.margins(table.properties.style.as_ref());
+    table.properties.cell_margins = Some(node.child("w:tblPr").and_then(|pr| pr.child("w:tblCellMar"))
+        .map(parse_cell_margins).unwrap_or_default().over(inherited_margins));
     if let Some(grid) = node.child("w:tblGrid") {
         table.properties.grid_column_widths_mm = grid.children_named("w:gridCol")
             .filter_map(|column| column.attr("w:w").and_then(parse_twips_mm))
@@ -934,6 +942,8 @@ fn parse_table(node: &XmlNode, context: &ImportContext) -> Table {
         let repeat_as_header = on_off(row_node.child("w:trPr").and_then(|p| p.children_named("w:tblHeader").last())).unwrap_or(false);
         let allow_break_across_pages = !on_off(row_node.child("w:trPr").and_then(|p| p.children_named("w:cantSplit").last())).unwrap_or(false);
         let height_mm = row_node.child("w:trPr").and_then(|p| p.child("w:trHeight")).and_then(|n| n.attr("w:val")).and_then(parse_twips_mm);
+        let row_margins = row_node.child("w:tblPrEx").and_then(|pr| pr.child("w:tblCellMar"))
+            .map(parse_cell_margins).unwrap_or_default();
         let mut row = TableRow { id: NodeId::new(), cells: Vec::new(), repeat_as_header, allow_break_across_pages, height_mm };
         context.source_members.borrow_mut().insert(row_node as *const XmlNode as usize,row.id.clone());
         let mut grid_column = 0usize;
@@ -964,6 +974,12 @@ fn parse_table(node: &XmlNode, context: &ImportContext) -> Table {
             let shading = pr.and_then(|p| p.child("w:shd")).and_then(|n| n.attr("w:fill")).map(|v| format!("#{v}"));
             let vertical_alignment = match pr.and_then(|p| p.child("w:vAlign")).and_then(|n| n.attr("w:val")) { Some("center") => CellVerticalAlignment::Center, Some("bottom") => CellVerticalAlignment::Bottom, _ => CellVerticalAlignment::Top };
             let borders = pr.and_then(|p| p.child("w:tcBorders")).map(parse_border_set).filter(border_set_has_any);
+            let margins = pr.and_then(|p| p.child("w:tcMar")).map(parse_cell_margins).unwrap_or_default().over(row_margins);
+            let text_direction = match pr.and_then(|p| p.child("w:textDirection")).and_then(|p| p.attr("w:val")) {
+                Some("btLr" | "lr") => Some(model::CellTextDirection::BottomToTop),
+                Some("tbRl" | "rl") => Some(model::CellTextDirection::TopToBottom),
+                _ => None,
+            };
             let mut blocks = Vec::new();
             for child in &cell_node.children {
                 match child.name.as_str() {
@@ -984,7 +1000,8 @@ fn parse_table(node: &XmlNode, context: &ImportContext) -> Table {
             }
             if blocks.is_empty() { blocks.push(Block::Paragraph(Paragraph::plain(""))); }
             let cell_index = row.cells.len();
-            row.cells.push(TableCell { id: NodeId::new(), blocks: blocks.into(), column_span, row_span: 1, width_mm, shading, borders, vertical_alignment });
+            row.cells.push(TableCell { id: NodeId::new(), blocks: blocks.into(), column_span, row_span: 1, width_mm, shading, borders, vertical_alignment,
+                margins: (margins != TableCellMargins::default()).then_some(margins), text_direction });
             if let Some(cell)=row.cells.last(){context.source_members.borrow_mut().insert(cell_node as *const XmlNode as usize,cell.id.clone());}
             if restart {
                 for column in grid_column..grid_column + grid_span {
@@ -998,6 +1015,57 @@ fn parse_table(node: &XmlNode, context: &ImportContext) -> Table {
     context.source_members.borrow_mut().insert(node as *const XmlNode as usize,table.id.clone());
     tracked::table(node,&mut table,context);
     table
+}
+
+#[derive(Debug, Default)]
+struct ImportedTableStyles {
+    default_style: Option<String>,
+    margins: BTreeMap<String, (Option<String>, TableCellMargins)>,
+}
+
+impl ImportedTableStyles {
+    fn read(root: &XmlNode) -> Self {
+        let mut result = Self::default();
+        for style in root.children_named("w:style").filter(|node| node.attr("w:type") == Some("table")) {
+            let Some(id) = style.attr("w:styleId") else { continue; };
+            if matches!(style.attr("w:default"), Some("1" | "true" | "on")) {
+                result.default_style = Some(id.into());
+            }
+            let parent = style.child("w:basedOn").and_then(|n| n.attr("w:val")).map(str::to_owned);
+            let margins = style.child("w:tblPr").and_then(|pr| pr.child("w:tblCellMar")).map(parse_cell_margins).unwrap_or_default();
+            result.margins.insert(id.into(), (parent, margins));
+        }
+        result
+    }
+
+    fn margins(&self, style: Option<&model::StyleId>) -> TableCellMargins {
+        let mut current = style.map(|id| id.0.as_str()).or(self.default_style.as_deref());
+        let mut margins = TableCellMargins::default();
+        let mut visited = std::collections::BTreeSet::new();
+        while let Some(id) = current.filter(|id| visited.insert(*id)) {
+            let Some((parent, inherited)) = self.margins.get(id) else { break; };
+            margins = margins.over(*inherited);
+            current = parent.as_deref();
+        }
+        margins.over(TableCellMargins {
+            top_mm: Some(0.0), right_mm: Some(115.0 / TWIPS_PER_MM),
+            bottom_mm: Some(0.0), left_mm: Some(115.0 / TWIPS_PER_MM),
+        })
+    }
+}
+
+fn parse_cell_margins(node: &XmlNode) -> TableCellMargins {
+    let size = |child: Option<&XmlNode>| match child?.attr("w:type") {
+        Some("nil") => Some(0.0),
+        None | Some("dxa") => child?.attr("w:w").and_then(parse_twips_mm).filter(|mm| mm.is_finite() && *mm >= 0.0),
+        _ => None,
+    };
+    TableCellMargins {
+        top_mm: size(node.child("w:top")),
+        right_mm: size(node.child("w:end").or_else(|| node.child("w:right"))),
+        bottom_mm: size(node.child("w:bottom")),
+        left_mm: size(node.child("w:start").or_else(|| node.child("w:left"))),
+    }
 }
 
 fn parse_border_set(node: &XmlNode) -> BorderSet {

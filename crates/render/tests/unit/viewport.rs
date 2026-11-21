@@ -14,7 +14,7 @@ fn two_page_document() -> VectorDocument {
 fn a_click_in_a_cells_empty_space_hits_that_cells_text() {
     use crate::{ObjectHitRegion, ObjectKind, TableCellHit, TextHitRegion};
     let mut document = two_page_document();
-    let line = |id: &str, rect: Rect| TextHitRegion { node_id: id.into(), visual_line: 0, byte_range: 0..1, rect, caret_stops: Vec::new() };
+    let line = |id: &str, rect: Rect| TextHitRegion { node_id: id.into(), visual_line: 0, byte_range: 0..1, rect, vertical: false, caret_stops: Vec::new() };
     let page = &mut document.pages[0];
     // A wide paragraph line just above the table, and short text in the cell.
     page.hit_regions.push(line("above", Rect::new(50.0, 90.0, 400.0, 12.0)));
@@ -67,7 +67,7 @@ fn invalid_zoom_cannot_poison_viewport_coordinates() {
 fn past_the_end_of_a_paragraphs_short_last_line_the_pointer_stays_on_that_line() {
     use crate::TextHitRegion;
     let mut document = two_page_document();
-    let line = |visual_line: usize, rect: Rect, bytes: std::ops::Range<usize>| TextHitRegion { node_id: "p".into(), visual_line, byte_range: bytes, rect, caret_stops: Vec::new() };
+    let line = |visual_line: usize, rect: Rect, bytes: std::ops::Range<usize>| TextHitRegion { node_id: "p".into(), visual_line, byte_range: bytes, rect, vertical: false, caret_stops: Vec::new() };
     let page = &mut document.pages[0];
     // A long line, then the paragraph's short last line just below it.
     page.hit_regions.push(line(0, Rect::new(50.0, 100.0, 400.0, 12.0), 0..80));

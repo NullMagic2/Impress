@@ -3,7 +3,7 @@
 //! The editor owns semantic selections. This module converts a compact source
 //! selection description into page-space rectangles that any renderer can draw.
 
-use crate::{CanvasOverlay, OverlayRect, Rect, VectorDocument};
+use crate::{CanvasOverlay, OverlayRect, VectorDocument};
 use std::{collections::HashMap, ops::Range};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -107,11 +107,11 @@ pub fn text_range_rect(page_index: usize, region: &crate::TextHitRegion, range: 
     let start = range.start.max(region.byte_range.start);
     let end = range.end.min(region.byte_range.end);
     if start >= end { return None; }
-    let x0 = x_for_offset(region, start);
-    let x1 = x_for_offset(region, end);
+    let x0 = region.coordinate_for_offset(start);
+    let x1 = region.coordinate_for_offset(end);
     Some(OverlayRect {
         page_index,
-        rect: Rect::new(x0.min(x1), region.rect.y, (x1 - x0).abs().max(0.5), region.rect.height),
+        rect: region.inline_rect(x0.min(x1), (x1 - x0).abs().max(0.5)),
     })
 }
 
@@ -159,7 +159,7 @@ fn caret_overlay_matching(
             if region.node_id != position.node_id { continue; }
             if preferred_visual_line.is_some_and(|line| region.visual_line != line) { continue; }
             if position.byte_offset < region.byte_range.start || position.byte_offset > region.byte_range.end { continue; }
-            let x = x_for_offset(region, position.byte_offset);
+            let x = region.coordinate_for_offset(position.byte_offset);
             return Some(CanvasOverlay {
                 selections: Vec::new(),
                 adornments: Vec::new(),
@@ -167,19 +167,12 @@ fn caret_overlay_matching(
                 chrome: Vec::new(),
                 caret: Some(OverlayRect {
                     page_index,
-                    rect: Rect::new(x, region.rect.y, caret_width_pt.max(0.5), region.rect.height),
+                    rect: region.inline_rect(x, caret_width_pt.max(0.5)),
                 }),
             });
         }
     }
     None
-}
-
-fn x_for_offset(region: &crate::TextHitRegion, offset: usize) -> f32 {
-    region.caret_stops.iter()
-        .min_by_key(|stop| stop.byte_offset.abs_diff(offset))
-        .map(|stop| stop.x_pt)
-        .unwrap_or(region.rect.x)
 }
 
 #[cfg(test)] #[path = "../tests/unit/overlay.rs"] mod tests;
@@ -191,5 +184,5 @@ pub fn caret_on_page(document: &VectorDocument, position: &SourcePosition, page_
         && (r.byte_range.start..=r.byte_range.end).contains(&position.byte_offset);
     let region = page.hit_regions.iter().filter(matches).find(|r| line.is_some_and(|l| r.visual_line == l))
         .or_else(|| page.hit_regions.iter().find(matches))?;
-    Some(OverlayRect { page_index, rect: Rect::new(x_for_offset(region, position.byte_offset), region.rect.y, 0.85, region.rect.height) })
+    Some(OverlayRect { page_index, rect: region.inline_rect(region.coordinate_for_offset(position.byte_offset), 0.85) })
 }

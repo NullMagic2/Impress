@@ -15,6 +15,8 @@ mod references;
 mod floating;
 mod line_fitting;
 mod table_pagination;
+mod cell_table_flow;
+mod cell_text;
 mod field_wrapping;
 pub use scheduler::*;
 
@@ -1746,6 +1748,7 @@ struct PreparedImage {
 
 #[derive(Clone)]
 struct PreparedTable {
+    width: f32,
     x_offset: f32,
     rows: Vec<PreparedTableRow>,
     repeating_header_rows: usize,
@@ -1777,6 +1780,39 @@ struct PreparedTableCell {
     hit_regions: Vec<TextHitRegion>,
     shading: Option<Color>,
     borders: BorderSet,
+}
+
+struct CellInsets {
+    left: f32,
+    top: f32,
+    right: f32,
+    bottom: f32,
+}
+
+struct MeasuredTableCell<'a> {
+    cell: &'a TableCell,
+    start_column: usize,
+    column_span: usize,
+    row_span: usize,
+    insets: CellInsets,
+    direction: Option<model::CellTextDirection>,
+    fragment: PreparedCellFragment,
+}
+
+impl CellInsets {
+    fn for_cell(table: &Table, cell: &TableCell, width: f32) -> Self {
+        let margins = cell.margins.unwrap_or_default().over(table.properties.cell_margins.unwrap_or_default());
+        let padding = |mm: Option<f32>| mm.filter(|v| v.is_finite() && *v >= 0.0)
+            .map_or(model::TABLE_TEXT_PADDING_PT, |v| v * MM_TO_PT);
+        let mut left = padding(margins.left_mm);
+        let mut right = padding(margins.right_mm);
+        if left + right > (width - 1.0).max(0.0) {
+            let factor = (width - 1.0).max(0.0) / (left + right);
+            left *= factor;
+            right *= factor;
+        }
+        Self { left, right, top: padding(margins.top_mm), bottom: padding(margins.bottom_mm) }
+    }
 }
 
 #[derive(Clone)]
@@ -1859,7 +1895,7 @@ fn prepare_block(
             let fragment = ctx.typst.render_equation_vector(equation, 12.0)?;
             Ok(PreparedBlock::Equation { id: equation.id.0.clone(), fragment, before: 5.0, after: 7.0 })
         }
-        Block::Table(table) => Ok(PreparedBlock::Table(prepare_table(table, line_width, styles, ctx, resources, field_context)?)),
+        Block::Table(table) => Ok(PreparedBlock::Table(prepare_table(table, line_width, styles, ctx, resources, field_context, false)?)),
         Block::Image(image) => Ok(PreparedBlock::Image(prepare_block_image(image, line_width, resources.get(&image.resource)))),
         Block::PageBreak { .. } => Ok(PreparedBlock::PageBreak),
         Block::ColumnBreak { .. } => Ok(PreparedBlock::ColumnBreak),
@@ -2319,6 +2355,7 @@ fn prepare_table(
     ctx: &mut WorkerContext,
     resources: &BTreeMap<ResourceId, Resource>,
     field_context: &FieldContext,
+    inside_cell: bool,
 ) -> Result<PreparedTable, LayoutError> {
     // Resolve semantic cells onto a logical grid while respecting active
     // vertical spans. Continuation rows intentionally omit the occupied cell;
@@ -2357,7 +2394,7 @@ fn prepare_table(
         .unwrap_or(available_width);
     // An authored table may extend into page margins. Shrinking it to the
     // text width changes column wrapping and pagination for DOCX files.
-    let width = requested_width.max(1.0);
+    let width = if inside_cell { requested_width.min(available_width) } else { requested_width }.max(1.0);
 
     // A stable logical grid is the source of truth for column sizing.  DOCX
     // `w:tblGrid` maps here, and merged cells simply sum the columns they cover.
@@ -2370,28 +2407,42 @@ fn prepare_table(
         TableAlignment::Center => (available_width - width) * 0.5,
         TableAlignment::Right => available_width - width,
     };
-    let padding = model::TABLE_TEXT_PADDING_PT;
+    let minimum_row_height = if table.properties.cell_margins.is_some() { 1.0 } else { 18.0 };
 
     // Prepare each cell once, then derive physical row heights. A spanning cell
     // contributes its minimum content height across all rows it occupies.
     let prepare_row = |ctx: &mut WorkerContext, row_index: usize|
-        -> Result<Vec<(&TableCell, usize, usize, usize, PreparedCellFragment)>, LayoutError> {
+        -> Result<Vec<MeasuredTableCell<'_>>, LayoutError> {
         let row = &table.rows[row_index];
         let mut row_prepared = Vec::with_capacity(row.cells.len());
         for (cell_index, cell) in row.cells.iter().enumerate() {
-            let (start_column, span, row_span) = placements[row_index][cell_index];
-            let cell_width = logical_widths[start_column..(start_column + span).min(column_count)].iter().sum::<f32>();
-            let cell_padding = padding.min(((cell_width - 1.0) * 0.5).max(0.0));
-            let inner_width = (cell_width - cell_padding * 2.0).max(1.0);
-            let fragment = prepare_block_fragment(&cell.blocks, inner_width, styles, ctx, resources, field_context)?;
-            row_prepared.push((cell, start_column, span, row_span, fragment));
+            let (start_column, column_span, row_span) = placements[row_index][cell_index];
+            let cell_width = logical_widths[start_column..(start_column + column_span).min(column_count)].iter().sum::<f32>();
+            let insets = CellInsets::for_cell(table, cell, cell_width);
+            let inner_width = (cell_width - insets.left - insets.right).max(1.0);
+            let row_height = table.rows[row_index..row_index + row_span].iter()
+                .filter_map(|row| row.height_mm).sum::<f32>() * MM_TO_PT;
+            let inner_height = (row_height - insets.top - insets.bottom).max(0.0);
+            if let Some(direction) = cell.text_direction.filter(|_| cell.blocks.iter().all(|b| matches!(b, Block::Paragraph(_)))) {
+                let line_width = inner_height.max(inner_width);
+                let fragment = prepare_block_fragment(&cell.blocks, line_width, styles, ctx, resources, field_context)?;
+                if let Some(rotated) = cell_text::rotate(fragment, direction, inner_width, line_width) {
+                    row_prepared.push(MeasuredTableCell { cell, start_column, column_span, row_span,
+                        insets, direction: Some(direction), fragment: rotated });
+                    continue;
+                }
+            }
+            let mut nested_tables = cell_table_flow::Flow::new(inner_width, inner_height);
+            let fragment = prepare_fragment(&cell.blocks, inner_width, styles, ctx, resources, field_context, Some(&mut nested_tables))?;
+            row_prepared.push(MeasuredTableCell { cell, start_column, column_span, row_span,
+                insets, direction: None, fragment });
         }
         Ok(row_prepared)
     };
     // A DOCX can contain almost its entire body in one table. Parallelizing
     // only top-level blocks leaves that document on one layout worker. Rows
     // have independent content; preserve their order when collecting results.
-    let mut prepared_cells: Vec<Vec<(&TableCell, usize, usize, usize, PreparedCellFragment)>> =
+    let mut prepared_cells =
         if table.rows.len() >= 4 {
             (0..table.rows.len()).into_par_iter().map_init(
                 || WorkerContext { fonts: FontCatalog::for_resources(resources), typst: TypstTypesetter::new() },
@@ -2401,14 +2452,15 @@ fn prepare_table(
             (0..table.rows.len()).map(|row_index| prepare_row(ctx, row_index))
                 .collect::<Result<Vec<_>, _>>()?
         };
-    let mut row_heights: Vec<f32> = table.rows.iter().map(|row| row.height_mm.map(|mm| mm * MM_TO_PT).unwrap_or(18.0).max(18.0)).collect();
+    let mut row_heights: Vec<f32> = table.rows.iter().map(|row| row.height_mm.map(|mm| mm * MM_TO_PT)
+        .unwrap_or(minimum_row_height).max(minimum_row_height)).collect();
     let mut span_requirements: Vec<(usize, usize, f32)> = Vec::new();
     let mut protected_rows = vec![false; table.rows.len()];
     let mut intervals = Vec::<(usize, usize)>::new();
 
     for (row_index, row_prepared) in prepared_cells.iter().enumerate() {
-        for (_cell, _start_column, _span, row_span, fragment) in row_prepared {
-            let required = (fragment.height + padding * 2.0).max(18.0);
+        for MeasuredTableCell { row_span, insets, fragment, .. } in row_prepared {
+            let required = (fragment.height + insets.top + insets.bottom).max(minimum_row_height);
             if *row_span == 1 {
                 row_heights[row_index] = row_heights[row_index].max(required);
             } else {
@@ -2448,27 +2500,29 @@ fn prepare_table(
     let mut rows = Vec::with_capacity(table.rows.len());
     for (row_index, row) in table.rows.iter().enumerate() {
         let mut cells = Vec::with_capacity(row.cells.len());
-        for (cell_index, (cell, start_column, span, row_span, fragment)) in prepared_cells[row_index].drain(..).enumerate() {
+        for (cell_index, measured) in prepared_cells[row_index].drain(..).enumerate() {
+            let MeasuredTableCell { cell, start_column, column_span, row_span, insets, direction, fragment } = measured;
             let end = (row_index + row_span).min(row_heights.len());
             let cell_height = row_heights[row_index..end].iter().sum::<f32>();
             let inner_height = fragment.height;
-            let vertical = match cell.vertical_alignment {
-                CellVerticalAlignment::Top => padding,
-                CellVerticalAlignment::Center => ((cell_height - inner_height) * 0.5).max(padding),
-                CellVerticalAlignment::Bottom => (cell_height - inner_height - padding).max(padding),
+            let surplus = (cell_height - inner_height - insets.top - insets.bottom).max(0.0);
+            let vertical = insets.top + match (direction, cell.vertical_alignment) {
+                (_, CellVerticalAlignment::Center) => surplus * 0.5,
+                (Some(model::CellTextDirection::BottomToTop), CellVerticalAlignment::Top)
+                | (None | Some(model::CellTextDirection::TopToBottom), CellVerticalAlignment::Bottom) => surplus,
+                _ => 0.0,
             };
-            let cell_width = logical_widths[start_column..(start_column + span).min(column_count)].iter().sum::<f32>();
-            let cell_padding = padding.min(((cell_width - 1.0) * 0.5).max(0.0));
-            let commands = fragment.commands.iter().map(|c| c.translated(cell_padding, vertical)).collect();
-            let hit_regions = fragment.hit_regions.iter().map(|r| r.translated(cell_padding, vertical)).collect();
+            let cell_width = logical_widths[start_column..(start_column + column_span).min(column_count)].iter().sum::<f32>();
+            let commands = fragment.commands.iter().map(|c| c.translated(insets.left, vertical)).collect();
+            let hit_regions = fragment.hit_regions.iter().map(|r| r.translated(insets.left, vertical)).collect();
             cells.push(PreparedTableCell {
                 own_region: ObjectHitRegion { node_id: cell.id.0.clone(), rect: Rect::new(0.0, 0.0, cell_width, cell_height),
                     kind: ObjectKind::TableCell(TableCellHit { table_id: table.id.0.clone(), row_index, cell_index,
-                        column_index: start_column, column_span: span, row_span, column_widths_pt: logical_widths.clone(),
+                        column_index: start_column, column_span, row_span, column_widths_pt: logical_widths.clone(),
                         row_height_pt: row_heights[row_index], can_resize_row: row_span == 1 && !protected_rows[row_index] }) },
-                object_regions: fragment.object_regions.iter().map(|r| r.translated(cell_padding, vertical)).collect(),
+                object_regions: fragment.object_regions.iter().map(|r| r.translated(insets.left, vertical)).collect(),
                 x: logical_lefts[start_column],
-                width: logical_widths[start_column..(start_column + span).min(column_count)].iter().sum::<f32>(),
+                width: cell_width,
                 height: cell_height,
                 content_bottom: vertical + fragment.height,
                 commands,
@@ -2487,7 +2541,7 @@ fn prepare_table(
         });
     }
     let repeating_header_rows = table.rows.iter().take_while(|row| row.repeat_as_header).count();
-    Ok(PreparedTable { x_offset, rows, repeating_header_rows })
+    Ok(PreparedTable { width, x_offset, rows, repeating_header_rows })
 }
 
 fn merged_cell_borders(cell: &TableCell, table: &Table, styles: &StyleSheet) -> BorderSet {
@@ -2509,6 +2563,18 @@ fn prepare_block_fragment(
     resources: &BTreeMap<ResourceId, Resource>,
     field_context: &FieldContext,
 ) -> Result<PreparedCellFragment, LayoutError> {
+    prepare_fragment(blocks, width, styles, ctx, resources, field_context, None)
+}
+
+fn prepare_fragment(
+    blocks: &[Block],
+    width: f32,
+    styles: &StyleSheet,
+    ctx: &mut WorkerContext,
+    resources: &BTreeMap<ResourceId, Resource>,
+    field_context: &FieldContext,
+    mut cell_flow: Option<&mut cell_table_flow::Flow>,
+) -> Result<PreparedCellFragment, LayoutError> {
     let mut y = 0.0f32;
     let mut commands = Vec::new();
     let mut hit_regions = Vec::new();
@@ -2517,9 +2583,17 @@ fn prepare_block_fragment(
         else { list_markers_for_blocks(blocks, &BTreeMap::new(), styles) };
     for block in blocks {
         let marker = block_node_id(block).and_then(|id| markers.get(id));
-        let prepared = prepare_block(block, width, styles, ctx, resources, marker, field_context)?;
+        let (x, available_width) = if let (Block::Paragraph(_), Some(flow)) = (block, cell_flow.as_deref()) {
+            flow.paragraph_span(&mut y)
+        } else { (0.0, width) };
+        let prepared = match block {
+            Block::Table(table) if cell_flow.is_some() =>
+                PreparedBlock::Table(prepare_table(table, width, styles, ctx, resources, field_context, true)?),
+            _ => prepare_block(block, available_width, styles, ctx, resources, marker, field_context)?,
+        };
         match prepared {
             PreparedBlock::Paragraph { lines, space_before, space_after, left_indent, marker, decoration, .. } => {
+                let left_indent = left_indent + x;
                 y += space_before;
                 if let Some(decoration) = &decoration {
                     let height = lines.iter().map(|line| line.height).sum();
@@ -2531,7 +2605,7 @@ fn prepare_block_fragment(
                     let baseline = y + line.ascent;
                     if first {
                         if let Some(marker) = &marker {
-                            commands.extend(marker.commands.iter().map(|c| c.translated((left_indent - marker.width - marker.gap).max(0.0), baseline)));
+                            commands.extend(marker.commands.iter().map(|c| c.translated((left_indent - marker.width - marker.gap).max(x), baseline)));
                         }
                         first = false;
                     }
@@ -2542,6 +2616,7 @@ fn prepare_block_fragment(
                 y += space_after;
             }
             PreparedBlock::Equation { id, fragment, before, after } => {
+                if let Some(flow) = cell_flow.as_deref() { y = flow.clear(y); }
                 y += before;
                 let x = ((width - fragment.size.width) * 0.5).max(0.0);
                 commands.extend(fragment.commands.iter().map(|c| c.translated(x, y)));
@@ -2549,6 +2624,7 @@ fn prepare_block_fragment(
                 y += fragment.size.height + after;
             }
             PreparedBlock::Image(image) => {
+                if let Some(flow) = cell_flow.as_deref() { y = flow.clear(y); }
                 let x = match image.alignment {
                     ImageAlignment::Left => 0.0,
                     ImageAlignment::Center => ((width - image.width) * 0.5).max(0.0),
@@ -2559,20 +2635,31 @@ fn prepare_block_fragment(
                 y += image.height + 3.0;
             }
             PreparedBlock::Table(table) => {
+                let position = match block { Block::Table(source) => source.properties.position.as_ref(), _ => None };
+                let table_height = table.rows.iter().map(|row| row.height).sum();
+                let (table_x, mut table_y, floating) = match (cell_flow.as_deref_mut(), position) {
+                    (Some(flow), Some(position)) => {
+                        let rect = flow.place(position, table.width, table_height, y);
+                        (rect.x, rect.y, true)
+                    }
+                    (Some(flow), None) => (table.x_offset.clamp(0.0, (width - table.width).max(0.0)), flow.clear(y), false),
+                    (None, _) => (table.x_offset, y, false),
+                };
                 for row in &table.rows {
                     let mut temp_page = VectorPage::new(Size::new(width, row.height));
-                    render_table_row(&mut temp_page, row, table.x_offset, 0.0);
-                    commands.extend(temp_page.commands.into_iter().map(|c| c.translated(0.0, y)));
-                    hit_regions.extend(temp_page.hit_regions.into_iter().map(|r| r.translated(0.0, y)));
-                    object_regions.extend(temp_page.object_regions.into_iter().map(|r| r.translated(0.0, y)));
-                    y += row.height;
+                    render_table_row(&mut temp_page, row, table_x, table_y);
+                    commands.extend(temp_page.commands);
+                    hit_regions.extend(temp_page.hit_regions);
+                    object_regions.extend(temp_page.object_regions);
+                    table_y += row.height;
                 }
-                y += 3.0;
+                if !floating { y = table_y + 3.0; }
             }
             PreparedBlock::PageBreak | PreparedBlock::ColumnBreak => y += 4.0,
             PreparedBlock::Foreign { height } => y += height,
         }
     }
+    if let Some(flow) = cell_flow { y = flow.clear(y); }
     Ok(PreparedCellFragment { height: y.max(1.0), commands, hit_regions, object_regions })
 }
 
@@ -3482,6 +3569,7 @@ fn vectorize_mixed_line(
                     visual_line,
                     byte_range: token.start..token.end,
                     rect: Rect::new(x, top, fragment.size.width.max(1.0), fragment.size.height.max(1.0)),
+                    vertical: false,
                     caret_stops: vec![
                         CaretStop { byte_offset: token.start, x_pt: x },
                         CaretStop { byte_offset: token.end, x_pt: x + fragment.size.width },
@@ -3497,6 +3585,7 @@ fn vectorize_mixed_line(
                     visual_line,
                     byte_range: token.start..token.end,
                     rect: Rect::new(x, top, (*width).max(1.0), (*height).max(1.0)),
+                    vertical: false,
                     caret_stops: vec![
                         CaretStop { byte_offset: token.start, x_pt: x },
                         CaretStop { byte_offset: token.end, x_pt: x + *width },
@@ -3533,7 +3622,7 @@ fn vectorize_mixed_line(
                 }} else if matches!(leader,model::TabLeader::Line|model::TabLeader::Heavy) {
                     commands.push(DrawCommand::FillRect{rect:Rect::new(x,1.0,advance,if matches!(leader,model::TabLeader::Heavy){1.5}else{0.6}),paint:Paint::Solid(Color::BLACK)});
                 }
-                hit_regions.push(TextHitRegion{node_id:node_id.into(),visual_line,byte_range:token.start..token.end,rect:Rect::new(x,-ascent,advance.max(1.0),height),caret_stops:vec![CaretStop{byte_offset:token.start,x_pt:x},CaretStop{byte_offset:token.end,x_pt:x+advance}]});
+                hit_regions.push(TextHitRegion{node_id:node_id.into(),visual_line,byte_range:token.start..token.end,rect:Rect::new(x,-ascent,advance.max(1.0),height),vertical: false, caret_stops:vec![CaretStop{byte_offset:token.start,x_pt:x},CaretStop{byte_offset:token.end,x_pt:x+advance}]});
             }
             InlineTokenKind::Space => {
                 hit_regions.push(TextHitRegion {
@@ -3541,6 +3630,7 @@ fn vectorize_mixed_line(
                     visual_line,
                     byte_range: token.start..token.end,
                     rect: Rect::new(x, -ascent, advance.max(1.0), height),
+                    vertical: false,
                     caret_stops: vec![
                         CaretStop { byte_offset: token.start, x_pt: x },
                         CaretStop { byte_offset: token.end, x_pt: x + advance },
@@ -3633,6 +3723,7 @@ fn vectorize_text_token(
             visual_line,
             byte_range: source.byte_range,
             rect: bounds,
+            vertical: false,
             caret_stops: stops,
         };
         Ok((DrawCommand::TextRun(Arc::new(run)), hit))
@@ -3730,6 +3821,7 @@ fn empty_line(node_id: &str, offset: usize, visual_line: usize, height: f32, asc
             visual_line,
             byte_range: offset..offset,
             rect: bounds,
+            vertical: false,
             caret_stops: vec![CaretStop { byte_offset: offset, x_pt: 0.0 }],
         }],
         height,

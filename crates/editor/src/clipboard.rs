@@ -611,7 +611,7 @@ fn parse_table(html:&str,a:&BTreeMap<String,String>,f:&mut ClipboardFragment,dep
             let vertical=match style(&c.attrs,"vertical-align").as_deref().or_else(||c.attrs.get("valign").map(String::as_str)){Some("middle")=>CellVerticalAlignment::Center,Some("bottom")=>CellVerticalAlignment::Bottom,_=>CellVerticalAlignment::Top};
             let mut blocks=cell_blocks(&body[c.end..end],f,depth)?;
             if c.name=="th"{for b in &mut blocks{if let Block::Paragraph(p)=b{for i in &mut p.content{if let Inline::Text(r)=i{if r.properties.bold.is_none(){r.properties.bold=Some(true);}}}}}}
-            cells.push(TableCell{id:NodeId::new(),blocks: blocks.into(),column_span:span("colspan")?,row_span:span("rowspan")?,width_mm:width,shading,borders:None,vertical_alignment:vertical});
+            cells.push(TableCell{id:NodeId::new(),blocks: blocks.into(),column_span:span("colspan")?,row_span:span("rowspan")?,width_mm:width,shading,borders:None,vertical_alignment:vertical, margins: None, text_direction: None});
         }
         rows.push(TableRow{id:NodeId::new(),cells,repeat_as_header:header,allow_break_across_pages:true,height_mm:style(&t.attrs,"height").as_deref().and_then(length)});
     }

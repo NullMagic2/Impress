@@ -68,7 +68,7 @@ fn enter_replacing_selected_text_preserves_format_and_is_one_undo() {
 fn enter_in_tables_and_notes_retains_the_same_blank_paragraph_format() {
     let (mut e,first)=sample(Some(19.0));let p=e.paragraph(&first).unwrap().clone();
     let table=model::Table{id:NodeId::new(),properties:Default::default(),rows:vec![model::TableRow{id:NodeId::new(),repeat_as_header:false,allow_break_across_pages:true,height_mm:None,
-        cells:vec![model::TableCell{id:NodeId::new(),blocks:vec![Block::Paragraph(p)].into(),column_span:1,row_span:1,width_mm:None,shading:None,borders:None,vertical_alignment:Default::default()}]}]};
+        cells:vec![model::TableCell{id:NodeId::new(),blocks:vec![Block::Paragraph(p)].into(),column_span:1,row_span:1,width_mm:None,shading:None,borders:None,vertical_alignment:Default::default(), margins: None, text_direction: None}]}]};
     e.document.sections[0].blocks=vec![Block::Table(table)].into();e.set_caret(first,"Body αβ".len());e.split_paragraph().unwrap();
     let id=e.focus_position().unwrap().node_id;e.set_caret(id,0);assert_size(&e,19.0);
     let (mut e,_) = sample(Some(19.0));e.insert_footnote("note").unwrap();let note=e.document.review.footnotes.keys().next().unwrap().clone();e.enter_footnote(&note).unwrap();

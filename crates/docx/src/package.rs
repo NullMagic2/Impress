@@ -351,6 +351,14 @@ fn table_xml(table: &Table, document: &Document, context: &ExportContext, drawin
             if cell.row_span > 1 { tcpr.push_str("<w:vMerge w:val=\"restart\"/>"); }
             if let Some(fill) = &cell.shading { tcpr.push_str(&format!("<w:shd w:val=\"clear\" w:fill=\"{}\"/>", xml_escape(fill.trim_start_matches('#')))); }
             if let Some(borders) = &cell.borders { tcpr.push_str(&borders_xml("w:tcBorders", borders)); }
+            if let Some(margins) = cell.margins { tcpr.push_str(&cell_margins_xml("w:tcMar", margins)); }
+            if let Some(direction) = cell.text_direction {
+                let value = match direction {
+                    model::CellTextDirection::BottomToTop => "btLr",
+                    model::CellTextDirection::TopToBottom => "tbRl",
+                };
+                tcpr.push_str(&format!("<w:textDirection w:val=\"{value}\"/>"));
+            }
             let valign = match cell.vertical_alignment { model::CellVerticalAlignment::Top => "top", model::CellVerticalAlignment::Center => "center", model::CellVerticalAlignment::Bottom => "bottom" };
             tcpr.push_str(&format!("<w:vAlign w:val=\"{valign}\"/>"));
             let mut body = String::new();
@@ -378,6 +386,10 @@ fn table_xml(table: &Table, document: &Document, context: &ExportContext, drawin
         .map(|width_mm| format!("<w:gridCol w:w=\"{}\"/>", twips(*width_mm)))
         .collect::<String>());
     let position = table.properties.position.as_ref().map(table_position_xml).unwrap_or_default();
+    let native_padding = Some(model::TABLE_TEXT_PADDING_PT * (25.4 / 72.0));
+    let margins = cell_margins_xml("w:tblCellMar", table.properties.cell_margins.unwrap_or(model::TableCellMargins {
+        top_mm: native_padding, right_mm: native_padding, bottom_mm: native_padding, left_mm: native_padding,
+    }));
     let style_tag = table.properties.style.as_ref()
         .map(|id| format!(r#"<w:tblStyle w:val="{}"/>"#, xml_escape(&id.0))).unwrap_or_default();
     let look = if style_tag.is_empty() { String::new() } else {
@@ -386,7 +398,18 @@ fn table_xml(table: &Table, document: &Document, context: &ExportContext, drawin
         let flags = 0x400 | if first { 0x20 } else { 0 } | if no_bands { 0x200 } else { 0 };
         format!(r#"<w:tblLook w:val="{flags:04X}" w:firstRow="{}" w:noHBand="{}" w:noVBand="1"/>"#, u8::from(first), u8::from(no_bands))
     };
-    format!("<w:tbl><w:tblPr>{style_tag}{position}{width}{indent}<w:jc w:val=\"{align}\"/>{spacing}{borders}{look}</w:tblPr>{grid}{rows}</w:tbl>")
+    format!("<w:tbl><w:tblPr>{style_tag}{position}{width}{indent}<w:jc w:val=\"{align}\"/>{spacing}{borders}{margins}{look}</w:tblPr>{grid}{rows}</w:tbl>")
+}
+
+fn cell_margins_xml(tag: &str, margins: model::TableCellMargins) -> String {
+    let mut contents = String::new();
+    for (side, margin) in [("top", margins.top_mm), ("left", margins.left_mm),
+        ("bottom", margins.bottom_mm), ("right", margins.right_mm)] {
+        if let Some(mm) = margin {
+            contents.push_str(&format!("<w:{side} w:w=\"{}\" w:type=\"dxa\"/>", twips(mm)));
+        }
+    }
+    if contents.is_empty() { String::new() } else { format!("<{tag}>{contents}</{tag}>") }
 }
 
 fn docx_table_grid_widths(

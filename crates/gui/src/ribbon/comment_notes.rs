@@ -241,9 +241,9 @@ fn anchors(
             if y < 0.0 || y >= state.viewport.viewport_px.height { continue; }
             for &(id, offset) in requests {
                 if hit.byte_range.contains(&offset) || hit.caret_stops.iter().any(|stop| stop.byte_offset == offset) {
-                    let caret = hit.caret_stops.iter().min_by_key(|stop| stop.byte_offset.abs_diff(offset))
-                        .map_or(hit.rect.x, |stop| stop.x_pt);
-                    let x = rect.x + caret * scale;
+                    let caret = hit.coordinate_for_offset(offset);
+                    let x = rect.x + if hit.vertical { hit.rect.max_x() } else { caret } * scale;
+                    let y = if hit.vertical { rect.y + caret * scale } else { y };
                     found.entry(id.clone()).or_insert(Anchor {
                         page_right: (rect.max_x() / k).round() as i32,
                         x: (x / k).round() as i32,

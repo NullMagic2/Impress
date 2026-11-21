@@ -180,7 +180,7 @@ impl ViewportState {
         Some(DocumentHit {
             page_index,
             node_id: region.node_id.clone(),
-            byte_offset: region.nearest_byte_offset(page_point.x),
+            byte_offset: region.nearest_byte_offset(page_point),
             visual_line: region.visual_line,
         })
     }
@@ -203,7 +203,7 @@ impl ViewportState {
         Some(DocumentHit {
             page_index,
             node_id: region.node_id.clone(),
-            byte_offset: region.nearest_byte_offset(point.x),
+            byte_offset: region.nearest_byte_offset(point),
             visual_line: region.visual_line,
         })
     }
@@ -233,7 +233,7 @@ impl ViewportState {
         Some(DocumentHit {
             page_index,
             node_id: region.node_id.clone(),
-            byte_offset: region.nearest_byte_offset(point.x),
+            byte_offset: region.nearest_byte_offset(point),
             visual_line: region.visual_line,
         })
     }

@@ -122,8 +122,8 @@ fn nested_cell_selection_cannot_leak_into_neighbour_cell() {
         id: NodeId::new(), properties: Default::default(), rows: vec![model::TableRow {
             id: NodeId::new(), repeat_as_header: false, allow_break_across_pages: true, height_mm: None,
             cells: vec![
-                model::TableCell { id: NodeId::new(), blocks: (vec![Block::Paragraph(left)]).into(), column_span: 1, row_span: 1, width_mm: None, shading: None, borders: None, vertical_alignment: Default::default() },
-                model::TableCell { id: NodeId::new(), blocks: (vec![Block::Paragraph(right)]).into(), column_span: 1, row_span: 1, width_mm: None, shading: None, borders: None, vertical_alignment: Default::default() },
+                model::TableCell { id: NodeId::new(), blocks: (vec![Block::Paragraph(left)]).into(), column_span: 1, row_span: 1, width_mm: None, shading: None, borders: None, vertical_alignment: Default::default(), margins: None, text_direction: None },
+                model::TableCell { id: NodeId::new(), blocks: (vec![Block::Paragraph(right)]).into(), column_span: 1, row_span: 1, width_mm: None, shading: None, borders: None, vertical_alignment: Default::default(), margins: None, text_direction: None },
             ],
         }],
     }));

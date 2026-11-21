@@ -23,7 +23,7 @@ fn verify(blocks:&[PreparedBlock],keys:&[Vec<u8>],old:&Entry,g:&SectionGeometry)
         let mut p=paragraph(height,(serial%250)as u8,r%7==0);
         if let PreparedBlock::Paragraph{lines,widow_control,page_break_before,keep_lines_together,..}=&mut p{
             *widow_control=r%3==0;*page_break_before=r%17==0;*keep_lines_together=r%5==0;
-            let mut line=lines[0].clone();line.hit_regions=vec![TextHitRegion{node_id:format!("p-{serial}"),visual_line:0,byte_range:0..2,rect:Rect::new(0.0,0.0,12.0,height),caret_stops:vec![CaretStop{byte_offset:0,x_pt:0.0},CaretStop{byte_offset:2,x_pt:12.0}]}];
+            let mut line=lines[0].clone();line.hit_regions=vec![TextHitRegion{node_id:format!("p-{serial}"),visual_line:0,byte_range:0..2,rect:Rect::new(0.0,0.0,12.0,height),vertical: false, caret_stops:vec![CaretStop{byte_offset:0,x_pt:0.0},CaretStop{byte_offset:2,x_pt:12.0}]}];
             *lines=(0..1+(r%5)).map(|i|{let mut l=line.clone();l.hit_regions[0].visual_line=i as usize;l}).collect();
         }p
     }

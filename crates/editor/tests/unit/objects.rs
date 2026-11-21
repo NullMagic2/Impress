@@ -24,7 +24,7 @@ fn crop_shape_edits_inside_table_cells_preserve_other_effects_and_undo() {
     document.sections[0].blocks = vec![Block::Table(Table {
         id: NodeId::new(), properties: TableProperties::default(), rows: vec![TableRow {
             id: NodeId::new(), repeat_as_header: false, allow_break_across_pages: true, height_mm: None,
-            cells: vec![TableCell { id: NodeId::new(), blocks: vec![Block::Paragraph(paragraph)].into(), column_span: 1, row_span: 1, width_mm: None, shading: None, borders: None, vertical_alignment: Default::default() }],
+            cells: vec![TableCell { id: NodeId::new(), blocks: vec![Block::Paragraph(paragraph)].into(), column_span: 1, row_span: 1, width_mm: None, shading: None, borders: None, vertical_alignment: Default::default(), margins: None, text_direction: None }],
         }],
     })].into();
     let mut editor = EditorState::new(document);

@@ -24,7 +24,7 @@ fn sample_structured_document() -> Document {
     let table=Table { id:NodeId::new(), properties:TableProperties::default(), rows:vec![TableRow {
         id:NodeId::new(), repeat_as_header:true, allow_break_across_pages: true, height_mm:None, cells:vec![TableCell {
             id:NodeId::new(), blocks:(vec![Block::Paragraph(Paragraph::plain("Cell"))]).into(), column_span:1, row_span:1,
-            width_mm:None, shading:Some("#EEEEEE".into()), borders:None, vertical_alignment:Default::default(),
+            width_mm:None, shading:Some("#EEEEEE".into()), borders:None, vertical_alignment:Default::default(), margins: None, text_direction: None,
         }],
     }]};
     document.sections[0].properties=SectionProperties { column_count:2, ..Default::default() };
@@ -57,17 +57,42 @@ fn structured_export_writes_real_word_parts_and_relationships() {
     let footer=zip_text(&mut zip,"word/footer1.xml"); assert!(footer.contains("PAGE"));
     assert!(zip.by_name("word/media/image1.png").is_ok());
 }
+
+#[test]
+fn table_cell_margins_and_writing_direction_round_trip() {
+    let mut doc = sample_structured_document();
+    let Block::Table(table) = &mut doc.sections[0].blocks[2] else { panic!("expected table") };
+    let mm = |twips: f32| twips / (1440.0 / 25.4);
+    let all = model::TableCellMargins { top_mm: Some(0.0), right_mm: Some(mm(45.0)),
+        bottom_mm: Some(mm(30.0)), left_mm: Some(mm(55.0)) };
+    let override_margins = model::TableCellMargins { left_mm: Some(mm(100.0)), ..Default::default() };
+    table.properties.cell_margins = Some(all);
+    table.rows[0].cells[0].margins = Some(override_margins);
+    table.rows[0].cells[0].text_direction = Some(model::CellTextDirection::BottomToTop);
+
+    let mut bytes = Cursor::new(Vec::new());
+    export_docx(&doc, &mut bytes).unwrap();
+    bytes.set_position(0);
+    let imported = crate::import::import_docx(&mut bytes).unwrap();
+    let table = imported.sections[0].blocks.iter().find_map(|block| {
+        if let Block::Table(table) = block { Some(table) } else { None }
+    }).unwrap();
+    assert_eq!(table.properties.cell_margins, Some(all));
+    let cell = &table.rows[0].cells[0];
+    assert_eq!(cell.margins, Some(override_margins));
+    assert_eq!(cell.text_direction, Some(model::CellTextDirection::BottomToTop));
+}
 #[test]
 fn vertical_merge_exports_vmerge_and_round_trips_to_row_span() {
     let mut document=Document::default();
     document.sections[0].blocks=(vec![Block::Table(Table {
         id:NodeId::new(), properties:TableProperties::default(), rows:vec![
             TableRow { id:NodeId::new(), repeat_as_header:false, allow_break_across_pages:true, height_mm:None, cells:vec![
-                TableCell { id:NodeId::new(), blocks:(vec![Block::Paragraph(Paragraph::plain("A"))]).into(), column_span:1, row_span:2, width_mm:None, shading:None, borders:None, vertical_alignment:Default::default() },
-                TableCell { id:NodeId::new(), blocks:(vec![Block::Paragraph(Paragraph::plain("B1"))]).into(), column_span:1, row_span:1, width_mm:None, shading:None, borders:None, vertical_alignment:Default::default() },
+                TableCell { id:NodeId::new(), blocks:(vec![Block::Paragraph(Paragraph::plain("A"))]).into(), column_span:1, row_span:2, width_mm:None, shading:None, borders:None, vertical_alignment:Default::default(), margins: None, text_direction: None },
+                TableCell { id:NodeId::new(), blocks:(vec![Block::Paragraph(Paragraph::plain("B1"))]).into(), column_span:1, row_span:1, width_mm:None, shading:None, borders:None, vertical_alignment:Default::default(), margins: None, text_direction: None },
             ]},
             TableRow { id:NodeId::new(), repeat_as_header:false, allow_break_across_pages:true, height_mm:None, cells:vec![
-                TableCell { id:NodeId::new(), blocks:(vec![Block::Paragraph(Paragraph::plain("B2"))]).into(), column_span:1, row_span:1, width_mm:None, shading:None, borders:None, vertical_alignment:Default::default() },
+                TableCell { id:NodeId::new(), blocks:(vec![Block::Paragraph(Paragraph::plain("B2"))]).into(), column_span:1, row_span:1, width_mm:None, shading:None, borders:None, vertical_alignment:Default::default(), margins: None, text_direction: None },
             ]},
         ],
     })]).into();

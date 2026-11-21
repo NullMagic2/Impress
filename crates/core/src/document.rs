@@ -482,6 +482,8 @@ pub struct TableProperties {
     pub alignment: Option<TableAlignment>,
     pub borders: Option<BorderSet>,
     pub cell_spacing_mm: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cell_margins: Option<TableCellMargins>,
     /// Logical table-grid column widths.  Keeping this on the table rather
     /// than individual physical cells makes merged cells and row spans share
     /// one stable width model and maps directly to DOCX `w:tblGrid`.
@@ -597,6 +599,33 @@ pub struct TableCell {
     pub borders: Option<BorderSet>,
     #[serde(default)]
     pub vertical_alignment: CellVerticalAlignment,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub margins: Option<TableCellMargins>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub text_direction: Option<CellTextDirection>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CellTextDirection { BottomToTop, TopToBottom }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct TableCellMargins {
+    pub top_mm: Option<f32>,
+    pub right_mm: Option<f32>,
+    pub bottom_mm: Option<f32>,
+    pub left_mm: Option<f32>,
+}
+
+impl TableCellMargins {
+    pub fn over(self, inherited: Self) -> Self {
+        Self {
+            top_mm: self.top_mm.or(inherited.top_mm),
+            right_mm: self.right_mm.or(inherited.right_mm),
+            bottom_mm: self.bottom_mm.or(inherited.bottom_mm),
+            left_mm: self.left_mm.or(inherited.left_mm),
+        }
+    }
 }
 
 const fn one() -> u16 { 1 }

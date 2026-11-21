@@ -10,9 +10,10 @@ pub fn target_at(document: &Document, scene: &render::VectorDocument, viewport: 
         .find(|(_,r)|contains(*r,point))?;
     let local=Point::new((point.x-rect.x)/scale,(point.y-rect.y)/scale);
     for region in scene.pages[page].hit_regions.iter().rev().filter(|r|contains(r.rect,local)) {
+        let coordinate = region.inline_coordinate(local);
         let offset=region.caret_stops.windows(2).find_map(|pair| {
             let (a,b)=(&pair[0],&pair[1]);
-            (local.x>=a.x_pt.min(b.x_pt) && local.x<a.x_pt.max(b.x_pt))
+            (coordinate>=a.x_pt.min(b.x_pt) && coordinate<a.x_pt.max(b.x_pt))
                 .then_some(a.byte_offset.min(b.byte_offset))
         }).or_else(||region.caret_stops.is_empty().then_some(region.byte_range.start));
         let Some(offset)=offset.filter(|v|region.byte_range.contains(v)) else {continue;};

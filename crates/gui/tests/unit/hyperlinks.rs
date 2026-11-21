@@ -47,7 +47,7 @@ fn wrapped_links_in_table_cells_work_after_zoom_and_scrolling() {
     h.content=vec![Inline::Text(TextRun::plain(label))].into();
     let label_end=start+label.len();
     doc.sections[0].blocks=vec![Block::Table(model::Table{id:NodeId::new(),properties:Default::default(),rows:vec![model::TableRow{
-        id:NodeId::new(),cells:vec![model::TableCell{id:NodeId::new(),blocks:vec![Block::Paragraph(p)].into(),column_span:1,row_span:1,width_mm:None,shading:None,borders:None,vertical_alignment:Default::default()}],repeat_as_header:false,allow_break_across_pages:true,height_mm:None,
+        id:NodeId::new(),cells:vec![model::TableCell{id:NodeId::new(),blocks:vec![Block::Paragraph(p)].into(),column_span:1,row_span:1,width_mm:None,shading:None,borders:None,vertical_alignment:Default::default(), margins: None, text_direction: None}],repeat_as_header:false,allow_break_across_pages:true,height_mm:None,
     }]})].into();
     let scene=layout::LayoutEngine::default().layout_document(&doc).unwrap();
     let viewport=ViewportState{dpi:144.0,zoom:1.7,scroll_px:Point::new(17.0,40.0),..Default::default()};

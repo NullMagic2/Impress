@@ -63,7 +63,7 @@ fn overwide_cached_field_wraps_inside_its_cell_and_keeps_atomic_source_positions
     let display="00:05:00 - 00:06:00 fi e\u{301} αβ";
     let mut p=Paragraph::plain("");let paragraph_id=p.id.0.clone();
     p.content=vec![Inline::Field(model::Field{id:NodeId::new(),kind:FieldKind::Raw{instruction:"CACHE".into()},display_text:Some(display.into()),color:Some("#1155CC".into())})].into();
-    let cell=model::TableCell{id:NodeId::new(),blocks:vec![Block::Paragraph(p)].into(),column_span:1,row_span:1,width_mm:None,shading:None,borders:None,vertical_alignment:Default::default()};
+    let cell=model::TableCell{id:NodeId::new(),blocks:vec![Block::Paragraph(p)].into(),column_span:1,row_span:1,width_mm:None,shading:None,borders:None,vertical_alignment:Default::default(), margins: None, text_direction: None};
     let cell_id=cell.id.0.clone();let mut document=Document::default();
     document.sections[0].blocks=vec![Block::Table(Table{id:NodeId::new(),properties:model::TableProperties{preferred_width_mm:Some(24.0),..Default::default()},rows:vec![model::TableRow{id:NodeId::new(),cells:vec![cell],repeat_as_header:false,allow_break_across_pages:true,height_mm:None}]})].into();
     let before=document.clone();let vector=LayoutEngine::default().layout_document(&document).unwrap();assert_eq!(document,before);

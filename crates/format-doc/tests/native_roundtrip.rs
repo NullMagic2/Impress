@@ -35,6 +35,8 @@ fn cell(text: &str) -> TableCell {
         shading: None,
         borders: None,
         vertical_alignment: CellVerticalAlignment::Top,
+        margins: None,
+        text_direction: None,
     }
 }
 fn row(cells: Vec<TableCell>) -> TableRow {
