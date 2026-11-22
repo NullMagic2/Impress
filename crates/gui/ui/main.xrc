@@ -3358,7 +3358,6 @@
                                                       <item>All markup</item>
                                                       <item>Simple markup</item>
                                                       <item>No markup</item>
-                                                      <item>Original</item>
                                                     </content>
                                                     <value>All markup</value>
                                                     <tooltip>markup mode combo</tooltip>
@@ -3370,9 +3369,8 @@
                                                   <object class="wxButton" name="show_markup_button">
                                                     <label></label>
                                                     <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
-                                                    <minsize>68,24</minsize>
-                                                    <enabled>0</enabled>
-                                                    <tooltip>Show markup — Not available in this alpha</tooltip>
+                                                    <minsize>132,24</minsize>
+                                                    <tooltip>Show markup</tooltip>
                                                   </object>
                                                 </object>
                                                 <object class="sizeritem">
@@ -3382,8 +3380,7 @@
                                                     <label></label>
                                                     <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
                                                     <minsize>68,24</minsize>
-                                                    <enabled>0</enabled>
-                                                    <tooltip>Reviewing pane — Not available in this alpha</tooltip>
+                                                    <tooltip>Reviewing pane</tooltip>
                                                   </object>
                                                 </object>
                                               </object>
@@ -3452,8 +3449,7 @@
                                                 <label></label>
                                                 <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
                                                 <minsize>62,78</minsize>
-                                                <enabled>0</enabled>
-                                                <tooltip>Accept change — Not available in this alpha</tooltip>
+                                                <tooltip>Accept change</tooltip>
                                               </object>
                                             </object>
                                             <object class="sizeritem">
@@ -3463,8 +3459,7 @@
                                                 <label></label>
                                                 <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
                                                 <minsize>62,78</minsize>
-                                                <enabled>0</enabled>
-                                                <tooltip>Reject change — Not available in this alpha</tooltip>
+                                                <tooltip>Reject change</tooltip>
                                               </object>
                                             </object>
                                             <object class="spacer">
@@ -3483,8 +3478,7 @@
                                                     <label></label>
                                                     <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
                                                     <minsize>68,24</minsize>
-                                                    <enabled>0</enabled>
-                                                    <tooltip>Previous — Not available in this alpha</tooltip>
+                                                    <tooltip>Previous</tooltip>
                                                   </object>
                                                 </object>
                                                 <object class="sizeritem">
@@ -3494,8 +3488,7 @@
                                                     <label></label>
                                                     <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
                                                     <minsize>68,24</minsize>
-                                                    <enabled>0</enabled>
-                                                    <tooltip>Next — Not available in this alpha</tooltip>
+                                                    <tooltip>Next</tooltip>
                                                   </object>
                                                 </object>
                                               </object>
@@ -5831,6 +5824,111 @@
                               </object>
                             </object>
                             <minsize>280,-1</minsize>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>0</option>
+                          <flag>wxEXPAND</flag>
+                          <object class="wxPanel" name="review_panel">
+                            <bg>#ffffff</bg>
+                            <style>wxBORDER_SIMPLE|wxTAB_TRAVERSAL</style>
+                            <object class="wxBoxSizer">
+                              <orient>wxVERTICAL</orient>
+                              <object class="sizeritem">
+                                <option>1</option>
+                                <flag>wxALL|wxEXPAND</flag>
+                                <border>12</border>
+                                <object class="wxBoxSizer">
+                                  <orient>wxVERTICAL</orient>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxEXPAND</flag>
+                                    <object class="wxBoxSizer">
+                                      <orient>wxHORIZONTAL</orient>
+                                      <object class="sizeritem">
+                                        <option>1</option>
+                                        <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                        <object class="wxStaticText" name="review_heading">
+                                          <label>Reviewing pane</label>
+                                          <font>
+                                            <inherit>1</inherit>
+                                            <size>11</size>
+                                            <weight>bold</weight>
+                                          </font>
+                                        </object>
+                                      </object>
+                                      <object class="sizeritem">
+                                        <option>0</option>
+                                        <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                        <object class="wxButton" name="review_close_button">
+                                          <label></label>
+                                          <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                          <minsize>28,28</minsize>
+                                          <tooltip>Close</tooltip>
+                                        </object>
+                                      </object>
+                                    </object>
+                                  </object>
+                                  <object class="spacer">
+                                    <size>0,8</size>
+                                    <option>0</option>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>2</option>
+                                    <flag>wxEXPAND</flag>
+                                    <object class="wxListBox" name="review_list"></object>
+                                  </object>
+                                  <object class="spacer">
+                                    <size>0,8</size>
+                                    <option>0</option>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>1</option>
+                                    <flag>wxEXPAND</flag>
+                                    <object class="wxTextCtrl" name="review_details">
+                                      <style>wxTE_MULTILINE|wxTE_READONLY</style>
+                                    </object>
+                                  </object>
+                                  <object class="spacer">
+                                    <size>0,8</size>
+                                    <option>0</option>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxEXPAND</flag>
+                                    <object class="wxBoxSizer">
+                                      <orient>wxHORIZONTAL</orient>
+                                      <object class="sizeritem">
+                                        <option>1</option>
+                                        <flag>wxEXPAND</flag>
+                                        <object class="wxButton" name="review_accept_button">
+                                          <label></label>
+                                          <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                          <minsize>90,30</minsize>
+                                          <tooltip>Accept</tooltip>
+                                        </object>
+                                      </object>
+                                      <object class="spacer">
+                                        <size>8,0</size>
+                                        <option>0</option>
+                                      </object>
+                                      <object class="sizeritem">
+                                        <option>1</option>
+                                        <flag>wxEXPAND</flag>
+                                        <object class="wxButton" name="review_reject_button">
+                                          <label></label>
+                                          <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                          <minsize>90,30</minsize>
+                                          <tooltip>Reject</tooltip>
+                                        </object>
+                                      </object>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                            </object>
+                            <hidden>1</hidden>
+                            <minsize>300,-1</minsize>
                           </object>
                         </object>
                       </object>

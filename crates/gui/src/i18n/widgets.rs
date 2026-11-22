@@ -187,15 +187,14 @@ self.markup_mode_combo.clear();
 self.markup_mode_combo.append(&text("All markup"));
 self.markup_mode_combo.append(&text("Simple markup"));
 self.markup_mode_combo.append(&text("No markup"));
-self.markup_mode_combo.append(&text("Original"));
 if let Some(index) = selected { self.markup_mode_combo.set_selection(index); } else { self.markup_mode_combo.change_value(&current); }
-self.show_markup_button.set_tooltip(&text("Show markup — Not available in this alpha"));
-self.reviewing_pane_button.set_tooltip(&text("Reviewing pane — Not available in this alpha"));
+self.show_markup_button.set_tooltip(&text("Show markup"));
+self.reviewing_pane_button.set_tooltip(&text("Reviewing pane"));
 self.i18n_control_153.set_label(&text("Tracking"));
-self.accept_change_button.set_tooltip(&text("Accept change — Not available in this alpha"));
-self.reject_change_button.set_tooltip(&text("Reject change — Not available in this alpha"));
-self.previous_change_button.set_tooltip(&text("Previous — Not available in this alpha"));
-self.next_change_button.set_tooltip(&text("Next — Not available in this alpha"));
+self.accept_change_button.set_tooltip(&text("Accept change"));
+self.reject_change_button.set_tooltip(&text("Reject change"));
+self.previous_change_button.set_tooltip(&text("Previous"));
+self.next_change_button.set_tooltip(&text("Next"));
 self.i18n_control_158.set_label(&text("Changes"));
 self.compare_button.set_tooltip(&text("Compare two versions — Not available in this alpha"));
 self.i18n_control_160.set_label(&text("Compare"));
@@ -302,6 +301,10 @@ self.styles_modify_button.set_tooltip(&text("Modify…"));
 self.styles_inspect_button.set_tooltip(&text("Inspect…"));
 self.styles_delete_button.set_tooltip(&text("Delete…"));
 self.styles_manage_button.set_tooltip(&text("Manage Styles…"));
+self.review_heading.set_label(&text("Reviewing pane"));
+self.review_close_button.set_tooltip(&text("Close"));
+self.review_accept_button.set_tooltip(&text("Accept"));
+self.review_reject_button.set_tooltip(&text("Reject"));
 self.graphical_mode_button.set_tooltip(&text("Graphical"));
 self.typst_mode_button.set_tooltip(&text("Typst"));
 self.split_mode_button.set_tooltip(&text("Split"));
@@ -1524,7 +1527,7 @@ pub(super) fn canonical_choice(name:&str,value:&str)->String { match name {
 "lay_v_align_value" => super::choice_source(value,&["Top", "Centered", "Bottom"]),
 "line_spacing_combo" => super::choice_source(value,&["1", "1.15", "1.2", "1.5", "2", "2.5", "3"]),
 "margins_combo" => super::choice_source(value,&["Normal (25.4 mm)", "Narrow (12.7 mm)", "Wide (38.1 mm)"]),
-"markup_mode_combo" => super::choice_source(value,&["All markup", "Simple markup", "No markup", "Original"]),
+"markup_mode_combo" => super::choice_source(value,&["All markup", "Simple markup", "No markup"]),
 "new_style_base_combo" => super::choice_source(value,&["APA", "IEEE", "Chicago", "MLA", "Harvard"]),
 "num_level" => super::choice_source(value,&["1", "2", "3", "4", "5", "6", "7", "8", "9"]),
 "paper_size_combo" => super::choice_source(value,&["A4", "Letter", "Legal", "A5"]),

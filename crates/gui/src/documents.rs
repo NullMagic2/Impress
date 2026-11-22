@@ -17,6 +17,7 @@ pub(crate) struct Parked {
     scroll: Point,
     search_marks: Option<(u64, u64, Vec<render::ColoredOverlayRect>)>,
     inline_spelling: inline_spelling::InlineSpelling,
+    revisions: ribbon::revision_tools::ReviewView,
     caret_page_hint: Option<usize>,
     preferred_caret_x_pt: Option<f32>,
     caret_visual_line: Option<usize>,
@@ -153,6 +154,7 @@ fn exchange(s: &mut CanvasState, p: &mut Parked) {
     std::mem::swap(&mut s.viewport.scroll_px, &mut p.scroll);
     std::mem::swap(&mut s.search_marks, &mut p.search_marks);
     std::mem::swap(&mut s.inline_spelling, &mut p.inline_spelling);
+    std::mem::swap(&mut s.revisions, &mut p.revisions);
     std::mem::swap(&mut s.caret_page_hint, &mut p.caret_page_hint);
     std::mem::swap(&mut s.preferred_caret_x_pt, &mut p.preferred_caret_x_pt);
     std::mem::swap(&mut s.caret_visual_line, &mut p.caret_visual_line);
@@ -208,7 +210,7 @@ pub(crate) fn add(s: &mut CanvasState, document: Document, path: Option<PathBuf>
     let parked = Parked {
         editor, snapshot: None, current_path: path, recovery: recovery::Recovery::new(),
         vector_document: Arc::new(VectorDocument::default()), zoom: s.viewport.zoom, scroll: Point::new(0.0, 0.0),
-        search_marks: None, inline_spelling: Default::default(), caret_page_hint: None,
+        search_marks: None, inline_spelling: Default::default(), revisions: Default::default(), caret_page_hint: None,
         preferred_caret_x_pt: None, caret_visual_line: None, layout_error: None,
     };
     let id = s.documents.next_id; s.documents.next_id += 1;

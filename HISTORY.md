@@ -1,3 +1,13 @@
+## 0.8.6-86 — Review ribbon
+
+- Navigate pending revisions with Previous and Next. Accept or reject the current edit from the ribbon or Reviewing Pane, then continue to the next pending edit. Use Undo to reverse a decision.
+- See each tracked DOCX edit once in the Reviewing Pane, with its author, timestamp, and available text details.
+- Choose inline highlights, margin marks, or hidden markup. Filter marks for text, formatting, and structural changes.
+
+## 0.8.6-85 — DOCX table layout
+
+- Keep nested tables and rotated cell text visible when opening DOCX documents.
+
 ## 0.8.6-69 — Style color dropdown
 
 Modify Style uses the same native swatch dropdown as the Font dialog. Escape or a click outside dismisses the list.

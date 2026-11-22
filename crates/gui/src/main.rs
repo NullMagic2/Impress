@@ -144,6 +144,7 @@ struct CanvasState {
     /// The selected sticky comment on the page.
     comment_selected: Option<NodeId>,
     comments_visible: bool,
+    revisions: ribbon::revision_tools::ReviewView,
     comment_leaders: Vec<render::ChromeShape>,
     pending_comment: Option<NodeId>,
     pending_new_comment: bool,
@@ -288,6 +289,7 @@ fn main() {
             equation_slot: None,
             comment_selected: None,
             comments_visible: true,
+            revisions: Default::default(),
             comment_leaders: Vec::new(),
             equation_pane_slot: None,
             pending_comment: None,
@@ -486,6 +488,7 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
         let document = Arc::clone(&state.vector_document);
         let viewport = state.viewport;
         let mut overlay = state.overlay.clone();
+        ribbon::revision_tools::adorn(&state, &mut overlay);
         if !state.caret_visible { overlay.caret = None; }
         overlay.chrome = header_footer_ui::chrome(&state);
         overlay.chrome.extend(table_ui::chrome(&state));

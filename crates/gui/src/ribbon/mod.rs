@@ -48,6 +48,7 @@ mod generated;
 mod group_relief;
 mod navigation;
 mod review_ui;
+pub(crate) mod revision_tools;
 mod spelling_menu;
 mod spelling_dialog;
 mod dictionary_install_ui;
@@ -129,6 +130,7 @@ enum Action {
     Pdf, ImportPdf, Print, CommentNew, CommentDelete, CommentResolve, CommentStep(bool), StyleManager, ManageStyles, StyleGalleryMore, StylesClose, StyleNew, StyleModify, StyleApply, StyleInspect, StyleDelete, ClearDirect, Highlight, Hyphenation, TextLanguage,
     SearchOptions, SearchStep(bool), ReplaceOne, ReplaceAll,
     Contents, ContentsUpdate, ContentsLevel, Footnotes, Bookmarks, Comments, TextTracking, Spelling, Compatibility,
+    ReviewMarkup, ReviewPane, RevisionResolve(bool), RevisionStep(bool),
     EquationClose,
     SelectCells(u8), Table(crate::table_ui::TableOp), TablePosition, CloseTableTools, PictureAlign(u8), PictureDelete, ClosePictureTools, HeaderVariant(u8), HeaderFooterGo(bool), InsertField(u8), RemoveHeaderFooter, InsertNote(bool), NextFootnote(bool), ShowNotes, ExitHeaderFooter, ToggleRibbon, Help, CitationManager, SelectRibbonTab(u8), Brand, Unavailable,
     GrowFont, ShrinkFont, FontColor, Typography, Align(ParagraphAlignment), Indent(f32),
@@ -268,6 +270,7 @@ pub struct Ribbon {
     table_bar: RefCell<Option<Rc<table_bar::TableBar>>>,
     picture_bar: RefCell<Option<Rc<picture_bar::PictureBar>>>,
     spell_job: RefCell<Option<review_ui::SpellJob>>,
+    review_pane: RefCell<revision_tools::PaneView>,
     spelling_languages: RefCell<Vec<String>>,
     output_progress: RefCell<Option<output_progress::Progress>>,
     dictionary_install: RefCell<Option<Rc<dictionary_install_ui::InstallDialog>>>,
@@ -293,6 +296,7 @@ impl Ribbon {
         ui.navigator_panel.hide();
         ui.styles_resize_handle.hide();
         ui.styles_panel.hide();
+        ui.review_panel.hide();
         ui.root_panel.layout();
         ui.main_frame.layout();
     }
@@ -310,7 +314,7 @@ impl Ribbon {
             last_status: RefCell::new(String::new()), last_title: RefCell::new(String::new()),
             last_scroll: Cell::new(None), navigation: RefCell::new(Vec::new()), navigation_revision: Cell::new(None),
             search_options: Cell::new(Default::default()), search_report: RefCell::new(None), search_job: RefCell::new(None), search_due: Cell::new(Instant::now()), search_cursor: Cell::new(None),
-            last_context: RefCell::new(None), context_key: RefCell::new(None), label_text: RefCell::new(HashMap::new()), equation: RefCell::new(None), comments: RefCell::new(None), style_gallery: RefCell::new(None), style_context: RefCell::new(None), tab_strip: RefCell::new(None), tab_ruler: RefCell::new(None), recent_paths: RefCell::new(Vec::new()), recent_settings_open: Rc::new(Cell::new(false)), table_bar: RefCell::new(None), picture_bar: RefCell::new(None), spell_job: RefCell::new(None), spelling_languages: RefCell::new(Vec::new()), output_progress: RefCell::new(None), dictionary_install: RefCell::new(None), dictionary_manager: RefCell::new(None), spelling_context: RefCell::new(None), table_context_menu: RefCell::new(None),
+            last_context: RefCell::new(None), context_key: RefCell::new(None), label_text: RefCell::new(HashMap::new()), equation: RefCell::new(None), comments: RefCell::new(None), style_gallery: RefCell::new(None), style_context: RefCell::new(None), tab_strip: RefCell::new(None), tab_ruler: RefCell::new(None), recent_paths: RefCell::new(Vec::new()), recent_settings_open: Rc::new(Cell::new(false)), table_bar: RefCell::new(None), picture_bar: RefCell::new(None), spell_job: RefCell::new(None), review_pane: RefCell::default(), spelling_languages: RefCell::new(Vec::new()), output_progress: RefCell::new(None), dictionary_install: RefCell::new(None), dictionary_manager: RefCell::new(None), spelling_context: RefCell::new(None), table_context_menu: RefCell::new(None),
             source_revision: Cell::new(None), source_job: RefCell::new(None), source_copy_pending: Cell::new(false),
         });
         generated::install_group_relief(&this.ui);
@@ -321,6 +325,7 @@ impl Ribbon {
         )));
         this.comments.replace(Some(comment_notes::CommentNotes::install(&this)));
         this.bind();
+        revision_tools::bind(&this);
         this.style_gallery.replace(Some(style_gallery::install(&this)));
         this.tab_strip.replace(Some(tab_strip::install(&this)));
         interface_language::install(&this);
@@ -421,6 +426,7 @@ impl Ribbon {
                 if section_break_menu::handle(&ribbon, event.get_id()) { return; }
                 if ribbon.handle_recent_files(event.get_id()) { return; }
                 if ribbon.handle_review_menu(event.get_id()) { return; }
+                if ribbon.handle_markup_menu(event.get_id()) { return; }
                 if ribbon.handle_table_context_menu(event.get_id()) { return; }
                 if ribbon.handle_spelling_menu(event.get_id()) { return; }
                 if let Some(mode) = ligature_mode { ribbon.commit_ligature_mode(mode); }
@@ -722,6 +728,10 @@ impl Ribbon {
             }
             Action::CommentStep(forward) => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.step(forward); } }
             Action::TextTracking => self.show_review_menu(),
+            Action::ReviewMarkup => self.show_markup_menu(),
+            Action::ReviewPane => self.toggle_review_pane(),
+            Action::RevisionResolve(accept) => self.resolve_current_revision(accept)?,
+            Action::RevisionStep(forward) => self.step_revision(forward)?,
             Action::Spelling => self.start_spelling()?, Action::Compatibility => self.compatibility(),
             Action::Unavailable => return Err("This command is not available in the current alpha.".into()),
         }
@@ -1452,6 +1462,7 @@ impl Ribbon {
         }
         let epoch=self.state.borrow().documents.epoch;
         if self.document_epoch.replace(epoch)!=epoch{self.document_shown();}
+        self.sync_revision_controls();
         self.doc_switcher.borrow().as_ref().map(|switcher|switcher.refresh());
         dropdown::poll();font_preview::poll();
         typst_highlight::poll(self.ui.typst_editor);
@@ -1610,6 +1621,9 @@ impl Ribbon {
     fn sync_buttons(&self, format: &FormattingSummary, section: Option<&SectionProperties>, undo: bool, redo: bool, selection: bool) {
         let mut states = self.button_states.borrow_mut();
         for (index, spec) in self.buttons.iter().enumerate() {
+            if matches!(spec.action, Action::ReviewPane | Action::RevisionResolve(_) | Action::RevisionStep(_)) {
+                continue;
+            }
             let selected = match spec.action {
                 Action::SelectRibbonTab(index) => self.tab_index.get()==index as usize,
                 Action::Editor(AppCommand::Bold) => format.character.bold == Some(true),
@@ -1624,6 +1638,11 @@ impl Ribbon {
                 Action::View(mode) => self.mode.get() == mode,
                 Action::ToggleNavigation | Action::ShowNavigation => self.ui.navigator_panel.is_shown(),
                 Action::Comments => self.comments.borrow().as_ref().is_some_and(|notes| notes.shown()),
+                Action::TextTracking => {
+                    let state = self.state.borrow();
+                    let review = &state.editor.document.review;
+                    review.track_history || review.track_text
+                }
                 _ => false,
             };
             let enabled = !spec.disabled && match spec.action {

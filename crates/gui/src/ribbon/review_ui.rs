@@ -8,6 +8,8 @@ use wxdragon::geometry::Point;
 const WORD_REVISIONS: i32 = 32_700;
 const NATIVE_HISTORY: i32 = 32_701;
 const PARAGRAPH_TEXT_CHANGES: i32 = 32_702;
+const TRACK_NATIVE: i32 = 32_703;
+const TRACK_PARAGRAPHS: i32 = 32_704;
 
 pub(super) struct SpellJob { pub generation:u64, pub revision:u64, pub selection_only:bool, pub dictionary:crate::spelling::Dictionary, pub receiver:Receiver<Result<crate::spelling::Report,String>> }
 impl Ribbon {
@@ -33,11 +35,21 @@ impl Ribbon {
         } else {
             (self.ui.changes_button, "Text changes")
         };
+        let (native, paragraphs) = {
+            let state = self.state.borrow();
+            let review = &state.editor.document.review;
+            (review.track_history, review.track_text)
+        };
         let mut menu = Menu::builder()
+            .append_check_item(TRACK_NATIVE, &text("Track all edits in Impress"), "")
+            .append_check_item(TRACK_PARAGRAPHS, &text("Track paragraph text for DOCX"), "")
+            .append_separator()
             .append_item(WORD_REVISIONS, &text("Word revisions…"), "")
             .append_item(NATIVE_HISTORY, &text("Chronological native history (all edit kinds)…"), "")
             .append_item(PARAGRAPH_TEXT_CHANGES, &text("DOCX-compatible net paragraph-text changes…"), "")
             .build();
+        menu.check_item(TRACK_NATIVE, native);
+        menu.check_item(TRACK_PARAGRAPHS, paragraphs);
         let anchor = crate::gtk_native::to_screen(&button, Point::new(0, button.get_size().height));
         button.set_tooltip("");
         self.ui.main_frame.popup_menu(&mut menu, Some(anchor));
@@ -49,6 +61,8 @@ impl Ribbon {
             WORD_REVISIONS => self.word_revisions(),
             NATIVE_HISTORY => self.native_history(),
             PARAGRAPH_TEXT_CHANGES => self.paragraph_text_changes(),
+            TRACK_NATIVE => self.toggle_tracking(true),
+            TRACK_PARAGRAPHS => self.toggle_tracking(false),
             _ => return false,
         };
         if let Err(error) = result {
@@ -56,6 +70,25 @@ impl Ribbon {
         }
         self.focus_document();
         true
+    }
+
+    fn toggle_tracking(&self, native: bool) -> Result<(), String> {
+        let (enabled, author) = {
+            let state = self.state.borrow();
+            let review = &state.editor.document.review;
+            (!(if native { review.track_history } else { review.track_text }), review.author.clone())
+        };
+        let author = if enabled && author.is_empty() {
+            let Some(author) = self.text_review("Revision author", "Author name:", "", false) else { return Ok(()) };
+            author
+        } else {
+            author
+        };
+        self.edit(|editor| if native {
+            editor.set_revision_history(enabled, &author)
+        } else {
+            editor.set_text_tracking(enabled, &author)
+        })
     }
 
     fn paragraph_text_changes(&self)->Result<(),String>{

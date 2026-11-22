@@ -428,6 +428,25 @@ rr=styles_row(bottom=PANE_PAD)
 button(rr,'styles_manage_button','Manage Styles…','','ManageStyles','pane',metrics=(220,28,0,0))
 rr[-1].find('option').text='1';rr[-1].find('flag').text='wxEXPAND'
 
+# The Reviewing pane lives alongside the canvas and follows the active document.
+review_panel,review_box=panel(workrow,'review_panel','wxVERTICAL',style='wxBORDER_SIMPLE|wxTAB_TRAVERSAL')
+prop(review_panel,'hidden','1')
+size(review_panel,'review_panel',300,-1)
+review_content=sizer(item(review_box,1,'wxALL|wxEXPAND',PANE_PAD),'wxVERTICAL')
+review_header=sizer(item(review_content,0,'wxEXPAND'))
+bold(label(review_header,'Reviewing pane','review_heading',option=1,flag='wxALIGN_CENTER_VERTICAL'),11)
+button(review_header,'review_close_button','Close','x','ReviewPane','icon',metrics=PANE_CLOSE)
+space(review_content,0,8)
+obj(item(review_content,2,'wxEXPAND'),'wxListBox','review_list')
+space(review_content,0,8)
+obj(item(review_content,1,'wxEXPAND'),'wxTextCtrl','review_details',style='wxTE_MULTILINE|wxTE_READONLY')
+space(review_content,0,8)
+review_actions=sizer(item(review_content,0,'wxEXPAND'))
+for name_,label_,action_ in [('review_accept_button','Accept','RevisionResolve(true)'),('review_reject_button','Reject','RevisionResolve(false)')]:
+    button(review_actions,name_,label_,'',action_,'pane',metrics=(90,30,0,0))
+    slot=review_actions[-1];slot.find('option').text='1';slot.find('flag').text='wxEXPAND'
+    if name_=='review_accept_button': space(review_actions,8)
+
 status,s=panel(rootbox,'status_panel',bg=COLORS['status']);size(status,'status_panel',-1,32)
 for index,(n,l,i,mode) in enumerate([('graphical_mode_button','Graphical','portrait','Graphical'),('typst_mode_button','Typst','typst','Typst'),('split_mode_button','Split','split','Split')]):button(s,n,l,i,'View(ViewMode::'+mode+')','mode',segment=segment_at(index,3))
 button(s,'text_language_button','Spelling','spell','TextLanguage','small','Spelling options and installed languages',metrics=(112,26,16,16))
@@ -441,6 +460,7 @@ size(z,'zoom_slider',140,26)
 button(s,'zoom_in_button','Zoom in','zoom_in','ZoomStep(0.1)','quick')
 label(s,'100%','zoom_label',flag='wxALL|wxALIGN_CENTER_VERTICAL',border=4)
 button(s,'fit_width_button','Page width','fit','FitWidth','quick','Fit page width')
+
 
 # The supplied design becomes the only visible ribbon. Historical typed
 # service widgets are retained offscreen for editor operations they support.

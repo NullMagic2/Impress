@@ -1115,12 +1115,6 @@
     "Aceitar alteração",
     "Aceitar alteração"
   ],
-  "Accept change — Not available in this alpha": [
-    "Αποδοχή αλλαγής — Δεν διατίθεται σε αυτή την έκδοση άλφα",
-    "Aceptar cambio — No disponible en esta versión alfa",
-    "Aceitar alteração — Não disponível nesta versão alfa",
-    "Aceitar alteração — Não disponível nesta versão alfa"
-  ],
   "Accept comment": [
     "Αποδοχή σχολίου",
     "Aceptar comentario",
@@ -2511,7 +2505,7 @@
     "Μορφοποίηση χαρακτήρων",
     "Formato de caracteres",
     "Formatação de caracteres",
-    "Formatação de caracteres"
+    "Formatação de carateres"
   ],
   "Character formatting exceeds the native DOC run limit": [
     "Η μορφοποίηση χαρακτήρων υπερβαίνει το εγγενές όριο τμήματος κειμένου DOC",
@@ -7967,6 +7961,12 @@
     "Inserir a data de hoje",
     "Inserir a data de hoje"
   ],
+  "Inserted": [
+    "Εισήχθη",
+    "Insertado",
+    "Inserido",
+    "Inserido"
+  ],
   "Inside": [
     "Εσωτερικά",
     "Interior",
@@ -10145,12 +10145,6 @@
     "Próxima linha de estilos",
     "Próxima linha de estilos"
   ],
-  "Next — Not available in this alpha": [
-    "Επόμενο — Δεν διατίθεται σε αυτή την έκδοση άλφα",
-    "Siguiente — No disponible en esta versión alfa",
-    "Próximo — Não disponível nesta versão alfa",
-    "Seguinte — Não disponível nesta versão alfa"
-  ],
   "No": [
     "Όχι",
     "No",
@@ -10330,6 +10324,12 @@
     "No se ha seleccionado ningún párrafo.",
     "Nenhum parágrafo selecionado.",
     "Nenhum parágrafo seleccionado."
+  ],
+  "No pending changes.": [
+    "Δεν υπάρχουν εκκρεμείς αλλαγές.",
+    "No hay cambios pendientes.",
+    "Não há alterações pendentes.",
+    "Não há alterações pendentes."
   ],
   "No reflection": [
     "Χωρίς αντανάκλαση",
@@ -11142,10 +11142,10 @@
     "Quebra de parágrafo"
   ],
   "Paragraph formatting": [
-    "Μορφοποίηση της παραγράφου",
-    "Formato de los párrafos",
-    "Formatação de parágrafos",
-    "Formatação de parágrafos"
+    "Μορφοποίηση παραγράφου",
+    "Formato de párrafo",
+    "Formatação de parágrafo",
+    "Formatação de parágrafo"
   ],
   "Paragraph formatting exceeds the native DOC Data record limit": [
     "Η μορφοποίηση παραγράφου υπερβαίνει το όριο εγγραφής Data εγγενούς DOC",
@@ -11723,12 +11723,6 @@
     "Fila anterior de estilos",
     "Fila anterior de estilos"
   ],
-  "Previous — Not available in this alpha": [
-    "Προηγούμενο — Δεν διατίθεται σε αυτή την έκδοση άλφα",
-    "Anterior — No disponible en esta versión alfa",
-    "Anterior — Não disponível nesta versão alfa",
-    "Anterior — Não disponível nesta versão alfa"
-  ],
   "Print": [
     "Εκτύπωση",
     "Imprimir",
@@ -12149,12 +12143,6 @@
     "Rejeitar alteração",
     "Rejeitar alteração"
   ],
-  "Reject change — Not available in this alpha": [
-    "Απόρριψη αλλαγής — Δεν διατίθεται σε αυτή την έκδοση άλφα",
-    "Rechazar cambio — No disponible en esta versión alfa",
-    "Rejeitar alteração — Não disponível nesta versão alfa",
-    "Rejeitar alteração — Não disponível nesta versão alfa"
-  ],
   "Reject comment": [
     "Απόρριψη σχολίου",
     "Rechazar comentario",
@@ -12328,6 +12316,12 @@
     "Quitar tabla de contenido",
     "Remover sumário",
     "Remover índice"
+  ],
+  "Removed": [
+    "Αφαιρέθηκε",
+    "Eliminado",
+    "Removido",
+    "Removido"
   ],
   "Removed:\n{}\n\nInserted:\n{}": [
     "Αφαιρέθηκε: {} Εισήχθη: {}",
@@ -12760,12 +12754,6 @@
     "Panel de revisiones",
     "Painel de Revisão",
     "Painel de Revisão"
-  ],
-  "Reviewing pane — Not available in this alpha": [
-    "Παράθυρο αναθεώρησης — Δεν διατίθεται σε αυτή την έκδοση άλφα",
-    "Panel de revisiones — No disponible en esta versión alfa",
-    "Painel de Revisão — Não disponível nesta versão alfa",
-    "Painel de Revisão — Não disponível nesta versão alfa"
   ],
   "Revised paragraph no longer exists": [
     "Δεν υπάρχει πλέον αναθεωρημένη παράγραφος",
@@ -13733,12 +13721,6 @@
     "Mostrar marcações",
     "Mostrar marcações"
   ],
-  "Show markup — Not available in this alpha": [
-    "Εμφάνιση σημάνσεων — Δεν διατίθεται σε αυτή την έκδοση άλφα",
-    "Mostrar marcas — No disponible en esta versión alfa",
-    "Mostrar marcações — Não disponível nesta versão alfa",
-    "Mostrar marcações — Não disponível nesta versão alfa"
-  ],
   "Show navigation pane": [
     "Εμφάνιση παραθύρου πλοήγησης",
     "Mostrar panel de navegación",
@@ -14344,6 +14326,12 @@
     "Flecha derecha rayada",
     "Seta para a direita listrada",
     "Seta para a direita às riscas"
+  ],
+  "Structural changes": [
+    "Δομικές αλλαγές",
+    "Cambios estructurales",
+    "Alterações estruturais",
+    "Alterações estruturais"
   ],
   "Structures": [
     "Δομές",
@@ -15785,6 +15773,12 @@
     "Este marcador já não tem uma âncora de texto",
     "Este marcador já não tem uma âncora de texto"
   ],
+  "This change is no longer pending.": [
+    "Αυτή η αλλαγή δεν εκκρεμεί πλέον.",
+    "Este cambio ya no está pendiente.",
+    "Esta alteração não está mais pendente.",
+    "Esta alteração já não está pendente."
+  ],
   "This command is not available in the current alpha.": [
     "Αυτή η εντολή δεν είναι διαθέσιμη στην τρέχουσα άλφα.",
     "Este comando no está disponible en el alfa actual.",
@@ -16193,23 +16187,29 @@
     "Superior:",
     "Superior:"
   ],
+  "Track all edits in Impress": [
+    "Παρακολούθηση όλων των επεξεργασιών στο Impress",
+    "Registrar todas las ediciones en Impress",
+    "Controlar todas as edições no Impress",
+    "Registar todas as edições no Impress"
+  ],
   "Track changes": [
     "Παρακολούθηση αλλαγών",
     "Control de cambios",
     "Controlar alterações",
     "Registar alterações"
   ],
-  "Track changes (Ctrl+Shift+E)": [
-    "Παρακολούθηση αλλαγών (Ctrl+Shift+E)",
-    "Control de cambios (Ctrl+Shift+E)",
-    "Controlar alterações (Ctrl+Shift+E)",
-    "Registar alterações (Ctrl+Shift+E)"
-  ],
   "Track paragraph text": [
     "Παρακολουθήστε το κείμενο της παραγράφου",
     "Texto del párrafo de seguimiento",
     "Rastrear o texto do parágrafo",
     "Texto do parágrafo da faixa"
+  ],
+  "Track paragraph text for DOCX": [
+    "Παρακολούθηση κειμένου παραγράφων για DOCX",
+    "Registrar el texto de los párrafos para DOCX",
+    "Controlar o texto dos parágrafos para DOCX",
+    "Registar o texto dos parágrafos para DOCX"
   ],
   "Track text changes": [
     "Αλλαγή κειμένου τροχιάς",

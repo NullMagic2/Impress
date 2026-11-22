@@ -84,6 +84,9 @@ def adopt(env):
         'new_comment_button':'CommentNew','delete_comment_button':'CommentDelete',
         'resolve_comment_button':'CommentResolve','previous_comment_button':'CommentStep(false)',
         'next_comment_button':'CommentStep(true)',
+        'show_markup_button':'ReviewMarkup','reviewing_pane_button':'ReviewPane',
+        'accept_change_button':'RevisionResolve(true)','reject_change_button':'RevisionResolve(false)',
+        'previous_change_button':'RevisionStep(false)','next_change_button':'RevisionStep(true)',
         # Both insert at the caret: Equation in the equation pane, Inline in
         # a box in the text line.
         'display_equation_button':'Editor(AppCommand::InsertEquation)',
@@ -135,7 +138,7 @@ def adopt(env):
         if kind=='button':
             style=data['style']; button_kind,w,h,aw,ah=styles[style]
             # Typography and Hyphenation open menus: a caret, and one width.
-            menu_buttons=('typography_menu_button','hyphenation_button')
+            menu_buttons=('typography_menu_button','hyphenation_button','show_markup_button')
             if name in menu_buttons: w=132
             art=style_icons.get(name,data['icon'])
             text=data['label']; tip=data['tip']
@@ -158,6 +161,7 @@ def adopt(env):
                 if stacked(parent,style): align_left(parent,name)
                 spec=buttons[-1]
                 spec.update(width_dip=w,height_dip=h,art_width_dip=aw,art_height_dip=ah)
+                if name in menu_buttons: spec['kind']='typography-menu'
                 node=next(n for n in parent.iter('object') if n.get('name')==name)
                 set_prop(node,'minsize',f'{w},{h}')
                 sizes.append((name,w,h))
