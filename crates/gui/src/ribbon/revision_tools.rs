@@ -703,12 +703,25 @@ impl Ribbon {
             wxdragon::geometry::Point::new(0, button.get_size().height),
         );
         self.ui.main_frame.popup_menu(&mut menu, Some(anchor));
+        let changed = {
+            let state = self.state.borrow();
+            state.revisions.markup != mode || state.revisions.hidden != hidden
+        };
+        if changed {
+            // GTK can first repaint only the area uncovered by the popup.
+            // Invalidate the whole canvas now that the menu is closed.
+            self.repaint_revision_marks();
+        }
+    }
+
+    fn repaint_revision_marks(&self) {
+        self.state.borrow_mut().needs_present = true;
+        self.ui.paper_canvas.refresh(false, None);
     }
 
     fn set_markup_mode(&self, mode: Markup) {
-        let mut state = self.state.borrow_mut();
-        state.revisions.markup = mode;
-        state.needs_present = true;
+        self.state.borrow_mut().revisions.markup = mode;
+        self.repaint_revision_marks();
     }
 
     pub(super) fn handle_markup_menu(&self, id: i32) -> bool {
@@ -720,9 +733,8 @@ impl Ribbon {
         let Some((category, _)) = Category::MENU.get(id.wrapping_sub(MARKUP_FIRST) as usize) else {
             return false;
         };
-        let mut state = self.state.borrow_mut();
-        state.revisions.hidden ^= category.bit();
-        state.needs_present = true;
+        self.state.borrow_mut().revisions.hidden ^= category.bit();
+        self.repaint_revision_marks();
         true
     }
 
