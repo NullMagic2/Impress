@@ -76,7 +76,7 @@ def adopt(env):
         'print_layout_button':'view_graphical_button', 'split_window_button':'view_split_button',
     }
     # Mockup-only buttons whose command exists although no historical button does.
-    mockup_actions={'update_toc_button':'ContentsUpdate','toc_add_text_button':'ContentsLevel','zoom_dialog_button':'ZoomDialog','insert_citation_button':'CitationManager','date_time_button':'InsertField(2)',
+    mockup_actions={'track_changes_button':'TrackChanges','update_toc_button':'ContentsUpdate','toc_add_text_button':'ContentsLevel','zoom_dialog_button':'ZoomDialog','insert_citation_button':'CitationManager','date_time_button':'InsertField(2)',
         # Word's footnote commands: insert and edit on the page, step through notes.
         'insert_footnote_button':'InsertNote(false)','insert_endnote_button':'InsertNote(true)',
         'next_footnote_button':'NextFootnote(true)','show_notes_button':'ShowNotes',
@@ -84,7 +84,7 @@ def adopt(env):
         'new_comment_button':'CommentNew','delete_comment_button':'CommentDelete',
         'resolve_comment_button':'CommentResolve','previous_comment_button':'CommentStep(false)',
         'next_comment_button':'CommentStep(true)',
-        'show_markup_button':'ReviewMarkup','reviewing_pane_button':'ReviewPane',
+        'markup_display_button':'ReviewDisplay','show_markup_button':'ReviewMarkup','reviewing_pane_button':'ReviewPane',
         'accept_change_button':'RevisionResolve(true)','reject_change_button':'RevisionResolve(false)',
         'previous_change_button':'RevisionStep(false)','next_change_button':'RevisionStep(true)',
         # Both insert at the caret: Equation in the equation pane, Inline in
@@ -138,8 +138,8 @@ def adopt(env):
         if kind=='button':
             style=data['style']; button_kind,w,h,aw,ah=styles[style]
             # Typography and Hyphenation open menus: a caret, and one width.
-            menu_buttons=('typography_menu_button','hyphenation_button','show_markup_button')
-            if name in menu_buttons: w=132
+            menu_buttons=('typography_menu_button','hyphenation_button','show_markup_button','markup_display_button')
+            if name in menu_buttons: w=156 if name=='markup_display_button' else 132
             art=style_icons.get(name,data['icon'])
             text=data['label']; tip=data['tip']
             if name in original:

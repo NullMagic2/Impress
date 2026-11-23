@@ -86,7 +86,7 @@ pub struct CellFacts { pub width_mm: f32, pub height_mm: Option<f32>, pub actual
 /// object control looks alike.
 pub(crate) const BLUE: Color = Color { r: 37.0 / 255.0, g: 99.0 / 255.0, b: 235.0 / 255.0, a: 1.0 };
 pub(crate) const HANDLE: Color = Color { r: 174.0 / 255.0, g: 193.0 / 255.0, b: 228.0 / 255.0, a: 1.0 };
-const HANDLE_HOT: Color = Color { r: 104.0 / 255.0, g: 148.0 / 255.0, b: 240.0 / 255.0, a: 1.0 };
+pub(crate) const HANDLE_HOT: Color = Color { r: 104.0 / 255.0, g: 148.0 / 255.0, b: 240.0 / 255.0, a: 1.0 };
 pub(crate) const SELECTION_FILL: Color = Color { r: 37.0 / 255.0, g: 99.0 / 255.0, b: 235.0 / 255.0, a: 0.14 };
 const RED: Color = Color { r: 214.0 / 255.0, g: 54.0 / 255.0, b: 41.0 / 255.0, a: 1.0 };
 const MM_TO_PT: f32 = 72.0 / 25.4;

@@ -48,7 +48,9 @@ mod generated;
 mod group_relief;
 mod navigation;
 mod review_ui;
+mod original_review;
 pub(crate) mod revision_tools;
+mod revision_gutter;
 mod spelling_menu;
 mod spelling_dialog;
 mod dictionary_install_ui;
@@ -129,8 +131,8 @@ enum Action {
     New, Open, RecentFiles, Save, SaveAs, Recovery, Editor(AppCommand),
     Pdf, ImportPdf, Print, CommentNew, CommentDelete, CommentResolve, CommentStep(bool), StyleManager, ManageStyles, StyleGalleryMore, StylesClose, StyleNew, StyleModify, StyleApply, StyleInspect, StyleDelete, ClearDirect, Highlight, Hyphenation, TextLanguage,
     SearchOptions, SearchStep(bool), ReplaceOne, ReplaceAll,
-    Contents, ContentsUpdate, ContentsLevel, Footnotes, Bookmarks, Comments, TextTracking, Spelling, Compatibility,
-    ReviewMarkup, ReviewPane, RevisionResolve(bool), RevisionStep(bool),
+    Contents, ContentsUpdate, ContentsLevel, Footnotes, Bookmarks, Comments, TrackChanges, TextTracking, Spelling, Compatibility,
+    ReviewDisplay, ReviewMarkup, ReviewOriginalClose, ReviewPane, RevisionResolve(bool), RevisionStep(bool),
     EquationClose,
     SelectCells(u8), Table(crate::table_ui::TableOp), TablePosition, CloseTableTools, PictureAlign(u8), PictureDelete, ClosePictureTools, HeaderVariant(u8), HeaderFooterGo(bool), InsertField(u8), RemoveHeaderFooter, InsertNote(bool), NextFootnote(bool), ShowNotes, ExitHeaderFooter, ToggleRibbon, Help, CitationManager, SelectRibbonTab(u8), Brand, Unavailable,
     GrowFont, ShrinkFont, FontColor, Typography, Align(ParagraphAlignment), Indent(f32),
@@ -177,6 +179,7 @@ const HYPHENATION_DOCUMENT_OFF_ID:i32=30015;
 #[derive(Clone, Debug, PartialEq)]
 struct EditKey {
     revision: u64,
+    tracking: bool,
     selection: Option<Selection>,
     typing: CharacterProperties,
     cells: Option<(NodeId, Vec<NodeId>)>,
@@ -271,6 +274,9 @@ pub struct Ribbon {
     picture_bar: RefCell<Option<Rc<picture_bar::PictureBar>>>,
     spell_job: RefCell<Option<review_ui::SpellJob>>,
     review_pane: RefCell<revision_tools::PaneView>,
+    revision_gutter: revision_gutter::Gutter,
+    original_preview: RefCell<Option<original_review::OriginalPreview>>,
+    original_reader: Rc<output_dialogs::PagePreview>,
     spelling_languages: RefCell<Vec<String>>,
     output_progress: RefCell<Option<output_progress::Progress>>,
     dictionary_install: RefCell<Option<Rc<dictionary_install_ui::InstallDialog>>>,
@@ -297,6 +303,8 @@ impl Ribbon {
         ui.styles_resize_handle.hide();
         ui.styles_panel.hide();
         ui.review_panel.hide();
+        ui.revision_gutter_panel.hide();
+        ui.original_panel.hide();
         ui.root_panel.layout();
         ui.main_frame.layout();
     }
@@ -304,6 +312,7 @@ impl Ribbon {
     pub fn new(ui: Rc<MainUi>, state: Rc<RefCell<CanvasState>>) -> Rc<Self> {
         let buttons = generated::buttons(&ui);
         let count = buttons.len();
+        let original_reader = output_dialogs::PagePreview::install(ui.original_surface, Arc::new(VectorDocument::default()));
         let this = Rc::new_cyclic(|owner| Self {
             owner: owner.clone(), find_dialog: RefCell::new(None), pending_search: RefCell::new(None),
             styles_view: RefCell::new(Default::default()), styles_revision: Cell::new(None), document_epoch: Cell::new(0), last_theme_check: Cell::new(Instant::now() - Duration::from_secs(10)), split_ratio: Cell::new(0.5), window_active: Cell::new(true), doc_switcher: RefCell::new(None), styles_snapshot: RefCell::new(None), styles_syncing: Cell::new(false),
@@ -314,7 +323,7 @@ impl Ribbon {
             last_status: RefCell::new(String::new()), last_title: RefCell::new(String::new()),
             last_scroll: Cell::new(None), navigation: RefCell::new(Vec::new()), navigation_revision: Cell::new(None),
             search_options: Cell::new(Default::default()), search_report: RefCell::new(None), search_job: RefCell::new(None), search_due: Cell::new(Instant::now()), search_cursor: Cell::new(None),
-            last_context: RefCell::new(None), context_key: RefCell::new(None), label_text: RefCell::new(HashMap::new()), equation: RefCell::new(None), comments: RefCell::new(None), style_gallery: RefCell::new(None), style_context: RefCell::new(None), tab_strip: RefCell::new(None), tab_ruler: RefCell::new(None), recent_paths: RefCell::new(Vec::new()), recent_settings_open: Rc::new(Cell::new(false)), table_bar: RefCell::new(None), picture_bar: RefCell::new(None), spell_job: RefCell::new(None), review_pane: RefCell::default(), spelling_languages: RefCell::new(Vec::new()), output_progress: RefCell::new(None), dictionary_install: RefCell::new(None), dictionary_manager: RefCell::new(None), spelling_context: RefCell::new(None), table_context_menu: RefCell::new(None),
+            last_context: RefCell::new(None), context_key: RefCell::new(None), label_text: RefCell::new(HashMap::new()), equation: RefCell::new(None), comments: RefCell::new(None), style_gallery: RefCell::new(None), style_context: RefCell::new(None), tab_strip: RefCell::new(None), tab_ruler: RefCell::new(None), recent_paths: RefCell::new(Vec::new()), recent_settings_open: Rc::new(Cell::new(false)), table_bar: RefCell::new(None), picture_bar: RefCell::new(None), spell_job: RefCell::new(None), review_pane: RefCell::default(), revision_gutter: revision_gutter::Gutter::default(), original_preview: RefCell::default(), original_reader, spelling_languages: RefCell::new(Vec::new()), output_progress: RefCell::new(None), dictionary_install: RefCell::new(None), dictionary_manager: RefCell::new(None), spelling_context: RefCell::new(None), table_context_menu: RefCell::new(None),
             source_revision: Cell::new(None), source_job: RefCell::new(None), source_copy_pending: Cell::new(false),
         });
         generated::install_group_relief(&this.ui);
@@ -326,6 +335,7 @@ impl Ribbon {
         this.comments.replace(Some(comment_notes::CommentNotes::install(&this)));
         this.bind();
         revision_tools::bind(&this);
+        revision_gutter::bind(&this);
         this.style_gallery.replace(Some(style_gallery::install(&this)));
         this.tab_strip.replace(Some(tab_strip::install(&this)));
         interface_language::install(&this);
@@ -383,6 +393,10 @@ impl Ribbon {
             let action = spec.action;
             spec.button.on_click(move |_| { if let Some(ribbon) = weak.upgrade() { ribbon.run(action); } });
         }
+        let weak = Rc::downgrade(self);
+        self.ui.track_changes_button.on_mouse_right_up(move |_| {
+            if let Some(ribbon) = weak.upgrade() { ribbon.show_review_menu(); }
+        });
         for (combo, field) in [
             (self.ui.font_size_combo, Field::Size),
             (self.ui.line_spacing_combo, Field::LineSpacing), (self.ui.space_before_combo, Field::Before),
@@ -536,6 +550,14 @@ impl Ribbon {
     }
 
     fn execute(&self, action: Action) -> Result<(), String> {
+        if self.state.borrow().revisions.is_original() && !matches!(action,
+            Action::ReviewDisplay | Action::ReviewMarkup | Action::ReviewOriginalClose | Action::ReviewPane
+            | Action::InterfaceLanguage | Action::SelectRibbonTab(_) | Action::ToggleRibbon | Action::Help
+            | Action::New | Action::Open | Action::RecentFiles | Action::Recovery
+            | Action::Save | Action::SaveAs | Action::View(_)
+        ) {
+            return Err("Close Original to edit the document.".into());
+        }
         match action {
             Action::InterfaceLanguage => self.show_interface_languages(),
             Action::Brand => {},
@@ -727,7 +749,10 @@ impl Ribbon {
                 if let Some(p) = pane { if matches!(action, Action::CommentDelete) { p.delete(&id); } else { p.toggle_resolved(&id); } }
             }
             Action::CommentStep(forward) => { let pane = self.comments.borrow().clone(); if let Some(p) = pane { p.step(forward); } }
+            Action::TrackChanges => self.toggle_document_tracking()?,
             Action::TextTracking => self.show_review_menu(),
+            Action::ReviewDisplay => self.show_display_menu(),
+            Action::ReviewOriginalClose => self.close_original(),
             Action::ReviewMarkup => self.show_markup_menu(),
             Action::ReviewPane => self.toggle_review_pane(),
             Action::RevisionResolve(accept) => self.resolve_current_revision(accept)?,
@@ -822,6 +847,9 @@ impl Ribbon {
     }
 
     fn edit_canvas(&self, operation: impl FnOnce(&mut CanvasState) -> Result<(), String>) -> Result<(), String> {
+        if self.state.borrow().revisions.is_original() {
+            return Err("Close Original to edit the document.".into());
+        }
         let result = {
             let mut state = self.state.borrow_mut(); let before = state.editor.revision;let selection=state.editor.selection.clone();
             let result = operation(&mut state);
@@ -1119,16 +1147,20 @@ impl Ribbon {
 
     fn focus_document(&self) {
         if self.find_has_focus() { return; }
-        if self.mode.get() == ViewMode::Typst { self.ui.typst_editor.set_focus(); }
+        if self.ui.original_panel.is_shown() { self.ui.original_surface.set_focus(); }
+        else if self.mode.get() == ViewMode::Typst { self.ui.typst_editor.set_focus(); }
         else { focus_canvas(&self.ui.paper_canvas); self.ui.paper_canvas.refresh(false, None); }
     }
 
     fn set_view(&self, mode: ViewMode) {
+        if mode != ViewMode::Graphical && self.state.borrow().revisions.is_original() {
+            self.close_original();
+        }
         self.mode.set(mode);
         self.ui.workspace_panel.freeze();
         self.ui.source_panel.show(mode != ViewMode::Graphical);
         if mode != ViewMode::Graphical { self.install_face(&self.ui.source_close_button); }
-        self.ui.canvas_container.show(mode != ViewMode::Typst);
+        self.ui.canvas_container.show(mode != ViewMode::Typst && !self.ui.original_panel.is_shown());
         self.ui.split_handle.show(mode == ViewMode::Split);
         self.apply_split();
         self.ui.workspace_panel.layout();
@@ -1462,6 +1494,7 @@ impl Ribbon {
         }
         let epoch=self.state.borrow().documents.epoch;
         if self.document_epoch.replace(epoch)!=epoch{self.document_shown();}
+        self.sync_original_preview();
         self.sync_revision_controls();
         self.doc_switcher.borrow().as_ref().map(|switcher|switcher.refresh());
         dropdown::poll();font_preview::poll();
@@ -1514,7 +1547,8 @@ impl Ribbon {
                 Some(objects_ui::SelectedObject::Cells { table_id, cell_ids }) => Some((table_id.clone(), cell_ids.clone())),
                 _ => None,
             };
-            let key = EditKey { revision: state.editor.revision, selection: state.editor.selection.clone(),
+            let key = EditKey { revision: state.editor.revision, tracking: state.editor.document.review.tracking_enabled(),
+                selection: state.editor.selection.clone(),
                 typing: state.editor.typing_properties.clone(), cells };
             let pages = state.vector_document.pages.len().max(1);
             let visible = state.viewport.visible_pages(&state.vector_document);
@@ -1638,11 +1672,7 @@ impl Ribbon {
                 Action::View(mode) => self.mode.get() == mode,
                 Action::ToggleNavigation | Action::ShowNavigation => self.ui.navigator_panel.is_shown(),
                 Action::Comments => self.comments.borrow().as_ref().is_some_and(|notes| notes.shown()),
-                Action::TextTracking => {
-                    let state = self.state.borrow();
-                    let review = &state.editor.document.review;
-                    review.track_history || review.track_text
-                }
+                Action::TrackChanges => self.state.borrow().editor.document.review.tracking_enabled(),
                 _ => false,
             };
             let enabled = !spec.disabled && match spec.action {

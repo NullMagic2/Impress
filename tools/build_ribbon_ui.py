@@ -346,7 +346,16 @@ vertical_ruler=obj(item(canvas_row,0,'wxEXPAND'),'wxPanel','vertical_ruler',bg='
 size(vertical_ruler,'vertical_ruler',34,-1)
 cv=obj(item(canvas_row,1),'wxPanel','paper_canvas',bg=COLORS['canvas'],style='wxWANTS_CHARS|wxCLIP_CHILDREN')
 obj(item(canvas_row),'wxScrollBar','vertical_scroll',style='wxSB_VERTICAL',value='0',thumbsize='100',range='100',pagesize='100')
+gutter=obj(item(canvas_row),'wxPanel','revision_gutter_panel',bg=COLORS['workspace'],hidden='1')
+size(gutter,'revision_gutter_panel',220,-1)
 obj(item(cf),'wxScrollBar','horizontal_scroll',style='wxSB_HORIZONTAL',value='0',thumbsize='100',range='100',pagesize='100')
+# Original is a read-only page preview in the same workspace.
+original,original_box=panel(workrow,'original_panel','wxVERTICAL',option=1,bg=COLORS['workspace'])
+prop(original,'hidden','1')
+original_header=sizer(item(original_box,0,'wxALL|wxEXPAND',8))
+label(original_header,'Original · read-only','original_caption',option=1,flag='wxALIGN_CENTER_VERTICAL')
+button(original_header,'original_close_button','Close original view','x','ReviewOriginalClose','icon',metrics=PANE_CLOSE)
+obj(item(original_box,1),'wxPanel','original_surface',style='wxWANTS_CHARS')
 # Split view: the document on the left, its Typst source on the right, with
 # a handle between them to drag, like the Styles pane's.
 split=obj(item(workrow,0,'wxEXPAND'),'wxPanel','split_handle',bg='#e8ecf2',tooltip='Drag to resize the document and its source')

@@ -52,6 +52,30 @@ fn cell_properties(cell: &model::TableCell) -> model::TableCell {
     value.blocks.clear();
     value
 }
+/// Splitting an edited run can mint a new ID. For the conflict check,
+/// text identity is its content and formatting. Objects retain their IDs.
+pub(super) fn same_revision_content(left: &[Inline], right: &[Inline]) -> bool {
+    fn canonical(items: &[Inline]) -> Vec<Inline> {
+        let mut out = items.to_vec();
+        for item in &mut out {
+            match item {
+                Inline::Text(run) => run.id.0.clear(),
+                Inline::Hyperlink(link) => {
+                    link.id.0.clear();
+                    link.content = canonical(&link.content).into();
+                }
+                _ => {}
+            }
+        }
+        if out.is_empty() || out.iter().all(|item| matches!(item, Inline::Text(run) if run.text.is_empty())) {
+            Vec::new()
+        } else {
+            normalized_content(out)
+        }
+    }
+    canonical(left) == canonical(right)
+}
+
 const CONFLICT:&str="Later edits overlap this change; rejecting it would overwrite newer work. Resolve dependent changes first.";
 
 impl EditorState {
@@ -188,7 +212,7 @@ impl EditorState {
                             &tail,
                             range.end.offset.saturating_sub(range.start.offset),
                         )?;
-                        if current != *after {
+                        if !same_revision_content(&current, after) {
                             return Err(CONFLICT.into());
                         }
                         let mut new = old.clone();

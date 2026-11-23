@@ -67,7 +67,7 @@ impl EditorState {
         let selection=self.selection.clone();let mut staged=self.clone();let mut changes=Vec::new();staged.delete_selection_into(&mut changes)?;let pos=staged.focus_position().ok_or("Place the caret first")?;let before=staged.paragraph(&pos.node_id).cloned().ok_or("Paragraph not found")?;let mut after=before.clone();insert_inline_into_paragraph(&mut after,pos.byte_offset,field)?;staged.replace_paragraph(&after)?;staged.set_caret(pos.node_id.clone(),pos.byte_offset+3);changes.push(Mutation::AnchorsTransformed{mapping:anchor_maps::AnchorMapping::Replace{paragraph:pos.node_id,start:pos.byte_offset,end:pos.byte_offset,inserted:3},suppress:1});changes.push(Mutation::ParagraphChanged{id:after.id.clone(),before,after});staged.commit("Insert page reference",changes,selection,None)?;*self=staged;Ok(())
     }
     pub fn set_text_tracking(&mut self,enabled:bool,author:&str)->Result<(),String> {
-        let mut after=self.document.review.clone();after.track_text=enabled;if enabled{after.track_history=false;}
+        let mut after=self.document.review.clone();after.track_text=enabled;if enabled{after.track_history=false;after.track_changes=false;}
         if enabled {after.author=author.trim().chars().take(100).collect();if after.author.is_empty(){after.author="Author".into();}}
         self.commit_review("Track paragraph text",after)
     }
@@ -163,6 +163,9 @@ impl EditorState {
         let mut suppress=0usize;
         for mutation in mutations.iter() {
             if let Mutation::AnchorsTransformed{mapping,suppress:count}=mutation {
+                if !before.tracking_enabled() {
+                    mapping.exclude_untracked_edit(&mut after);
+                }
                 mapping.apply(&mut after); suppress=*count; continue;
             }
             if suppress>0 { suppress-=1; continue; }
@@ -273,7 +276,7 @@ use model::{CommentReply,RevisionEvent,RevisionStatus};
 const MAX_EVENT:usize=4*1024*1024;
 const MAX_HISTORY:usize=32*1024*1024;
 fn stripped(mut review:ReviewState)->ReviewState {
-    review.history.clear();review.track_history=false;review.track_text=false;review.author.clear();review
+    review.history.clear();review.track_history=false;review.track_text=false;review.track_changes=false;review.author.clear();review
 }
 fn comparable(document:&Document)->Document {
     let mut d=document.clone();d.review=stripped(d.review);d.resources.clear();d
@@ -282,7 +285,7 @@ impl EditorState {
     pub fn set_revision_history(&mut self,enabled:bool,author:&str)->Result<(),String>{
         if author.trim().is_empty()&&enabled{return Err("Enter an author name for the native revision journal".into());}
         let mut after=self.document.review.clone();after.track_history=enabled;
-        after.author=author.trim().chars().take(100).collect();if enabled{after.track_text=false;}
+        after.author=author.trim().chars().take(100).collect();if enabled{after.track_text=false;after.track_changes=false;}
         self.commit_review("Native history settings",after)
     }
     pub fn reply_to_comment(&mut self,id:&NodeId,author:&str,text:&str)->Result<(),String>{
@@ -299,7 +302,6 @@ impl EditorState {
         let at=c.replies.iter().position(|r|&r.id==reply).ok_or("Reply not found")?;c.replies.remove(at);self.commit_review("Delete comment reply",after)
     }
     pub(super) fn record_native_revision(&mut self,label:&str,mutations:&mut Vec<Mutation>)->Result<(),String>{
-        if !self.document.review.track_history||label.starts_with("Native history"){return Ok(());}
         let mut stored=Vec::new();
         for m in mutations.iter(){match m {
             Mutation::AnchorsTransformed{..}|Mutation::ResourceInserted{..}|Mutation::ListInserted{..}=>{},
@@ -338,7 +340,7 @@ impl EditorState {
         }
         let mut replay=candidate.clone();for m in &changes{apply_mutation(&mut replay,m,true)?;}
         if comparable(&replay)!=comparable(&before){return Err("Later edits overlap this change; rejecting it would overwrite newer work. Resolve dependent changes first.".into());}
-        let saved=&before.review;candidate.review.history=saved.history.clone();candidate.review.author=saved.author.clone();candidate.review.track_history=saved.track_history;candidate.review.track_text=saved.track_text;
+        let saved=&before.review;candidate.review.history=saved.history.clone();candidate.review.author=saved.author.clone();candidate.review.track_history=saved.track_history;candidate.review.track_text=saved.track_text;candidate.review.track_changes=saved.track_changes;
         candidate.review.history.iter_mut().find(|e|&e.id==id).unwrap().status=RevisionStatus::Rejected;
         let selection=self.selection.clone();let review_before=before.review.clone();let review_after=candidate.review.clone();let sections_before=before.sections.clone();let sections_after=candidate.sections.clone();
         let styles_before=before.styles.clone();let styles_after=candidate.styles.clone();

@@ -1251,7 +1251,7 @@
             {
               "kind": "button",
               "name": "track_changes_button",
-              "style": "file-menu",
+              "style": "big-button",
               "label": "Track changes",
               "tip": "Track changes",
               "icon": "track"
@@ -1260,15 +1260,12 @@
               "kind": "v",
               "children": [
                 {
-                  "kind": "combo",
-                  "name": "markup_mode_combo",
-                  "items": [
-                    "All markup",
-                    "Simple markup",
-                    "No markup"
-                  ],
-                  "value": "All markup",
-                  "width": 96
+                  "kind": "button",
+                  "name": "markup_display_button",
+                  "style": "small-button",
+                  "label": "All markup",
+                  "tip": "Display for review",
+                  "icon": "markup"
                 },
                 {
                   "kind": "button",

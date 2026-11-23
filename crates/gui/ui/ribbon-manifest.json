@@ -1415,6 +1415,20 @@
       "segment": "single"
     },
     {
+      "name": "original_close_button",
+      "label": "",
+      "icon": "x",
+      "action": "ReviewOriginalClose",
+      "kind": "icon",
+      "tip": "Close original view",
+      "disabled": false,
+      "width_dip": 28,
+      "height_dip": 28,
+      "art_width_dip": 20,
+      "art_height_dip": 20,
+      "segment": "single"
+    },
+    {
       "name": "source_close_button",
       "label": "",
       "icon": "x",
@@ -2454,14 +2468,28 @@
       "name": "track_changes_button",
       "label": "Track changes",
       "icon": "track",
-      "action": "TextTracking",
-      "kind": "file-menu",
+      "action": "TrackChanges",
+      "kind": "large",
       "tip": "Track changes",
       "disabled": false,
-      "width_dip": 78,
+      "width_dip": 62,
       "height_dip": 78,
       "art_width_dip": 32,
       "art_height_dip": 32,
+      "segment": "single"
+    },
+    {
+      "name": "markup_display_button",
+      "label": "All markup",
+      "icon": "markup",
+      "action": "ReviewDisplay",
+      "kind": "typography-menu",
+      "tip": "Display for review",
+      "disabled": false,
+      "width_dip": 156,
+      "height_dip": 24,
+      "art_width_dip": 16,
+      "art_height_dip": 16,
       "segment": "single"
     },
     {
@@ -3633,6 +3661,16 @@
       -1
     ],
     [
+      "revision_gutter_panel",
+      220,
+      -1
+    ],
+    [
+      "original_close_button",
+      28,
+      28
+    ],
+    [
       "split_handle",
       6,
       -1
@@ -4229,13 +4267,13 @@
     ],
     [
       "track_changes_button",
-      78,
+      62,
       78
     ],
     [
-      "markup_mode_combo",
-      154,
-      28
+      "markup_display_button",
+      156,
+      24
     ],
     [
       "show_markup_button",
@@ -4618,8 +4656,7 @@
     "margins_combo",
     "space_before_combo",
     "space_after_combo",
-    "styles_filter",
-    "markup_mode_combo"
+    "styles_filter"
   ],
   "button_metrics": {
     "large": [

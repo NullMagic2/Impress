@@ -19,7 +19,7 @@ struct RenderKey { width: i32, height: i32, dpi: i32, selected: bool, language: 
 
 struct ButtonFace {
     button: Button,
-    label: &'static str,
+    label: Cell<&'static str>,
     icon: &'static str,
     kind: &'static str,
     segment: face::Segment,
@@ -72,7 +72,7 @@ pub fn install(spec: &ButtonSpec) -> bool {
     if let Some(face) = lookup(&spec.button) { face.update(); return true; }
     let face = Rc::new(ButtonFace {
         button: spec.button,
-        label: spec.label,
+        label: Cell::new(spec.label),
         icon: spec.icon,
         kind: spec.kind,
         segment: face::Segment::from_name(spec.segment),
@@ -99,6 +99,15 @@ pub fn install(spec: &ButtonSpec) -> bool {
         event.skip(true);
     });
     face.update();
+    true
+}
+
+pub(super) fn caption(button: &Button, label: &'static str) -> bool {
+    let Some(face) = lookup(button) else { return false };
+    if face.label.replace(label) != label {
+        face.key.set(None);
+        face.update();
+    }
     true
 }
 
@@ -241,10 +250,10 @@ impl ButtonFace {
                 dc.set_font(&font);
             }
             dc.set_text_foreground(Colour::rgb(palette.text[0], palette.text[1], palette.text[2]));
-            if !self.label.is_empty() {
-                let (text_width, text_height) = dc.get_text_extent(&crate::i18n::text(&(self.label)));
+            if !self.label.get().is_empty() {
+                let (text_width, text_height) = dc.get_text_extent(&crate::i18n::text(&(self.label.get())));
                 let (x, y) = self.text_position(key, text_width, text_height, art_width as i32, art_height as i32);
-                dc.draw_text(&crate::i18n::text(&(self.label)), x, y);
+                dc.draw_text(&crate::i18n::text(&(self.label.get())), x, y);
             }
         }
         // GDI text drawing into an RGBA wxBitmap changes its colour channels
@@ -257,7 +266,7 @@ impl ButtonFace {
 
     fn icon_position(&self, key: RenderKey, width: i32, height: i32) -> (i32, i32) {
         let gap = self.px(4);
-        if self.label.is_empty() { return ((key.width-width)/2, (key.height-height)/2); }
+        if self.label.get().is_empty() { return ((key.width-width)/2, (key.height-height)/2); }
         if matches!(self.kind, "large" | "wide" | "gallery" | "file-main" | "file-menu") {
             ((key.width-width)/2, ((key.height-height-self.px(18)-gap)/2).max(gap))
         } else { (gap, (key.height-height)/2) }

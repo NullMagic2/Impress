@@ -171,22 +171,27 @@ pub(super) fn notes_xml(document:&Document,context:&ExportContext,drawing:&mut u
 }
 
 /// Request that Word refresh PAGE/PAGEREF fields on open while retaining other
-/// settings. Replace just the known updateFields element, not the whole part.
+/// settings, including the current revision-recording preference.
 pub(super) fn settings_xml(document:&Document)->String {
     let default_mm = document.styles.resolve_paragraph(Some(&model::StyleId::from(model::STYLE_NORMAL))).default_tab_mm.unwrap_or(model::DEFAULT_TAB_INTERVAL_MM);
     let default_tab = format!("<w:defaultTabStop xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" w:val=\"{}\"/>", twips(default_mm));
     let embedding=if document.resources.values().any(|r|r.media_type==typography::EMBEDDED_FONT_MEDIA_TYPE){"<w:embedTrueTypeFonts xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" w:val=\"true\"/>"}else{""};
+    let tracking = if document.review.track_changes {
+        r#"<w:trackRevisions xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" w:val="true"/>"#
+    } else {
+        ""
+    };
     if let Some(xml)=preserved_text(document,"word/settings.xml") {
         let mut reader=Reader::from_str(&xml);let mut out=String::new();let mut skip=0usize;
         loop {let start=reader.buffer_position() as usize;match reader.read_event(){
             Ok(Event::Eof)=>break,
-            Ok(Event::Start(e)) if e.name().as_ref().rsplit(':').next() .is_some_and(|name|matches!(name,"updateFields"|"embedTrueTypeFonts"|"saveSubsetFonts"|"defaultTabStop"))=>{skip=1;},
-            Ok(Event::Empty(e)) if e.name().as_ref().rsplit(':').next() .is_some_and(|name|matches!(name,"updateFields"|"embedTrueTypeFonts"|"saveSubsetFonts"|"defaultTabStop"))=>{},
+            Ok(Event::Start(e)) if e.name().as_ref().rsplit(':').next() .is_some_and(|name|matches!(name,"updateFields"|"embedTrueTypeFonts"|"saveSubsetFonts"|"defaultTabStop"|"trackRevisions"))=>{skip=1;},
+            Ok(Event::Empty(e)) if e.name().as_ref().rsplit(':').next() .is_some_and(|name|matches!(name,"updateFields"|"embedTrueTypeFonts"|"saveSubsetFonts"|"defaultTabStop"|"trackRevisions"))=>{},
             Ok(Event::Start(_)) if skip>0=>skip+=1,Ok(Event::End(_)) if skip>0=>skip-=1,
             Ok(_)=>{if skip==0{out.push_str(&xml[start..reader.buffer_position() as usize]);}},Err(_)=>{out.clear();break;}
         }}
-        if let Some(close)=out.rfind("</"){if out[close..].contains("settings>"){out.insert_str(close,&default_tab);out.insert_str(close,embedding);out.insert_str(close,"<w:updateFields xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" w:val=\"true\"/>");return out;}}
+        if let Some(close)=out.rfind("</"){if out[close..].contains("settings>"){out.insert_str(close,&default_tab);out.insert_str(close,embedding);out.insert_str(close,tracking);out.insert_str(close,"<w:updateFields xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" w:val=\"true\"/>");return out;}}
     }
     let mut result= "<?xml version=\"1.0\" encoding=\"UTF-8\"?><w:settings xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\"><w:updateFields w:val=\"true\"/></w:settings>".to_owned();
-    let close=result.find("</w:settings>").expect("settings close");result.insert_str(close,&default_tab);result.insert_str(close,embedding);result
+    let close=result.find("</w:settings>").expect("settings close");result.insert_str(close,&default_tab);result.insert_str(close,embedding);result.insert_str(close,tracking);result
 }

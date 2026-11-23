@@ -488,13 +488,14 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
         let document = Arc::clone(&state.vector_document);
         let viewport = state.viewport;
         let mut overlay = state.overlay.clone();
-        ribbon::revision_tools::adorn(&state, &mut overlay);
         if !state.caret_visible { overlay.caret = None; }
         overlay.chrome = header_footer_ui::chrome(&state);
-        overlay.chrome.extend(table_ui::chrome(&state));
+        let table_chrome = table_ui::chrome(&state);
+        overlay.chrome.extend(table_chrome.iter().cloned());
         overlay.chrome.extend(slot_ui::chrome(&state));
         overlay.chrome.extend(picture_chrome::chrome(&state));
         overlay.chrome.extend(state.comment_leaders.iter().cloned());
+        ribbon::revision_tools::adorn(&state, &mut overlay, &table_chrome);
         let dirty = state.needs_present;
         // Keep painting on the next ticks while visible tiles are still missing.
         let scale = state.pixel_scale;

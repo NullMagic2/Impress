@@ -1280,7 +1280,7 @@ impl EditorState {
             self.selection=before_selection.clone();self.reset_typing_properties_from_caret();return Err(error);
         }
         self.prepare_review_transaction(label, &mut mutations, &before_selection)?;
-        if let Err(error)=self.synchronize_picture_anchors(&mut mutations).and_then(|_|self.synchronize_contents_transaction(label,&mut mutations)).and_then(|_|self.record_native_revision(label,&mut mutations)) {
+        if let Err(error)=self.synchronize_picture_anchors(&mut mutations).and_then(|_|self.synchronize_contents_transaction(label,&mut mutations)).and_then(|_|self.record_document_revision(label,&mut mutations)) {
             for m in mutations.iter().rev(){apply_mutation(&mut self.document,m,false)?;}
             self.selection=before_selection.clone(); self.reset_typing_properties_from_caret();
             return Err(error);
@@ -2007,3 +2007,4 @@ fn next_word_start(text: &str, offset: usize) -> usize {
 #[cfg(test)] #[path = "../tests/unit/lib.rs"] mod tests;
 
 mod tracked_changes;
+mod live_tracking;

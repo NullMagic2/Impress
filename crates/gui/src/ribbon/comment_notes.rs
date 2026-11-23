@@ -123,7 +123,7 @@ fn font(points: i32, bold: bool) -> Option<Font> {
 }
 
 /// The comment author: the document's review author, else the account's name.
-fn author(state: &CanvasState) -> String {
+pub(super) fn author(state: &CanvasState) -> String {
     let named = state.editor.document.review.author.trim().to_string();
     if !named.is_empty() { return named; }
     let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_default();

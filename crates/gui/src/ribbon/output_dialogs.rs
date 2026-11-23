@@ -78,24 +78,43 @@ impl PagePreview {
             let Some(pos) = m.event.get_position() else { return; };
             let size = p.panel.get_client_size();
             if pos.y < size.height - d(&p.panel, 30) { return; }
-            let count = p.pages.borrow().len();
-            let index = p.index.get();
-            if pos.x < size.width / 3 && index > 0 { p.index.set(index - 1); }
-            else if pos.x > size.width * 2 / 3 && index + 1 < count { p.index.set(index + 1); }
-            p.panel.refresh(false, None);
+            if pos.x < size.width / 3 { p.step(false); }
+            else if pos.x > size.width * 2 / 3 { p.step(true); }
         });
         preview
     }
 
+    pub(super) fn step(&self, forward: bool) {
+        let index = self.index.get();
+        let max = self.pages.borrow().len().saturating_sub(1);
+        let next = if forward { (index + 1).min(max) } else { index.saturating_sub(1) };
+        if next != index {
+            self.index.set(next);
+            self.panel.refresh(false, None);
+        }
+    }
+
     fn install_for_output(panel: Panel, scene: Arc<VectorDocument>, source: Arc<Document>) -> Result<Rc<Self>, String> {
-        let sparse = scene.pages.iter().any(|page| !page.has_paint);
-        let preview = Self::install(panel, scene);
-        if sparse {
+        let preview = Self::install(panel, scene.clone());
+        preview.set_output(scene, source, 0)?;
+        Ok(preview)
+    }
+
+    pub(super) fn clear_output(&self) {
+        if let Some(loader) = self.loader.borrow_mut().take() {
+            loader.timer.stop();
+        }
+        self.show_document(Arc::new(VectorDocument::default()));
+    }
+
+    pub(super) fn set_output(self: &Rc<Self>, scene: Arc<VectorDocument>, source: Arc<Document>, start: usize) -> Result<(), String> {
+        self.clear_output();
+        if scene.pages.iter().any(|page| !page.has_paint) {
             let scheduler = layout::LayoutScheduler::new(layout::LayoutOptions {
                 worker_threads: 2, ..Default::default()
             }).map_err(|error| error.to_string())?;
-            let timer = Timer::new(&panel);
-            let weak = Rc::downgrade(&preview);
+            let timer = Timer::new(&self.panel);
+            let weak = Rc::downgrade(self);
             timer.on_tick(move |_| {
                 let Some(preview) = weak.upgrade() else { return; };
                 let mut state = preview.loader.borrow_mut();
@@ -110,11 +129,14 @@ impl PagePreview {
                     }
                 }
             });
-            *preview.loader.borrow_mut() = Some(PreviewLoader {
+            *self.loader.borrow_mut() = Some(PreviewLoader {
                 source, scheduler, timer, generation: 0, requested: None, rendered: None,
             });
         }
-        Ok(preview)
+        let start = start.min(scene.pages.len().saturating_sub(1));
+        self.show_document(scene);
+        self.index.set(start);
+        Ok(())
     }
 
     fn painted_page(&self, current: usize, initial: &Arc<VectorDocument>) -> Option<Arc<VectorDocument>> {
@@ -145,7 +167,7 @@ impl PagePreview {
         self.panel.refresh(false, None);
     }
 
-    fn set_pages(&self, pages: Vec<usize>) {
+    pub(super) fn set_pages(&self, pages: Vec<usize>) {
         let keep = self.pages.borrow().get(self.index.get()).copied();
         let index = keep.and_then(|k| pages.iter().position(|&p| p == k)).unwrap_or(0);
         *self.pages.borrow_mut() = pages;

@@ -3257,6 +3257,12 @@
     "Fechar Impress",
     "Fechar Impress"
   ],
+  "Close Original to edit the document.": [
+    "Κλείστε την αρχική προβολή για να επεξεργαστείτε το έγγραφο.",
+    "Cierre la vista Original para editar el documento.",
+    "Feche a exibição Original para editar o documento.",
+    "Feche a vista Original para editar o documento."
+  ],
   "Close Styles": [
     "Κλείσιμο στυλ",
     "Cerrar estilos",
@@ -3280,6 +3286,12 @@
     "Cerrar el documento",
     "Fechar o documento",
     "Fechar o documento"
+  ],
+  "Close original view": [
+    "Κλείσιμο αρχικής προβολής",
+    "Cerrar vista original",
+    "Fechar exibição original",
+    "Fechar vista original"
   ],
   "Close the Picture tools (Esc)": [
     "Κλείσιμο των εργαλείων εικόνας (Esc)",
@@ -4972,6 +4984,12 @@
     "Mostrar",
     "Exibir",
     "Apresentação"
+  ],
+  "Display for review": [
+    "Προβολή για αναθεώρηση",
+    "Vista de revisión",
+    "Exibição para revisão",
+    "Vista de revisão"
   ],
   "Distance": [
     "Απόσταση",
@@ -10859,6 +10877,18 @@
     "Original",
     "Original"
   ],
+  "Original · Some edits could not be restored": [
+    "Αρχικό · Ορισμένες αλλαγές δεν επαναφέρθηκαν",
+    "Original · Algunos cambios no se pudieron restaurar",
+    "Original · Algumas alterações não puderam ser restauradas",
+    "Original · Não foi possível restaurar algumas alterações"
+  ],
+  "Original · read-only": [
+    "Αρχικό · Μόνο για ανάγνωση",
+    "Original · Solo lectura",
+    "Original · Somente leitura",
+    "Original · Só de leitura"
+  ],
   "Outer: centered": [
     "Εξωτερική: κεντραρισμένη",
     "Exterior: centrada",
@@ -11644,6 +11674,12 @@
     "Preparando instalación…",
     "Preparando instalação…",
     "A preparar a instalação…"
+  ],
+  "Preparing original view…": [
+    "Προετοιμασία αρχικής προβολής…",
+    "Preparando la vista original…",
+    "Preparando a exibição original…",
+    "A preparar a vista original…"
   ],
   "Preparing removal…": [
     "Προετοιμασία κατάργησης…",
@@ -15496,6 +15532,12 @@
     "El flujo Data de DOC nativo es demasiado grande",
     "O fluxo Data do DOC nativo é grande demais",
     "O fluxo Data do DOC nativo é demasiado grande"
+  ],
+  "The original view could not be prepared.": [
+    "Δεν ήταν δυνατή η προετοιμασία της αρχικής προβολής.",
+    "No se pudo preparar la vista original.",
+    "Não foi possível preparar a exibição original.",
+    "Não foi possível preparar a vista original."
   ],
   "The package does not contain the selected dictionary.": [
     "Το πακέτο δεν περιέχει το επιλεγμένο λεξικό.",

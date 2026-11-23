@@ -3334,7 +3334,7 @@
                                               <object class="wxButton" name="track_changes_button">
                                                 <label></label>
                                                 <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
-                                                <minsize>78,78</minsize>
+                                                <minsize>62,78</minsize>
                                                 <tooltip>Track changes</tooltip>
                                               </object>
                                             </object>
@@ -3349,18 +3349,12 @@
                                                 <orient>wxVERTICAL</orient>
                                                 <object class="sizeritem">
                                                   <option>0</option>
-                                                  <flag>wxRIGHT|wxALIGN_CENTER_HORIZONTAL</flag>
-                                                  <border>2</border>
-                                                  <object class="wxComboBox" name="markup_mode_combo">
-                                                    <style>wxCB_READONLY</style>
-                                                    <minsize>154,28</minsize>
-                                                    <content>
-                                                      <item>All markup</item>
-                                                      <item>Simple markup</item>
-                                                      <item>No markup</item>
-                                                    </content>
-                                                    <value>All markup</value>
-                                                    <tooltip>markup mode combo</tooltip>
+                                                  <flag>wxALIGN_LEFT</flag>
+                                                  <object class="wxButton" name="markup_display_button">
+                                                    <label></label>
+                                                    <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                                    <minsize>156,24</minsize>
+                                                    <tooltip>Display for review</tooltip>
                                                   </object>
                                                 </object>
                                                 <object class="sizeritem">
@@ -5405,6 +5399,15 @@
                                       <pagesize>100</pagesize>
                                     </object>
                                   </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxEXPAND</flag>
+                                    <object class="wxPanel" name="revision_gutter_panel">
+                                      <bg>#e3e7ed</bg>
+                                      <hidden>1</hidden>
+                                      <minsize>220,-1</minsize>
+                                    </object>
+                                  </object>
                                 </object>
                               </object>
                               <object class="sizeritem">
@@ -5419,6 +5422,50 @@
                                 </object>
                               </object>
                             </object>
+                          </object>
+                        </object>
+                        <object class="sizeritem">
+                          <option>1</option>
+                          <flag>wxEXPAND</flag>
+                          <object class="wxPanel" name="original_panel">
+                            <bg>#e3e7ed</bg>
+                            <style>wxTAB_TRAVERSAL</style>
+                            <object class="wxBoxSizer">
+                              <orient>wxVERTICAL</orient>
+                              <object class="sizeritem">
+                                <option>0</option>
+                                <flag>wxALL|wxEXPAND</flag>
+                                <border>8</border>
+                                <object class="wxBoxSizer">
+                                  <orient>wxHORIZONTAL</orient>
+                                  <object class="sizeritem">
+                                    <option>1</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <object class="wxStaticText" name="original_caption">
+                                      <label>Original · read-only</label>
+                                    </object>
+                                  </object>
+                                  <object class="sizeritem">
+                                    <option>0</option>
+                                    <flag>wxALIGN_CENTER_VERTICAL</flag>
+                                    <object class="wxButton" name="original_close_button">
+                                      <label></label>
+                                      <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
+                                      <minsize>28,28</minsize>
+                                      <tooltip>Close original view</tooltip>
+                                    </object>
+                                  </object>
+                                </object>
+                              </object>
+                              <object class="sizeritem">
+                                <option>1</option>
+                                <flag>wxEXPAND</flag>
+                                <object class="wxPanel" name="original_surface">
+                                  <style>wxWANTS_CHARS</style>
+                                </object>
+                              </object>
+                            </object>
+                            <hidden>1</hidden>
                           </object>
                         </object>
                         <object class="sizeritem">

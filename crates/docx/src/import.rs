@@ -216,6 +216,8 @@ pub fn import_docx(input: &mut dyn ReadSeek) -> FormatResult<Document> {
     if document.review.tracked_changes.len()>model::MAX_TRACKED_CHANGES || model::tracked_changes_bytes(&document.review.tracked_changes).unwrap_or(usize::MAX)>model::MAX_TRACKED_HISTORY_BYTES{return Err(invalid("Tracked changes exceed the supported history size limit"));}
     if let Some(settings) = read_optional_text(&mut zip, "word/settings.xml")? {
         let tree = parse_supported_tree(&settings)?;
+        document.review.track_changes = find_descendant(&tree, "w:trackRevisions")
+            .is_some_and(|node| node.attr("w:val").is_none_or(|value| matches!(value, "true" | "1" | "on")));
         if let Some(value) = find_descendant(&tree, "w:defaultTabStop").and_then(|node| node.attr("w:val"))
             .and_then(|value| value.parse::<f32>().ok()).map(|twips| twips * 25.4 / 1440.0)
             .filter(|value| value.is_finite() && (model::MIN_TAB_INTERVAL_MM..=model::MAX_TAB_INTERVAL_MM).contains(value)) {

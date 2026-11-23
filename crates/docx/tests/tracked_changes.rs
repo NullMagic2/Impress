@@ -425,3 +425,161 @@ fn character_revision_preserves_old_style_across_tabs_and_inline_breaks() {
         assert_eq!(run.properties.italic, Some(true));
     }
 }
+
+#[test]
+fn track_changes_can_be_turned_off_without_resolving_or_recording_new_text() {
+    let mut editor = EditorState::new(load(
+        r#"<w:p><w:r><w:t>Before</w:t></w:r></w:p><w:sectPr/>"#,
+    ));
+    let paragraph = document_paragraphs(&editor.document)[0].id.clone();
+    editor.set_caret(paragraph, "Before".len());
+    editor.set_track_changes(true, "Reviewer").unwrap();
+    editor.insert_text(" tracked").unwrap();
+
+    let (opened, _) = save(&editor.document);
+    assert!(opened.review.tracking_enabled());
+    let revision = editor
+        .document
+        .review
+        .tracked_changes
+        .values()
+        .next()
+        .unwrap()
+        .id
+        .clone();
+
+    editor.set_track_changes(false, "").unwrap();
+    assert!(!editor.document.review.tracking_enabled());
+    editor.insert_text(" ordinary").unwrap();
+    assert_eq!(editor.document.review.tracked_changes.len(), 1);
+
+    let (reopened, xml) = save(&editor.document);
+    assert!(!reopened.review.tracking_enabled());
+    assert_eq!(texts(&reopened), ["Before tracked ordinary"]);
+    assert!(xml.contains("tracked</w:t></w:r></w:ins>"));
+    assert!(!xml.contains("ordinary</w:t></w:r></w:ins>"));
+    assert_eq!(reopened.review.tracked_changes.len(), 1);
+
+    editor.resolve_tracked_change(&revision, false).unwrap();
+    assert_eq!(texts(&editor.document), ["Before ordinary"]);
+    let mut editor = EditorState::new(opened);
+    editor.set_track_changes(false, "").unwrap();
+    assert!(!save(&editor.document).0.review.tracking_enabled());
+}
+
+#[test]
+fn track_changes_records_edits_at_the_actual_repeated_character() {
+    let mut editor = EditorState::new(load(
+        r#"<w:tbl><w:tr><w:tc><w:p><w:r><w:t>aaa</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/><w:sectPr/>"#,
+    ));
+    let paragraph = document_paragraphs(&editor.document)[0].id.clone();
+    editor.set_caret(paragraph, 1);
+    editor.set_track_changes(true, "Reviewer").unwrap();
+    editor.backspace().unwrap();
+
+    let revision = editor
+        .document
+        .review
+        .tracked_changes
+        .values()
+        .next()
+        .unwrap();
+    let [
+        RevisionEffect::Inline {
+            range,
+            before,
+            change: InlineRevisionKind::Deletion,
+            ..
+        },
+    ] = revision.effects.as_slice()
+    else {
+        panic!("expected an inline deletion");
+    };
+    assert_eq!(range.start.offset, 0);
+    assert_eq!(inline_text(before), "a");
+    let (mut reopened, xml) = save(&editor.document);
+    assert!(xml.contains("<w:delText"));
+    assert!(reopened.review.tracking_enabled());
+    let revision = reopened
+        .review
+        .tracked_changes
+        .values()
+        .next()
+        .unwrap()
+        .id
+        .clone();
+    let mut editor = EditorState::new(std::mem::take(&mut reopened));
+    editor.resolve_tracked_change(&revision, false).unwrap();
+    assert!(texts(&editor.document).iter().any(|text| text == "aaa"));
+    assert_eq!(editor.document.review.tracked_changes.len(), 1);
+}
+
+#[test]
+fn track_changes_records_paragraph_breaks_in_docx() {
+    let mut editor = EditorState::new(load(
+        r#"<w:p><w:r><w:t>FirstSecond</w:t></w:r></w:p><w:sectPr/>"#,
+    ));
+    let paragraph = document_paragraphs(&editor.document)[0].id.clone();
+    editor.set_caret(paragraph, "First".len());
+    editor.set_track_changes(true, "Reviewer").unwrap();
+    editor.split_paragraph().unwrap();
+    let (reopened, _) = save(&editor.document);
+    assert_eq!(texts(&reopened), ["First", "Second"]);
+    let revision = reopened
+        .review
+        .tracked_changes
+        .values()
+        .next()
+        .unwrap()
+        .id
+        .clone();
+    let mut editor = EditorState::new(reopened);
+    editor.resolve_tracked_change(&revision, false).unwrap();
+    assert_eq!(texts(&editor.document), ["FirstSecond"]);
+}
+
+#[test]
+fn an_edit_inside_a_pending_insertion_stays_untracked_after_switching_off() {
+    let mut editor = EditorState::new(load(r#"<w:p/><w:sectPr/>"#));
+    let paragraph = document_paragraphs(&editor.document)[0].id.clone();
+    editor.set_track_changes(true, "Reviewer").unwrap();
+    editor.set_caret(paragraph.clone(), 0);
+    editor.insert_text("leftright").unwrap();
+    editor.set_track_changes(false, "").unwrap();
+    editor.set_caret(paragraph, "left".len());
+    editor.insert_text("ordinary").unwrap();
+
+    let (reopened, _) = save(&editor.document);
+    assert_eq!(texts(&reopened), ["leftordinaryright"]);
+    let revised_text = reopened.review.tracked_changes.values()
+        .flat_map(|revision| revision.effects.iter())
+        .filter_map(|effect| match effect {
+            RevisionEffect::Inline { after, change: InlineRevisionKind::Insertion, .. } => Some(inline_text(after)),
+            _ => None,
+        }).collect::<Vec<_>>();
+    assert_eq!(revised_text, ["left", "right"]);
+    assert!(!reopened.review.tracking_enabled());
+    let revision = reopened.review.tracked_changes.values().next().unwrap().id.clone();
+    let mut editor = EditorState::new(reopened);
+    editor.resolve_tracked_change(&revision, false).unwrap();
+    assert_eq!(texts(&editor.document), ["ordinary"]);
+}
+
+#[test]
+fn track_changes_limits_character_formatting_to_the_formatted_text() {
+    let mut editor = EditorState::new(load(r#"<w:p><w:r><w:t>Before Bold After</w:t></w:r></w:p><w:sectPr/>"#));
+    let paragraph = document_paragraphs(&editor.document)[0].id.clone();
+    editor.set_caret(paragraph.clone(), "Before ".len());
+    editor.extend_selection(paragraph, "Before Bold".len());
+    editor.set_track_changes(true, "Reviewer").unwrap();
+    editor.toggle_character_property(editor::CharacterToggle::Bold).unwrap();
+
+    let revision = editor.document.review.tracked_changes.values().next().unwrap();
+    let [RevisionEffect::Inline { after, change: InlineRevisionKind::Formatting, .. }] = revision.effects.as_slice() else {
+        panic!("expected a formatting change");
+    };
+    assert_eq!(inline_text(after), "Bold");
+    let (reopened, xml) = save(&editor.document);
+    assert_eq!(reopened.review.tracked_changes.len(), 1);
+    assert_eq!(xml.matches("<w:rPrChange ").count(), 1);
+}

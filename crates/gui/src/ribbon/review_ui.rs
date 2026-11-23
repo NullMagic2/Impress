@@ -29,6 +29,20 @@ impl Ribbon {
         let b=&entries[index-1];let actions=["Go to selection".into(),"Delete bookmark".into(),"Insert page reference at current caret".into(),"Attach bookmark to current selection".into()];
         match self.choose_review("Bookmark",&b.name,&actions){Some(0)=>{let range=b.range.as_ref().ok_or("This bookmark no longer has a text anchor")?;self.edit(|e|e.go_to_range(range))?;},Some(1)=>self.edit(|e|e.delete_bookmark(&b.id))?,Some(2)=>self.edit(|e|e.insert_page_reference(&b.id))?,Some(3)=>self.edit(|e|e.reanchor_bookmark(&b.id))?,_=>{}}Ok(())
     }
+    pub(super) fn toggle_document_tracking(&self) -> Result<(), String> {
+        let (enabled, author) = {
+            let state = self.state.borrow();
+            let review = &state.editor.document.review;
+            let author = if review.author.is_empty() {
+                super::comment_notes::author(&state)
+            } else {
+                review.author.clone()
+            };
+            (!review.tracking_enabled(), author)
+        };
+        self.edit(|editor| editor.set_track_changes(enabled, &author))
+    }
+
     pub(super) fn show_review_menu(&self) {
         let (button, tooltip) = if shown_in_hierarchy(&self.ui.track_changes_button) {
             (self.ui.track_changes_button, "Track changes")

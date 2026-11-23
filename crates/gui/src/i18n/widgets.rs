@@ -180,14 +180,7 @@ self.previous_comment_button.set_tooltip(&text("Previous"));
 self.next_comment_button.set_tooltip(&text("Next"));
 self.i18n_control_148.set_label(&text("Comments"));
 self.track_changes_button.set_tooltip(&text("Track changes"));
-self.markup_mode_combo.set_tooltip(&text("markup mode combo"));
-let selected = self.markup_mode_combo.get_selection();
-let current = self.markup_mode_combo.get_value();
-self.markup_mode_combo.clear();
-self.markup_mode_combo.append(&text("All markup"));
-self.markup_mode_combo.append(&text("Simple markup"));
-self.markup_mode_combo.append(&text("No markup"));
-if let Some(index) = selected { self.markup_mode_combo.set_selection(index); } else { self.markup_mode_combo.change_value(&current); }
+self.markup_display_button.set_tooltip(&text("Display for review"));
 self.show_markup_button.set_tooltip(&text("Show markup"));
 self.reviewing_pane_button.set_tooltip(&text("Reviewing pane"));
 self.i18n_control_153.set_label(&text("Tracking"));
@@ -278,6 +271,8 @@ self.editing_context_label.set_label(&text("Body"));
 self.page_context_label.set_label(&text("Page 1 of 1"));
 self.tab_ruler.set_tooltip(&text("Click to add a tab stop; drag to move it or drag off to remove it. Double-click for Tabs."));
 self.vertical_ruler.set_tooltip(&text("Vertical ruler · centimetres"));
+self.original_caption.set_label(&text("Original · read-only"));
+self.original_close_button.set_tooltip(&text("Close original view"));
 self.split_handle.set_tooltip(&text("Drag to resize the document and its source"));
 self.source_caption.set_label(&text("Generated Typst · read-only"));
 self.source_close_button.set_tooltip(&text("Close Typst source"));
@@ -1527,7 +1522,6 @@ pub(super) fn canonical_choice(name:&str,value:&str)->String { match name {
 "lay_v_align_value" => super::choice_source(value,&["Top", "Centered", "Bottom"]),
 "line_spacing_combo" => super::choice_source(value,&["1", "1.15", "1.2", "1.5", "2", "2.5", "3"]),
 "margins_combo" => super::choice_source(value,&["Normal (25.4 mm)", "Narrow (12.7 mm)", "Wide (38.1 mm)"]),
-"markup_mode_combo" => super::choice_source(value,&["All markup", "Simple markup", "No markup"]),
 "new_style_base_combo" => super::choice_source(value,&["APA", "IEEE", "Chicago", "MLA", "Harvard"]),
 "num_level" => super::choice_source(value,&["1", "2", "3", "4", "5", "6", "7", "8", "9"]),
 "paper_size_combo" => super::choice_source(value,&["A4", "Letter", "Legal", "A5"]),

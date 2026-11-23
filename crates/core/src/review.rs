@@ -92,6 +92,7 @@ pub struct ReviewState {
     #[serde(default)] pub bookmarks: BTreeMap<NodeId,Bookmark>,
     #[serde(default)] pub comments: BTreeMap<NodeId,ReviewComment>,
     #[serde(default)] pub revisions: BTreeMap<NodeId,TextRevision>,
+    #[serde(default, skip_serializing_if = "crate::review::is_off")] pub track_changes: bool,
     #[serde(default)] pub track_text: bool,
     #[serde(default)] pub author: String,
     /// IDs of the last generated editable contents snapshot, for replace/update.
@@ -101,6 +102,12 @@ pub struct ReviewState {
     #[serde(default)] pub track_history:bool,
     #[serde(default)] pub history:crate::Shared<Vec<RevisionEvent>>,
 }
+fn is_off(value: &bool) -> bool { !*value }
+
+impl ReviewState {
+    pub fn tracking_enabled(&self) -> bool { self.track_changes || self.track_text || self.track_history }
+}
+
 #[derive(Clone,Debug,PartialEq,Eq,Serialize,Deserialize)]
 pub struct CompatibilityIssue { pub code: String, pub part: String, pub message: String }
 

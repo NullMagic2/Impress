@@ -107,6 +107,7 @@ pub fn buttons(ui: &MainUi) -> Vec<ButtonSpec> {
         ButtonSpec { button: ui.header_date_field_button, name: "header_date_field_button", label: "Date", icon: "calendar", action: Action::InsertField(2), segment: "single", kind: "small", tip: "Insert today's date", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.header_remove_button, name: "header_remove_button", label: "Remove", icon: "trash", action: Action::RemoveHeaderFooter, segment: "single", kind: "large", tip: "Delete this header or footer", disabled: false, width_dip: 62, height_dip: 78, art_width_dip: 32, art_height_dip: 32 },
         ButtonSpec { button: ui.header_exit_button, name: "header_exit_button", label: "Close", icon: "x", action: Action::ExitHeaderFooter, segment: "single", kind: "large", tip: "Close Header and Footer (Esc)", disabled: false, width_dip: 62, height_dip: 78, art_width_dip: 32, art_height_dip: 32 },
+        ButtonSpec { button: ui.original_close_button, name: "original_close_button", label: "", icon: "x", action: Action::ReviewOriginalClose, segment: "single", kind: "icon", tip: "Close original view", disabled: false, width_dip: 28, height_dip: 28, art_width_dip: 20, art_height_dip: 20 },
         ButtonSpec { button: ui.source_close_button, name: "source_close_button", label: "", icon: "x", action: Action::View(ViewMode::Graphical), segment: "single", kind: "icon", tip: "Close Typst source", disabled: false, width_dip: 28, height_dip: 28, art_width_dip: 20, art_height_dip: 20 },
         ButtonSpec { button: ui.styles_close_button, name: "styles_close_button", label: "", icon: "x", action: Action::StylesClose, segment: "single", kind: "icon", tip: "Close Styles", disabled: false, width_dip: 28, height_dip: 28, art_width_dip: 20, art_height_dip: 20 },
         ButtonSpec { button: ui.styles_apply_button, name: "styles_apply_button", label: "Apply style", icon: "accept", action: Action::StyleApply, segment: "single", kind: "pane-default", tip: "Apply style", disabled: false, width_dip: 120, height_dip: 28, art_width_dip: 16, art_height_dip: 16 },
@@ -181,7 +182,8 @@ pub fn buttons(ui: &MainUi) -> Vec<ButtonSpec> {
         ButtonSpec { button: ui.resolve_comment_button, name: "resolve_comment_button", label: "Resolve", icon: "comment-check", action: Action::CommentResolve, segment: "single", kind: "small", tip: "Resolve comment", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.previous_comment_button, name: "previous_comment_button", label: "Previous", icon: "arrow-up", action: Action::CommentStep(false), segment: "single", kind: "small", tip: "Previous", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.next_comment_button, name: "next_comment_button", label: "Next", icon: "arrow-down", action: Action::CommentStep(true), segment: "single", kind: "small", tip: "Next", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
-        ButtonSpec { button: ui.track_changes_button, name: "track_changes_button", label: "Track changes", icon: "track", action: Action::TextTracking, segment: "single", kind: "file-menu", tip: "Track changes", disabled: false, width_dip: 78, height_dip: 78, art_width_dip: 32, art_height_dip: 32 },
+        ButtonSpec { button: ui.track_changes_button, name: "track_changes_button", label: "Track changes", icon: "track", action: Action::TrackChanges, segment: "single", kind: "large", tip: "Track changes", disabled: false, width_dip: 62, height_dip: 78, art_width_dip: 32, art_height_dip: 32 },
+        ButtonSpec { button: ui.markup_display_button, name: "markup_display_button", label: "All markup", icon: "markup", action: Action::ReviewDisplay, segment: "single", kind: "typography-menu", tip: "Display for review", disabled: false, width_dip: 156, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.show_markup_button, name: "show_markup_button", label: "Show markup", icon: "markup", action: Action::ReviewMarkup, segment: "single", kind: "typography-menu", tip: "Show markup", disabled: false, width_dip: 132, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.reviewing_pane_button, name: "reviewing_pane_button", label: "Reviewing pane", icon: "pane-right", action: Action::ReviewPane, segment: "single", kind: "small", tip: "Reviewing pane", disabled: false, width_dip: 68, height_dip: 24, art_width_dip: 16, art_height_dip: 16 },
         ButtonSpec { button: ui.accept_change_button, name: "accept_change_button", label: "Accept", icon: "accept", action: Action::RevisionResolve(true), segment: "single", kind: "large", tip: "Accept change", disabled: false, width_dip: 62, height_dip: 78, art_width_dip: 32, art_height_dip: 32 },
@@ -349,6 +351,8 @@ pub fn scale_controls(ui: &MainUi) {
     ui.header_exit_button.set_min_size(ui.header_exit_button.from_dip(Size::new(62, 78)));
     ui.tab_ruler.set_min_size(ui.tab_ruler.from_dip(Size::new(-1, 34)));
     ui.vertical_ruler.set_min_size(ui.vertical_ruler.from_dip(Size::new(34, -1)));
+    ui.revision_gutter_panel.set_min_size(ui.revision_gutter_panel.from_dip(Size::new(220, -1)));
+    ui.original_close_button.set_min_size(ui.original_close_button.from_dip(Size::new(28, 28)));
     ui.split_handle.set_min_size(ui.split_handle.from_dip(Size::new(6, -1)));
     ui.source_close_button.set_min_size(ui.source_close_button.from_dip(Size::new(28, 28)));
     ui.equation_panel.set_min_size(ui.equation_panel.from_dip(Size::new(340, -1)));
@@ -468,8 +472,8 @@ pub fn scale_controls(ui: &MainUi) {
     ui.previous_comment_button.set_min_size(ui.previous_comment_button.from_dip(Size::new(68, 24)));
     ui.next_comment_button.set_min_size(ui.next_comment_button.from_dip(Size::new(68, 24)));
     ui.review_tracking_2_group_caption.set_min_size(ui.review_tracking_2_group_caption.from_dip(Size::new(-1, 18)));
-    ui.track_changes_button.set_min_size(ui.track_changes_button.from_dip(Size::new(78, 78)));
-    ui.markup_mode_combo.set_min_size(ui.markup_mode_combo.from_dip(Size::new(154, 28)));
+    ui.track_changes_button.set_min_size(ui.track_changes_button.from_dip(Size::new(62, 78)));
+    ui.markup_display_button.set_min_size(ui.markup_display_button.from_dip(Size::new(156, 24)));
     ui.show_markup_button.set_min_size(ui.show_markup_button.from_dip(Size::new(132, 24)));
     ui.reviewing_pane_button.set_min_size(ui.reviewing_pane_button.from_dip(Size::new(68, 24)));
     ui.review_changes_3_group_caption.set_min_size(ui.review_changes_3_group_caption.from_dip(Size::new(-1, 18)));
