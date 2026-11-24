@@ -1,3 +1,11 @@
+## 0.8.6-88
+
+- Fix runaway printable-key repeat with Greek quotes, accents, composed text and other keyboard layouts. Native character events now control printable repeat; held deletion and navigation retain their fast path.
+- Preserve Word table layout settings, automatic grid widths and side-by-side nested tables.
+- Keep imported Normal styles distinct on export, prefer genuine matching fonts over mislabeled aliases, and use installed Carlito/Caladea substitutes when Office fonts are missing.
+- Preserve visible comment text and field-update preferences, and remove dangling separator references for nonexistent notes.
+- Correct required binary DOC style slots and associated strings; retain imported text insertion/deletion flags as reversible revisions. Desktop Word acceptance checks remain paused due to the VM display issue; see `docs/WORD-2013-REGRESSIONS.md`.
+
 ## 0.8.6-86 — Review ribbon
 
 - Navigate pending revisions with Previous and Next. Accept or reject the current edit from the ribbon or Reviewing Pane, then continue to the next pending edit. Use Undo to reverse a decision.

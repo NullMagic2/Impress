@@ -6,7 +6,7 @@ on:
       version:
         description: 'Application version and package revision (for example 0.8.6-59)'
         required: true
-        default: '0.8.6-69'
+        default: '0.8.6-88'
       validated_run:
         description: 'Optional completed run with passing tests; reuse only unchanged application inputs'
         required: false
@@ -56,7 +56,7 @@ jobs:
       - name: Install distribution build and test dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends             ca-certificates curl git build-essential pkg-config cmake clang lld libclang-dev             python3 python3-pil dpkg-dev file binutils desktop-file-utils shared-mime-info             zstd xvfb xauth xdotool scrot fonts-dejavu-core fonts-liberation fonts-noto-core hunspell-el             libgtk-3-dev libpng-dev libjpeg-dev libtiff-dev libexpat1-dev             libgl1-mesa-dev libglu1-mesa-dev libxkbcommon-dev libwayland-dev             libfontconfig1-dev libfreetype-dev libsm-dev libnotify-dev libenchant-2-dev libssl-dev zlib1g-dev libbz2-dev liblzma-dev
+          apt-get install -y --no-install-recommends             ca-certificates curl git build-essential pkg-config cmake clang lld libclang-dev             python3 python3-pil dpkg-dev file binutils desktop-file-utils shared-mime-info             zstd xvfb xauth xdotool xfwm4 x11-xkb-utils scrot fonts-dejavu-core fonts-liberation fonts-noto-core fonts-crosextra-carlito fonts-crosextra-caladea hunspell-el             libgtk-3-dev libpng-dev libjpeg-dev libtiff-dev libexpat1-dev             libgl1-mesa-dev libglu1-mesa-dev libxkbcommon-dev libwayland-dev             libfontconfig1-dev libfreetype-dev libsm-dev libnotify-dev libenchant-2-dev libssl-dev zlib1g-dev libbz2-dev liblzma-dev
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -90,11 +90,12 @@ jobs:
         if: inputs.validated_run == ''
         run: |
           mkdir -p dist
-          cargo test --release --locked -p editor -p layout -p render -p docx 2>&1 | tee dist/tests-${{ matrix.target }}.log
+          cargo test --release --locked -p editor -p layout -p render -p docx -p format-doc -p typography 2>&1 | tee dist/tests-${{ matrix.target }}.log
           cargo test --release --locked -p gui --bin Impress 2>&1 | tee -a dist/tests-${{ matrix.target }}.log
           for test in test_ribbon_runtime_contracts.py test_ribbon_metrics.py test_compact_ribbon.py test_interface_reference.py; do
             python3 -m unittest discover -s tools/tests -p "$test" 2>&1 | tee -a dist/tests-${{ matrix.target }}.log
           done
+          env -u WAYLAND_DISPLAY GDK_BACKEND=x11 xvfb-run -a -s '-screen 0 1600x1150x24' python3 tools/keyboard_input_smoke.py target/release/Impress --output dist/keyboard-validation
           printf 'Rust and UI checks passed\n' > dist/TESTS-PASSED.txt
       - name: Download previously compiled binaries
         if: inputs.validated_run != ''

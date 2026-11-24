@@ -72,7 +72,7 @@ def main():
         (base/'debian/control').write_text('Source: impress\nSection: editors\nPriority: optional\nMaintainer: NMagic <28734029+NullMagic2@users.noreply.github.com>\n\nPackage: impress\nArchitecture: any\nDescription: desktop word processor\n')
         shlibs=run(['dpkg-shlibdeps','-O','-e'+str(stage/'usr/lib/impress/Impress'),'-e'+str(stage/'usr/lib/impress/impress-convert')],cwd=base)
         dependency=next(line.split('=',1)[1] for line in shlibs.splitlines() if line.startswith('shlibs:Depends='))
-        dependency='xkb-data, libenchant-2-2, fonts-noto-core, '+dependency
+        dependency='xkb-data, libenchant-2-2, fonts-noto-core, fonts-crosextra-carlito, fonts-crosextra-caladea, '+dependency
         size=sum(p.stat().st_size for p in (stage/'usr').rglob('*') if p.is_file())//1024
         write('DEBIAN/control',f'''Package: impress
 Version: {version}
