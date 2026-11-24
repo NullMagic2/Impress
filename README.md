@@ -20,10 +20,10 @@ Choose the download for your system. These packages target 64-bit x86 (x64 / amd
 
 | System | Download |
 | --- | --- |
-| Windows | [Portable ZIP](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-88) |
-| Linux Mint 22.x | [Mint package](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-88-mint22) |
-| Ubuntu 24.04 and 26.04 LTS | [Ubuntu packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-88-ubuntu) |
-| Debian 13 | [Debian package](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-88-debian13) |
+| Windows | [Portable ZIP](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-89) |
+| Linux Mint 22.x | [Mint package](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-89-mint22) |
+| Ubuntu 24.04 and 26.04 LTS | [Ubuntu packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-89-ubuntu) |
+| Debian 13 | [Debian package](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-89-debian13) |
 
 Each download includes the desktop editor and command-line converter. Extract the Windows ZIP and run `Impress.exe`. For Linux, see [package installation and validation](docs/LINUX-PACKAGES.md).
 
