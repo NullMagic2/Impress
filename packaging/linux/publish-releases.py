@@ -24,6 +24,7 @@ def main():
             assets.extend(folder.glob('*.deb'));assets.append(folder/f'BUILD-INFO-{target}.json')
             verification=folder/f'VERIFICATION-{target}.tar.gz'
             provenance=['BINARY-PROVENANCE.json'] if (folder/'BINARY-PROVENANCE.json').exists() else []
+            if (folder/'keyboard-validation').exists(): provenance.append('keyboard-validation')
             subprocess.run(['tar','-czf',str(verification),'-C',str(folder),'validation','TESTS-PASSED.txt',f'tests-{target}.log',*provenance],check=True)
             assets.append(verification)
             notes.append(f"- **{info['target']}**, amd64 — built in {info.get('build_environment',info['build_os'].get('PRETTY_NAME',info['target']))}; dependencies generated from that environment.")

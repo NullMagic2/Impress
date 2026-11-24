@@ -56,7 +56,7 @@ jobs:
       - name: Install distribution build and test dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends             ca-certificates curl git build-essential pkg-config cmake clang lld libclang-dev             python3 python3-pil dpkg-dev file binutils desktop-file-utils shared-mime-info             zstd xvfb xauth xdotool xfwm4 x11-xkb-utils scrot fonts-dejavu-core fonts-liberation fonts-noto-core fonts-crosextra-carlito fonts-crosextra-caladea hunspell-el             libgtk-3-dev libpng-dev libjpeg-dev libtiff-dev libexpat1-dev             libgl1-mesa-dev libglu1-mesa-dev libxkbcommon-dev libwayland-dev             libfontconfig1-dev libfreetype-dev libsm-dev libnotify-dev libenchant-2-dev libssl-dev zlib1g-dev libbz2-dev liblzma-dev
+          apt-get install -y --no-install-recommends             ca-certificates curl git build-essential pkg-config cmake clang lld libclang-dev             python3 python3-pil dpkg-dev file binutils desktop-file-utils shared-mime-info             zstd xvfb xauth dbus-x11 xdotool xfwm4 x11-xkb-utils scrot fonts-dejavu-core fonts-liberation fonts-noto-core fonts-crosextra-carlito fonts-crosextra-caladea hunspell-el             libgtk-3-dev libpng-dev libjpeg-dev libtiff-dev libexpat1-dev             libgl1-mesa-dev libglu1-mesa-dev libxkbcommon-dev libwayland-dev             libfontconfig1-dev libfreetype-dev libsm-dev libnotify-dev libenchant-2-dev libssl-dev zlib1g-dev libbz2-dev liblzma-dev
       - name: Check out source
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
@@ -95,7 +95,6 @@ jobs:
           for test in test_ribbon_runtime_contracts.py test_ribbon_metrics.py test_compact_ribbon.py test_interface_reference.py; do
             python3 -m unittest discover -s tools/tests -p "$test" 2>&1 | tee -a dist/tests-${{ matrix.target }}.log
           done
-          env -u WAYLAND_DISPLAY GDK_BACKEND=x11 xvfb-run -a -s '-screen 0 1600x1150x24' python3 tools/keyboard_input_smoke.py target/release/Impress --output dist/keyboard-validation
           printf 'Rust and UI checks passed\n' > dist/TESTS-PASSED.txt
       - name: Download previously compiled binaries
         if: inputs.validated_run != ''
@@ -118,6 +117,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 packaging/linux/reuse-validated.py --target '${{ matrix.target }}' --run-id "$REUSE_RUN"
+      - name: Run native keyboard checks
+        run: |
+          env -u WAYLAND_DISPLAY GDK_BACKEND=x11 dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1150x24' python3 tools/keyboard_input_smoke.py target/release/Impress --output dist/keyboard-validation
       - name: Build distribution package with native dependency versions
         run: python3 packaging/linux/build-deb.py --target '${{ matrix.target }}' --version "$APP_VERSION"
       - name: Install and exercise the packaged application

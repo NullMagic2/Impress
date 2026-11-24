@@ -1,7 +1,7 @@
 """Native GTK keyboard regression using a synthetic document in an isolated profile.
 
 Run with xdotool, setxkbmap, xfwm4 and Pillow installed, on a disposable X server:
-  xvfb-run -a -s '-screen 0 1600x1150x24' python3 tools/keyboard_input_smoke.py \
+  dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1150x24' python3 tools/keyboard_input_smoke.py \
       /absolute/path/to/Impress --output /tmp/impress-keyboard-results
 
 Checks saved document text, not screenshots, after every sequence and again
@@ -26,11 +26,22 @@ def key(*keys):
 def click(where):
     x('mousemove',*where,'click',1);time.sleep(.3)
 def wait_for_window(name):
-    deadline=time.monotonic()+15
+    deadline=time.monotonic()+30
     while time.monotonic()<deadline:
-        result=subprocess.run(['xdotool','getactivewindow','getwindowname'],capture_output=True,text=True)
-        if name in result.stdout:return
+        if wm.poll() is not None:
+            raise AssertionError('Window manager exited; see keyboard-wm.log')
+        if app.poll() is not None:
+            raise AssertionError('Impress exited; see keyboard-gui.log')
+        result=subprocess.run(['xdotool','search','--onlyvisible','--class','^Impress$'],capture_output=True,text=True)
+        if result.returncode==0 and result.stdout.strip():
+            # GTK publishes the UTF-8 title through _NET_WM_NAME; older
+            # xdotool search --name only checks the legacy WM_NAME.
+            for window in result.stdout.strip().splitlines():
+                if name in x('getwindowname',window):
+                    x('windowactivate','--sync',window)
+                    return
         time.sleep(.1)
+    screenshot().save(qa/'keyboard-startup.png')
     raise AssertionError('Impress did not open the synthetic keyboard fixture')
 def screenshot():
     from PIL import ImageGrab
@@ -51,7 +62,9 @@ with tempfile.TemporaryDirectory(prefix='impress-keyboard-') as tmp:
   z.writestr('[Content_Types].xml','<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>')
   z.writestr('_rels/.rels','<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
   z.writestr('word/document.xml','<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>marker</w:t></w:r></w:p><w:sectPr/></w:body></w:document>')
- wm=subprocess.Popen(['xfwm4','--compositor=off'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+ wm_log=(qa/'keyboard-wm.log').open('w')
+ wm=subprocess.Popen(['xfwm4','--compositor=off'],stdout=wm_log,stderr=subprocess.STDOUT)
+ time.sleep(.5)
  log=(qa/(mode+'-gui.log')).open('w')
  app=subprocess.Popen([exe,path],env=env,stdout=log,stderr=subprocess.STDOUT)
  report=[]
@@ -96,5 +109,5 @@ with tempfile.TemporaryDirectory(prefix='impress-keyboard-') as tmp:
    actual=save();report.append({'case':'Held deletion key','actual':actual,'pass':actual==''})
   (qa/(mode+'-results.json')).write_text(json.dumps(report,indent=2,ensure_ascii=False)+'\n')
  finally:
-  app.terminate();app.wait(timeout=10);wm.terminate();wm.wait(timeout=10);log.close()
+  app.terminate();app.wait(timeout=10);wm.terminate();wm.wait(timeout=10);log.close();wm_log.close()
 if not all(r['pass'] and r.get('stable_after_release',True) for r in report):sys.exit(1)
