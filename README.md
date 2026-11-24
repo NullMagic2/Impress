@@ -16,16 +16,16 @@ Format support depends on the features used in a document. The [DOCX](docs/DOCX-
 
 ## Get started
 
-Choose the release matching your Linux distribution (64-bit x86 / amd64):
+Choose the download for your system. These packages target 64-bit x86 (x64 / amd64).
 
 | System | Download |
 | --- | --- |
-| Linux Mint 22.x | [Mint packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-84-mint22) |
-| Ubuntu 26.04 LTS | [Ubuntu 26.04 package](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-86-ubuntu) |
-| Ubuntu 24.04 LTS | [Ubuntu 24.04 package](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-84-ubuntu) |
-| Debian 13 | [Debian packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-84-debian13) |
+| Windows | [Portable ZIP](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-87) |
+| Linux Mint 22.x | [Mint package](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-87-mint22) |
+| Ubuntu 24.04 and 26.04 LTS | [Ubuntu packages](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-87-ubuntu) |
+| Debian 13 | [Debian package](https://github.com/NullMagic2/Impress/releases/tag/v0.8.6-87-debian13) |
 
-The packages include the desktop editor and command-line converter. See [Linux packages](docs/LINUX-PACKAGES.md) for installation and validation details. Windows build scripts are included in the source; see the [build guide](docs/BUILDING.md).
+Each download includes the desktop editor and command-line converter. Extract the Windows ZIP and run `Impress.exe`. For Linux, see [package installation and validation](docs/LINUX-PACKAGES.md).
 
 Open Impress to start with an empty document, or use **File → Open** to work on an existing file. Save in `.impress` to keep the native document, or choose another supported format with **Save as**.
 
