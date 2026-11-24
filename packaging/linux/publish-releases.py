@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Publish only validated artifacts from the same GitHub Actions source commit."""
-import argparse, hashlib, json, os, subprocess, tempfile
+import argparse, json, os, subprocess, tempfile
 from pathlib import Path
 
 GROUPS = {
@@ -21,28 +21,21 @@ def main():
             assert info['source_commit']==commit and info['application_version']==args.version
             assert (folder/'validation/RESULT.txt').read_text().startswith('Passed:')
             assert (folder/'TESTS-PASSED.txt').read_text().strip()=='Rust and UI checks passed'
-            assets.extend(folder.glob('*.deb'));assets.append(folder/f'BUILD-INFO-{target}.json')
-            verification=folder/f'VERIFICATION-{target}.tar.gz'
-            provenance=['BINARY-PROVENANCE.json'] if (folder/'BINARY-PROVENANCE.json').exists() else []
-            if (folder/'keyboard-validation').exists(): provenance.append('keyboard-validation')
-            subprocess.run(['tar','-czf',str(verification),'-C',str(folder),'validation','TESTS-PASSED.txt',f'tests-{target}.log',*provenance],check=True)
-            assets.append(verification)
+            assets.extend(folder.glob('*.deb'))
             notes.append(f"- **{info['target']}**, amd64 — built in {info.get('build_environment',info['build_os'].get('PRETTY_NAME',info['target']))}; dependencies generated from that environment.")
             if info.get('validation_provenance'):
                 original=info['validation_provenance']
                 notes.append(f"  Binaries and passing tests came from [this build]({original['source_run']}) at `{info['binary_source_commit']}`. Application inputs and pinned build images were verified unchanged for this packaging revision; installation and startup checks were run again.")
         assert len([path for path in assets if path.suffix=='.deb'])==len(targets)
         with tempfile.TemporaryDirectory(prefix='impress-release-') as tmp:
-            tmp=Path(tmp);checksums=tmp/f'SHA256SUMS-{suffix}.txt'
-            checksums.write_text(''.join(f'{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n' for path in sorted(assets)))
-            assets.append(checksums)
+            tmp=Path(tmp)
             body=tmp/'notes.md';body.write_text(f'''Distribution-specific packages of Impress {args.version} for **{label}**.
 
 {chr(10).join(notes)}
 
 Download the `.deb` matching your distribution, then install it with `sudo apt install ./impress_*.deb` from the download folder. These packages include both the desktop application and `impress-convert`.
 
-Each package was installed with its target distribution's package manager, checked for unresolved shared libraries, exercised through a DOCX conversion round trip, and launched under Xvfb. Rust and UI resource tests passed before publication. The verification archives include test logs, library checks and an empty-document screenshot. These are container/X11 checks, not a claim of testing every desktop configuration.
+Each package was installed with its target distribution's package manager, checked for unresolved shared libraries, exercised through a DOCX conversion round trip, and launched under Xvfb. Rust and UI resource tests passed before publication. Build and validation logs remain available in GitHub Actions. These are container/X11 checks, not a claim of testing every desktop configuration.
 
 See the [release notes](https://github.com/{repo}/releases/tag/v{args.version}) for changes in this version.
 
