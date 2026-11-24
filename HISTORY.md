@@ -1,3 +1,9 @@
+## 0.8.6-89
+
+- Update Ctrl/Shift modifiers while navigation keys are held, so releasing Ctrl returns to character selection immediately.
+- Select individual quotes and symbols on double-click, including at paragraph ends, without selecting the adjacent word.
+- Keep cursor positions and selections on whole accented letters and emoji sequences, including during paragraph navigation.
+
 ## 0.8.6-88
 
 - Fix runaway printable-key repeat with Greek quotes, accents, composed text and other keyboard layouts. Native character events now control printable repeat; held deletion and navigation retain their fast path.

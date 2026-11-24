@@ -161,6 +161,83 @@ fn enter_on_empty_list_item_exits_list_without_creating_paragraph() {
 }
 
 #[test]
+fn paragraph_navigation_cannot_land_inside_utf8_or_combining_accents() {
+    for previous in ["άa", "e\u{301}a", "👩\u{200d}💻a"] {
+        let mut editor = editor_with(previous);
+        editor.split_paragraph().unwrap();
+        editor.insert_text("x").unwrap();
+        editor.move_up(true);
+        assert_eq!(editor.focus_position().unwrap().byte_offset, 0);
+        editor.move_right(false);
+        editor.backspace().unwrap();
+    }
+}
+
+#[test]
+fn shift_arrows_select_one_quote_or_accented_grapheme_per_press() {
+    let text = "Αγαπητή Μαρία, όλα\"\"\"\"\"\"";
+    let mut editor = editor_with(text);
+    for count in 1..=6 {
+        editor.move_left(true);
+        assert_eq!(editor.selected_text().unwrap(), "\"".repeat(count));
+    }
+    for count in (0..6).rev() {
+        editor.move_right(true);
+        assert_eq!(editor.selected_text().unwrap_or_default(), "\"".repeat(count));
+    }
+    for grapheme in ["ά", "α\u{301}", "ι\u{308}\u{301}", "e\u{301}", "👩\u{200d}💻"] {
+        let text = format!("όλα{grapheme}");
+        let mut editor = editor_with(&text);
+        editor.move_left(true);
+        assert_eq!(editor.selected_text().as_deref(), Some(grapheme));
+        editor.insert_text("\"").unwrap();
+        assert_eq!(editor.paragraph_text(&editor.focus_position().unwrap().node_id).unwrap(), "όλα\"");
+        assert!(editor.undo());
+        assert_eq!(editor.paragraph_text(&editor.focus_position().unwrap().node_id).unwrap(), text);
+    }
+}
+
+#[test]
+fn punctuation_at_paragraph_end_selects_only_the_clicked_grapheme() {
+    for suffix in ["\"\"\"", "''", "“”", "«»", "…—", "🙂👩\u{200d}💻"] {
+        let text = format!("Αγαπητή Μαρία, όλα{suffix}");
+        let mut editor = editor_with(&text);
+        let id = editor.focus_position().unwrap().node_id;
+        for (start, grapheme) in suffix.grapheme_indices(true) {
+            let start = text.len() - suffix.len() + start;
+            // Mouse hit-testing returns the nearest caret, including the
+            // terminal stop when clicking the right half of the last glyph.
+            let offset = if start + grapheme.len() == text.len() { text.len() } else { start };
+            assert!(editor.select_word_at(id.clone(), offset));
+            assert_eq!(editor.selected_text().as_deref(), Some(grapheme), "{text:?} at {offset}");
+        }
+        assert!(!editor.can_undo());
+    }
+}
+
+#[test]
+fn mouse_selection_does_not_split_combining_accents_or_emoji() {
+    for grapheme in ["α\u{301}", "ι\u{308}\u{301}", "e\u{301}", "👩\u{200d}💻", "🇬🇷"] {
+        let text = format!("a{grapheme}\"z");
+        let mut editor = editor_with(&text);
+        let id = editor.focus_position().unwrap().node_id;
+        for (inside, _) in grapheme.char_indices().skip(1) {
+            editor.set_caret(id.clone(), 1 + inside);
+            assert_eq!(editor.focus_position().unwrap().byte_offset, 1);
+            editor.delete_forward().unwrap();
+            assert_eq!(editor.paragraph_text(&id).unwrap(), "a\"z");
+            assert!(editor.undo());
+            editor.set_caret(id.clone(), 1 + grapheme.len());
+            editor.extend_selection(id.clone(), 1 + inside);
+            assert_eq!(editor.selected_text().as_deref(), Some(grapheme));
+            editor.delete_selection().unwrap();
+            assert_eq!(editor.paragraph_text(&id).unwrap(), "a\"z");
+            assert!(editor.undo());
+        }
+    }
+}
+
+#[test]
 fn double_click_word_selection_handles_greek_and_combining_accents_without_editing() {
     let text="Hello, κόσμος! cafe\u{301} next";
     let mut editor=editor_with(text);
@@ -171,7 +248,9 @@ fn double_click_word_selection_handles_greek_and_combining_accents_without_editi
     assert!(editor.select_word_at(id.clone(),text.find("cafe").unwrap()+2));
     assert_eq!(editor.selected_text().as_deref(),Some("cafe\u{301}"));
     assert!(editor.select_word_at(id.clone(),"Hello".len()));
-    assert_eq!(editor.selected_text().as_deref(),Some("Hello"));
+    assert_eq!(editor.selected_text().as_deref(),Some(","));
+    assert!(editor.select_word_at(id.clone(),text.len()));
+    assert_eq!(editor.selected_text().as_deref(),Some("next"));
     assert_eq!(editor.revision,revision);
     assert!(!editor.can_undo());
 }

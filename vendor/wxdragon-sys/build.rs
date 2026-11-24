@@ -369,9 +369,9 @@ fn build_wxdragon_wrapper(
         if target_env == "gnu" {
             // Potentially set MinGW toolchain for CMake if not automatically detected
             let host_os = std::env::consts::OS;
-            let (generator, cc, cxx) = if host_os == "macos" {
+            let (generator, cc, cxx) = if matches!(host_os, "macos" | "linux") {
                 // On macOS, use Unix Makefiles and MinGW cross-compiler for cross-compilation to Windows
-                ("Unix Makefiles", "x86_64-w64-mingw32-gcc", "x86_64-w64-mingw32-g++")
+                ("Unix Makefiles", "x86_64-w64-mingw32-gcc-posix", "x86_64-w64-mingw32-g++-posix")
             } else {
                 // On Windows, use MinGW Makefiles and native compilers
                 ("MinGW Makefiles", "gcc", "g++")
@@ -520,7 +520,7 @@ fn build_wxdragon_wrapper(
             let host_os = std::env::consts::OS;
             let gcc_path = if host_os == "macos" || host_os == "linux" {
                 // On macOS and Linux, use the cross-compiler
-                "x86_64-w64-mingw32-gcc"
+                "x86_64-w64-mingw32-gcc-posix"
             } else {
                 // On Windows, use the native compiler
                 "gcc"
@@ -789,7 +789,7 @@ fn build_wxdragon_wrapper(
     } else if target_os == "windows" {
         // Detect cross-compilation from macOS to Windows
         let host_os = std::env::consts::OS;
-        let is_macos_to_windows_gnu = host_os == "macos" && target_os == "windows" && target_env == "gnu";
+        let is_macos_to_windows_gnu = matches!(host_os, "macos" | "linux") && target_os == "windows" && target_env == "gnu";
 
         // wxWidgets asks MSVC for opengl32 itself, with `#pragma comment(lib, "opengl32")` in
         // src/msw/glcanvas.cpp — which is why the MSVC targets link without this and the MinGW ones

@@ -506,7 +506,7 @@ pub fn double_click(state:&mut CanvasState,p:Point) {
             }return;
         }
     }
-    if let Some(hit) = state.viewport.hit_test(&state.vector_document, p) {
+    if let Some(hit) = state.viewport.hit_test_character(&state.vector_document, p) {
         if state.editor.select_word_at(NodeId::from(hit.node_id.as_str()), hit.byte_offset) {
             state.selected_object = None;
             state.dragging_selection = false;

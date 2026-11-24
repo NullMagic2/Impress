@@ -229,20 +229,23 @@ impl EditorState {
     }
 
     /// Select the Unicode word under a hit-tested caret, including accents.
-    /// Whitespace/punctuation clicks select their corresponding boundary span.
+    /// Whitespace clicks select their span; punctuation/symbols select one
+    /// grapheme, so adjacent quotes remain individually selectable.
     pub fn select_word_at(&mut self, node_id: NodeId, byte_offset: usize) -> bool {
         let Some(text) = self.paragraph_text(&node_id) else { return false; };
-        let offset = self.clamp_offset(&node_id, byte_offset);
-        let mut range = None;
-        for (start, word) in text.unicode_word_indices() {
-            if start > offset { break; }
+        let offset = clamp_grapheme_boundary(&text, byte_offset);
+        // At the terminal caret, select the final character, never the first
+        // word-boundary span of the paragraph.
+        let offset = if offset == text.len() { previous_grapheme_boundary(&text, offset) } else { offset };
+        let range = text.unicode_word_indices().find_map(|(start, word)| {
             let end = start + word.len();
-            if end >= offset { range = Some(start..end); }
-            if end > offset { break; }
-        }
-        let range = range.or_else(|| text.split_word_bound_indices().find_map(|(start, span)| {
+            (start <= offset && offset < end).then_some(start..end)
+        }).or_else(|| text.split_word_bound_indices().find_map(|(start, span)| {
             let end = start + span.len();
-            (start <= offset && (offset < end || offset == text.len())).then_some(start..end)
+            (start <= offset && offset < end && span.chars().all(char::is_whitespace)).then_some(start..end)
+        })).or_else(|| text.grapheme_indices(true).find_map(|(start, grapheme)| {
+            let end = start + grapheme.len();
+            (start <= offset && offset < end).then_some(start..end)
         }));
         let Some(range) = range else { return false; };
         self.set_caret(node_id.clone(), range.start);
@@ -1252,7 +1255,10 @@ impl EditorState {
         let(style,properties)=value.unwrap_or_default();self.typing_style=style;self.typing_properties=properties;
     }
 
-    fn move_selection_to(&mut self, target: DocumentPosition, extend: bool) {
+    fn move_selection_to(&mut self, mut target: DocumentPosition, extend: bool) {
+        // A vertical/paragraph move may reuse a byte offset from different
+        // text, or a shaped run may end inside a multi-codepoint grapheme.
+        target.byte_offset = self.clamp_offset(&target.node_id, target.byte_offset);
         self.composition = None;
         if extend {
             match &mut self.selection {
@@ -1425,7 +1431,7 @@ impl EditorState {
 
     fn clamp_offset(&self, id: &NodeId, offset: usize) -> usize {
         let Some(text) = self.paragraph_text(id) else { return 0; };
-        clamp_char_boundary(&text, offset.min(text.len()))
+        clamp_grapheme_boundary(&text, offset)
     }
 }
 
@@ -1982,6 +1988,13 @@ fn apply_mutation(document: &mut Document, mutation: &Mutation, forward: bool) -
             Ok(())
         }
     }
+}
+
+fn clamp_grapheme_boundary(text: &str, offset: usize) -> usize {
+    let offset = clamp_char_boundary(text, offset.min(text.len()));
+    let mut cursor = unicode_segmentation::GraphemeCursor::new(offset, text.len(), true);
+    if cursor.is_boundary(text, 0).unwrap_or(false) { offset }
+    else { cursor.prev_boundary(text, 0).ok().flatten().unwrap_or(0) }
 }
 
 fn previous_grapheme_boundary(text: &str, offset: usize) -> usize {

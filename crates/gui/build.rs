@@ -1,6 +1,5 @@
 fn main() {
-    #[cfg(windows)]
-    {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         use embed_manifest::manifest::{ActiveCodePage, DpiAwareness, HeapType, Setting, SupportedOS::*};
         use embed_manifest::{embed_manifest, new_manifest};
         let manifest = new_manifest("Impress.WordProcessor")
@@ -17,7 +16,6 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
 }
 
-#[cfg(windows)]
 fn embed_app_icon() {
     use std::{env, path::PathBuf, process::Command};
     let manifest_dir = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").expect("manifest directory"));
@@ -41,7 +39,7 @@ fn embed_app_icon() {
         println!("cargo:rustc-link-arg-bins={}", output.display());
     } else {
         let output = out.join("impress-icon.o");
-        let status = Command::new("windres").current_dir(&manifest_dir).arg("-O").arg("coff")
+        let status = Command::new(env::var_os("WINDRES").unwrap_or_else(|| "windres".into())).current_dir(&manifest_dir).arg("-O").arg("coff")
             .arg("-i").arg(&resource).arg("-o").arg(&output).status().expect("run windres");
         assert!(status.success(), "could not compile Impress icon resource");
         println!("cargo:rustc-link-arg-bins={}", output.display());

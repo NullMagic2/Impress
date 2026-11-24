@@ -151,6 +151,16 @@ impl ViewportState {
     }
 
     pub fn hit_test(&self, document: &VectorDocument, view_point: Point) -> Option<DocumentHit> {
+        self.hit_test_text(document, view_point, false)
+    }
+
+    /// Word/symbol selection uses the character under the pointer. Ordinary
+    /// clicking/dragging continues to use the nearest insertion point.
+    pub fn hit_test_character(&self, document: &VectorDocument, view_point: Point) -> Option<DocumentHit> {
+        self.hit_test_text(document, view_point, true)
+    }
+
+    fn hit_test_text(&self, document: &VectorDocument, view_point: Point, character: bool) -> Option<DocumentHit> {
         let scale = self.points_to_pixels();
         let rects = self.page_rects_px(document);
         let (page_index, page_rect) = rects.iter().copied().enumerate().find(|(_, rect)| contains(*rect, view_point))?;
@@ -180,7 +190,7 @@ impl ViewportState {
         Some(DocumentHit {
             page_index,
             node_id: region.node_id.clone(),
-            byte_offset: region.nearest_byte_offset(page_point),
+            byte_offset: if character { region.character_byte_offset(page_point) } else { region.nearest_byte_offset(page_point) },
             visual_line: region.visual_line,
         })
     }

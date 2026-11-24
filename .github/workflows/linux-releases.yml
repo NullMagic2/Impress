@@ -6,7 +6,7 @@ on:
       version:
         description: 'Application version and package revision (for example 0.8.6-59)'
         required: true
-        default: '0.8.6-88'
+        default: '0.8.6-89'
       validated_run:
         description: 'Optional completed run with passing tests; reuse only unchanged application inputs'
         required: false
@@ -120,6 +120,9 @@ jobs:
       - name: Run native keyboard checks
         run: |
           env -u WAYLAND_DISPLAY GDK_BACKEND=x11 dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1150x24' python3 tools/keyboard_input_smoke.py target/release/Impress --output dist/keyboard-validation
+      - name: Run native Unicode selection checks
+        run: |
+          env -u WAYLAND_DISPLAY GDK_BACKEND=x11 dbus-run-session -- xvfb-run -a -s '-screen 0 1600x1150x24' python3 tools/unicode_selection_smoke.py target/release/Impress --output dist/selection-validation
       - name: Build distribution package with native dependency versions
         run: python3 packaging/linux/build-deb.py --target '${{ matrix.target }}' --version "$APP_VERSION"
       - name: Install and exercise the packaged application

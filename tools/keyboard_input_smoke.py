@@ -55,7 +55,7 @@ def text(path):
  except (zipfile.BadZipFile,FileNotFoundError):return None
 with tempfile.TemporaryDirectory(prefix='impress-keyboard-') as tmp:
  tmp=Path(tmp)
- env={**os.environ,'LANGUAGE':'en','GTK_IM_MODULE':'simple'}
+ env={**os.environ,'LANGUAGE':'en','GTK_IM_MODULE':'simple','GDK_BACKEND':'x11','GTK_USE_PORTAL':'0'}
  for v in ['XDG_CONFIG_HOME','XDG_CACHE_HOME','XDG_DATA_HOME','IMPRESS_RECOVERY_DIR']:env[v]=str(tmp/v)
  path=tmp/'Keyboard.docx'
  with zipfile.ZipFile(path,'w',zipfile.ZIP_DEFLATED) as z:

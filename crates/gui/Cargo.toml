@@ -42,7 +42,7 @@ url = "2.5.8"
 [target.'cfg(target_os = "linux")'.dependencies]
 libloading = "0.8.9"
 
-[target.'cfg(windows)'.build-dependencies]
+[build-dependencies]
 embed-manifest.workspace = true
 
 [target.'cfg(windows)'.dependencies]

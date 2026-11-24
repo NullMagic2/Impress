@@ -1776,6 +1776,14 @@ fn run_key_repeat(state: &mut CanvasState) -> bool {
     // Released without a key-up (focus moved, a dialog opened): stop.
     if !key_still_down(repeat.key) { return false; }
     if equation_ui::previewing(state) || state.input.active() { return false; }
+    // Modifiers can change while the arrow remains down. Keeping Ctrl from
+    // the initial press makes Shift+arrows keep jumping whole words after
+    // Ctrl is released; keeping Shift extends a selection after its release.
+    #[cfg(any(target_os = "linux", windows))]
+    {
+        repeat.shift = wxdragon::utils::get_key_state(wxdragon::keycode::WXK_SHIFT);
+        repeat.cmd = wxdragon::utils::get_key_state(WXK_CONTROL);
+    }
     let n = repeat.due();
     let mut repaint = false;
     if n > 0 {

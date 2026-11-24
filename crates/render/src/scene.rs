@@ -181,6 +181,18 @@ impl TextHitRegion {
             .unwrap_or(self.byte_range.start)
     }
 
+    /// The grapheme under the pointer, rather than its nearest insertion
+    /// point. Double-clicking the right half of a quote must not select the
+    /// next word/symbol. Logical stops also work for right-to-left runs.
+    pub fn character_byte_offset(&self, point: Point) -> usize {
+        let coordinate = self.inline_coordinate(point);
+        self.caret_stops.windows(2).find_map(|pair| {
+            let left = pair[0].x_pt.min(pair[1].x_pt);
+            let right = pair[0].x_pt.max(pair[1].x_pt);
+            (coordinate >= left && coordinate < right).then_some(pair[0].byte_offset)
+        }).unwrap_or_else(|| self.nearest_byte_offset(point))
+    }
+
     pub fn inline_rect(&self, start: f32, size: f32) -> Rect {
         if self.vertical { Rect::new(self.rect.x, start, self.rect.width, size) }
         else { Rect::new(start, self.rect.y, size, self.rect.height) }
