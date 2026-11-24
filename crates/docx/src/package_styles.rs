@@ -258,9 +258,19 @@ fn generated_style(
         model::StyleKind::Character => "character",
     };
     let mut result=old.as_ref().map(opening).unwrap_or_else(||format!("<w:style xmlns:w=\"http://schemas.openxmlformats.org/wordprocessingml/2006/main\" w:type=\"{kind}\" w:styleId=\"{}\">",xml_escape(&style.id.0)));
+    // Word identifies styles by name as well as styleId. Imported Normal and
+    // the native fallback can coexist internally, but must not share a name
+    // in an exported stylesheet or Word replaces the imported definition.
+    let name = if style.id.0.starts_with("builtin.") && document.styles.styles.values()
+        .any(|other| other.id != style.id && other.name.eq_ignore_ascii_case(&style.name))
+    {
+        format!("{} ({})", style.name, style.id.0)
+    } else {
+        style.name.clone()
+    };
     result.push_str(&format!(
         "<w:name xmlns:w=\"{WORD_NAMESPACE}\" w:val=\"{}\"/>",
-        xml_escape(&style.name)
+        xml_escape(&name)
     ));
     if let Some(base) = &style.based_on {
         result.push_str(&format!(

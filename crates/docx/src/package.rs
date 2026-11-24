@@ -385,6 +385,7 @@ fn table_xml(table: &Table, document: &Document, context: &ExportContext, drawin
     let grid = format!("<w:tblGrid>{}</w:tblGrid>", grid_widths.iter()
         .map(|width_mm| format!("<w:gridCol w:w=\"{}\"/>", twips(*width_mm)))
         .collect::<String>());
+    let layout = table.properties.fixed_layout.map(|fixed| format!("<w:tblLayout w:type=\"{}\"/>", if fixed { "fixed" } else { "autofit" })).unwrap_or_default();
     let position = table.properties.position.as_ref().map(table_position_xml).unwrap_or_default();
     let native_padding = Some(model::TABLE_TEXT_PADDING_PT * (25.4 / 72.0));
     let margins = cell_margins_xml("w:tblCellMar", table.properties.cell_margins.unwrap_or(model::TableCellMargins {
@@ -398,7 +399,7 @@ fn table_xml(table: &Table, document: &Document, context: &ExportContext, drawin
         let flags = 0x400 | if first { 0x20 } else { 0 } | if no_bands { 0x200 } else { 0 };
         format!(r#"<w:tblLook w:val="{flags:04X}" w:firstRow="{}" w:noHBand="{}" w:noVBand="1"/>"#, u8::from(first), u8::from(no_bands))
     };
-    format!("<w:tbl><w:tblPr>{style_tag}{position}{width}{indent}<w:jc w:val=\"{align}\"/>{spacing}{borders}{margins}{look}</w:tblPr>{grid}{rows}</w:tbl>")
+    format!("<w:tbl><w:tblPr>{style_tag}{position}{width}{indent}<w:jc w:val=\"{align}\"/>{spacing}{borders}{margins}{layout}{look}</w:tblPr>{grid}{rows}</w:tbl>")
 }
 
 fn cell_margins_xml(tag: &str, margins: model::TableCellMargins) -> String {
@@ -611,13 +612,12 @@ fn run_xml(run: &TextRun) -> String {
 }
 
 fn run_props_xml(p: &CharacterProperties) -> String {
-    let mut props = String::new();
+    let mut props = theme_fonts::properties(p);
     if let Some(value)=p.bold { props.push_str(if value{"<w:b/>"}else{"<w:b w:val=\"0\"/>"}); }
     if let Some(value)=p.italic { props.push_str(if value{"<w:i/>"}else{"<w:i w:val=\"0\"/>"}); }
     if let Some(value)=p.right_to_left { props.push_str(if value{"<w:rtl/>"}else{"<w:rtl w:val=\"0\"/>"}); }
     if let Some(value)=p.underline { props.push_str(if value{"<w:u w:val=\"single\"/>"}else{"<w:u w:val=\"none\"/>"}); }
     if let Some(size) = p.font_size_pt { props.push_str(&format!("<w:sz w:val=\"{}\"/>", (size * 2.0).round() as i32)); }
-    props.push_str(&theme_fonts::properties(p));
     if let Some(color) = &p.color { props.push_str(&format!("<w:color w:val=\"{}\"/>", xml_escape(color.trim_start_matches('#')))); }
     if let Some(color)=&p.highlight { if color=="none" {props.push_str("<w:highlight w:val=\"none\"/><w:shd w:val=\"clear\" w:fill=\"auto\"/>");} else {props.push_str(&format!("<w:shd w:val=\"clear\" w:fill=\"{}\"/>",xml_escape(color.trim_start_matches('#'))));} }
     if let Some(typography) = &p.typography {

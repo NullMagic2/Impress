@@ -196,7 +196,6 @@ struct CanvasState {
     /// A held key being repeated by the UI timer.
     key_repeat: Option<KeyRepeat>,
     /// Key code of the last key-down that produced a character event.
-    last_key_down: Option<i32>,
     /// The other documents open in this window.
     documents: documents::Stack,
 }
@@ -316,7 +315,7 @@ fn main() {
             layout_error: None,
             action_status: None,
             renderer: wx_canvas::WxCanvasRenderer::default(),
-            table_pointer: None, table_hover: None, picture_hover: None, table_band: None, table_drag: None, band_drag: None, cell_drag_anchor: None, drag_pointer: None, shift_click: false, key_repeat: None, last_key_down: None,
+            table_pointer: None, table_hover: None, picture_hover: None, table_band: None, table_drag: None, band_drag: None, cell_drag_anchor: None, drag_pointer: None, shift_click: false, key_repeat: None,
             documents: Default::default(),
         }));
 
@@ -765,7 +764,6 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
         // hardware translation can still identify their command key.
         let shortcut_letter = shortcuts::letter(key);
         let Some(code) = key.get_key_code().or_else(|| shortcut_letter.map(|c| c as i32)) else {
-            key_state.borrow_mut().last_key_down = None;
             event.skip(true);
             return;
         };
@@ -925,14 +923,13 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
         let cmd = key.cmd_down();
         // A held key repeats from the UI timer (see `KeyRepeat`); the
         // system's own repeats of it are ignored.
-        if state.key_repeat.as_ref().is_some_and(|r| r.key == RepeatKey::Code(code)) { event.skip(false); return; }
+        if state.key_repeat.as_ref().is_some_and(|r| r.key == code) { event.skip(false); return; }
         let (consumed, repaint) = apply_key(&mut state, code, shift, cmd);
         if consumed {
-            if repeatable(code) { state.key_repeat = Some(KeyRepeat::new(RepeatKey::Code(code), code, shift, cmd)); }
+            if repeatable(code) { state.key_repeat = Some(KeyRepeat::new(code, shift, cmd)); }
             if repaint { key_canvas.refresh(false, None); }
             event.skip(false);
         } else {
-            state.last_key_down = Some(code);
             event.skip(true);
         }
     });
@@ -944,7 +941,7 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
         if let WindowEventData::Keyboard(key) = &event {
             let code = key.get_key_code();
             let mut state = up_key_state.borrow_mut();
-            if state.key_repeat.as_ref().is_some_and(|r| r.physical == code || r.key == RepeatKey::Code(code.unwrap_or(-1))) { state.key_repeat = None; }
+            if state.key_repeat.as_ref().is_some_and(|r| Some(r.key) == code) { state.key_repeat = None; }
         }
         event.skip(true);
     });
@@ -978,10 +975,11 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
         if state.input.active() { event.skip(false); return; }
         equation_ui::show_document(&mut state);
         if slot_ui::typed(&mut state, ch) { state.needs_present = true; event.skip(false); return; }
-        if state.key_repeat.as_ref().is_some_and(|r| r.key == RepeatKey::Char(ch)) { event.skip(false); return; }
         state.selected_object = None;
-        let physical = state.last_key_down.take();
-        state.key_repeat = physical.map(|code| KeyRepeat::new(RepeatKey::Char(ch), code, false, false));
+        // CHAR is committed text, including dead-key/compose results. It may
+        // arrive after KEY_UP, so it must never start a physical-key timer.
+        // Native CHAR events also provide printable-key auto-repeat.
+        state.key_repeat = None;
         match state.editor.insert_text(&ch.to_string()) {
             Ok(()) => {
                 state.preferred_caret_x_pt = None;
@@ -1741,20 +1739,17 @@ fn repeatable(code: i32) -> bool {
     matches!(code, WXK_BACK | WXK_DELETE | WXK_RETURN | WXK_NUMPAD_ENTER | WXK_LEFT | WXK_RIGHT | WXK_UP | WXK_DOWN | WXK_PAGEUP | WXK_PAGEDOWN)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RepeatKey { Code(i32), Char(char) }
-
-/// Key repeat driven by the UI timer instead of the system's repeat events.
+/// Navigation/deletion repeat driven by the UI timer. Printable text uses CHAR.
 /// System repeats arrive at the user's (often slow) setting and Windows folds
 /// them together whenever a frame is late, so held keys crawled. Here a held
 /// key repeats every `KEY_REPEAT_INTERVAL` after `KEY_REPEAT_DELAY`, catching
 /// up after a slow frame, until the key is released.
-struct KeyRepeat { key: RepeatKey, physical: Option<i32>, shift: bool, cmd: bool, start: Instant, done: u32 }
+struct KeyRepeat { key: i32, shift: bool, cmd: bool, start: Instant, done: u32 }
 const KEY_REPEAT_DELAY: Duration = Duration::from_millis(320);
 const KEY_REPEAT_INTERVAL: Duration = Duration::from_millis(22);
 impl KeyRepeat {
-    fn new(key: RepeatKey, physical: i32, shift: bool, cmd: bool) -> Self {
-        Self { key, physical: Some(physical), shift, cmd, start: Instant::now(), done: 0 }
+    fn new(key: i32, shift: bool, cmd: bool) -> Self {
+        Self { key, shift, cmd, start: Instant::now(), done: 0 }
     }
     /// Repeats due since the last call (at most a few per tick).
     fn due(&mut self) -> u32 {
@@ -1779,13 +1774,13 @@ fn key_still_down(code: i32) -> bool {
 fn run_key_repeat(state: &mut CanvasState) -> bool {
     let Some(mut repeat) = state.key_repeat.take() else { return false; };
     // Released without a key-up (focus moved, a dialog opened): stop.
-    if repeat.physical.is_some_and(|code| !key_still_down(code)) { return false; }
+    if !key_still_down(repeat.key) { return false; }
     if equation_ui::previewing(state) || state.input.active() { return false; }
     let n = repeat.due();
     let mut repaint = false;
     if n > 0 {
         match repeat.key {
-            RepeatKey::Code(code) if matches!(code, WXK_BACK | WXK_DELETE) => {
+            code if matches!(code, WXK_BACK | WXK_DELETE) => {
                 let before = state.editor.revision;
                 match state.editor.delete_repeated(code == WXK_BACK, n as usize) {
                     Ok(()) if state.editor.revision != before => {
@@ -1799,14 +1794,7 @@ fn run_key_repeat(state: &mut CanvasState) -> bool {
                     Err(error) => { state.action_status = Some(format!("Deletion failed: {error}")); return false; }
                 }
             }
-            RepeatKey::Code(code) => for _ in 0..n { repaint |= apply_key(state, code, repeat.shift, repeat.cmd).1; },
-            RepeatKey::Char(ch) => {
-                state.selected_object = None;
-                match state.editor.insert_text(&ch.to_string().repeat(n as usize)) {
-                    Ok(()) => { state.preferred_caret_x_pt = None; state.caret_visual_line = None; submit_typing_layout(state); wake_caret(state); }
-                    Err(error) => { state.action_status = Some(format!("Typing failed: {error}")); return false; }
-                }
-            }
+            code => for _ in 0..n { repaint |= apply_key(state, code, repeat.shift, repeat.cmd).1; },
         }
     }
     state.key_repeat = Some(repeat);

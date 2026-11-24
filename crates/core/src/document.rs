@@ -467,6 +467,9 @@ pub struct Table {
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct TableProperties {
+    /// Explicit DOCX table sizing algorithm. None follows Word's automatic layout.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixed_layout: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<StyleId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -903,6 +903,7 @@ fn parse_table(node: &XmlNode, context: &ImportContext) -> Table {
     let mut local=context.clone();local.in_table=true;let context=&local;
     let mut table = Table { id: NodeId::new(), properties: TableProperties::default(), rows: Vec::new() };
     if let Some(pr) = node.child("w:tblPr") {
+        table.properties.fixed_layout = pr.child("w:tblLayout").and_then(|n| n.attr("w:type")).map(|v| v == "fixed");
         table.properties.style = pr.child("w:tblStyle").and_then(|node| node.attr("w:val")).map(|id| model::StyleId(id.into()));
         if let Some(look) = pr.child("w:tblLook") {
             let flags = look.attr("w:val").and_then(|value| u16::from_str_radix(value, 16).ok());

@@ -49,6 +49,9 @@ Representation limits remain explicit. DOC export does not embed fonts and does
 not reconstruct arbitrary OLE objects, equations, vector shapes or text-box
 geometry. These use warned readable fallbacks. Advanced picture effects,
 revision histories and comment thread/date/resolved metadata are not preserved.
+On import, binary character insertion/deletion flags become reversible text
+revisions, rather than exposing deleted text as ordinary document content.
+Legacy revision author/date recovery is still incomplete.
 Top-and-bottom floating table wrapping uses warned side exclusion distances;
 normal around-text table positioning preserves the authored gaps. General
 vector/metafile shapes are not counted as raster-picture support. Keep the
@@ -75,6 +78,10 @@ Partial behavior and test results earn no implementation credit.
 External office programs may be used as independent verification oracles during
 development. They are never called by the shipped converter. Verification results
 and native Windows limitations are recorded separately in the progress report.
+The current writer reserves the fifteen required fixed style indices, emits the
+mandatory associated-string table, and keeps imported Normal styles distinct
+from Impress's fallback. See [Word 2013 regressions](WORD-2013-REGRESSIONS.md) for
+the tests and the outstanding desktop Word verification.
 
 ## References
 

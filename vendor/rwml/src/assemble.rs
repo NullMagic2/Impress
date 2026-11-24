@@ -2613,7 +2613,17 @@ impl<'a, 'l> Asm<'a, 'l> {
             field_unsupported_reason: None,
             image: None,
             comment: None,
-            revision: None,
+            revision: if self.run_chp.revision_deleted || self.run_chp.revision_inserted {
+                Some(crate::model::AuthoredRevision {
+                    kind: if self.run_chp.revision_deleted {
+                        crate::RevisionKind::Deletion
+                    } else {
+                        crate::RevisionKind::Insertion
+                    },
+                    author: None,
+                    date: None,
+                })
+            } else { None },
             content_control: None,
             bookmark: None,
             note: None,

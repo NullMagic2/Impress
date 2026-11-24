@@ -13,29 +13,35 @@ const STD_BASE_BYTES: usize = 10;
 
 #[derive(Clone)]
 pub(super) struct StyleIds {
-    ordered: Vec<StyleId>,
+    ordered: Vec<Option<StyleId>>,
     indexes: BTreeMap<StyleId, u16>,
 }
 
 impl StyleIds {
     pub(super) fn new(document: &Document) -> FormatResult<Self> {
-        let normal = StyleId::from(STYLE_NORMAL);
-        let mut ordered = vec![normal.clone()];
+        let normal = document.styles.styles.values()
+            .find(|style| style.kind == StyleKind::Paragraph
+                && !style.id.0.starts_with("builtin.")
+                && style.name.eq_ignore_ascii_case("Normal"))
+            .map(|style| style.id.clone())
+            .unwrap_or_else(|| StyleId::from(STYLE_NORMAL));
+        let mut ordered = vec![Some(normal.clone())];
+        ordered.resize(15, None);
         ordered.extend(
             document
                 .styles
                 .styles
                 .keys()
                 .filter(|id| **id != normal)
-                .cloned(),
+                .cloned().map(Some),
         );
-        if ordered.len() > MAX_STYLE_COUNT {
+        if ordered.len() >= MAX_STYLE_COUNT {
             return Err(unsupported("Too many styles for native DOC export"));
         }
         let indexes = ordered
             .iter()
             .enumerate()
-            .map(|(index, id)| (id.clone(), index as u16))
+            .filter_map(|(index, id)| id.as_ref().map(|id| (id.clone(), index as u16)))
             .collect();
         Ok(Self { ordered, indexes })
     }
@@ -54,10 +60,21 @@ impl StyleIds {
         set_word(&mut output, 2, self.ordered.len() as u16);
         set_word(&mut output, 4, STD_BASE_BYTES as u16);
         set_word(&mut output, 6, 1);
-        set_word(&mut output, 8, USER_STYLE_ID);
+        set_word(&mut output, 8, 1);
+        set_word(&mut output, 10, 15);
         for (index, id) in self.ordered.iter().enumerate() {
+            let Some(id) = id else {
+                word(&mut output, 0);
+                continue;
+            };
             let style = document.styles.styles.get(id);
-            let name = style.map(|style| style.name.as_str()).unwrap_or("Normal");
+            let authored_name = style.map(|style| style.name.as_str()).unwrap_or("Normal");
+            let unique_name;
+            let name = if id.0.starts_with("builtin.") && document.styles.styles.values()
+                .any(|other| other.id != *id && other.name.eq_ignore_ascii_case(authored_name)) {
+                unique_name = format!("{authored_name} ({})", id.0);
+                unique_name.as_str()
+            } else { authored_name };
             let name_units = name.encode_utf16().collect::<Vec<_>>();
             if name_units.len() > MAX_STYLE_NAME_UNITS {
                 return Err(unsupported(

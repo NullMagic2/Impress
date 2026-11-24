@@ -856,3 +856,87 @@ fn resolved_theme_fonts_materialize_per_script_when_exporting_binary_doc() {
         );
     }
 }
+
+#[test]
+fn word97_exports_include_the_required_associated_string_table() {
+    use std::io::Read;
+    let mut output = Cursor::new(Vec::new());
+    DocFormat.export(&Document::default(), &mut output).unwrap();
+    let mut compound = cfb::CompoundFile::open(Cursor::new(output.into_inner())).unwrap();
+    let mut word = Vec::new();
+    compound.open_stream("/WordDocument").unwrap().read_to_end(&mut word).unwrap();
+    let pair = 154 + 32 * 8;
+    let offset = u32::from_le_bytes(word[pair..pair+4].try_into().unwrap()) as usize;
+    let length = u32::from_le_bytes(word[pair+4..pair+8].try_into().unwrap()) as usize;
+    assert_eq!(length, 42);
+    let mut table = Vec::new();
+    compound.open_stream("/1Table").unwrap().read_to_end(&mut table).unwrap();
+    assert_eq!(&table[offset..offset+6], &[255,255,18,0,0,0]);
+    assert_eq!(&table[offset+6..offset+length], &[0;36]);
+}
+
+#[test]
+fn word97_styles_reserve_the_fifteen_fixed_indices() {
+    use std::io::Read;
+    let mut output = Cursor::new(Vec::new());
+    DocFormat.export(&Document::default(), &mut output).unwrap();
+    let mut compound = cfb::CompoundFile::open(Cursor::new(output.into_inner())).unwrap();
+    let mut word = Vec::new();
+    compound.open_stream("/WordDocument").unwrap().read_to_end(&mut word).unwrap();
+    let pair = 154 + 8;
+    let offset = u32::from_le_bytes(word[pair..pair+4].try_into().unwrap()) as usize;
+    let mut table = Vec::new();
+    compound.open_stream("/1Table").unwrap().read_to_end(&mut table).unwrap();
+    let styles = &table[offset..];
+    let count = u16::from_le_bytes(styles[2..4].try_into().unwrap());
+    assert!(count >= 15);
+    assert_eq!(u16::from_le_bytes(styles[10..12].try_into().unwrap()), 15);
+    let mut cursor = usize::from(u16::from_le_bytes(styles[..2].try_into().unwrap())) + 2;
+    for index in 0..15 {
+        let length = usize::from(u16::from_le_bytes(styles[cursor..cursor+2].try_into().unwrap()));
+        if index != 0 { assert_eq!(length, 0, "reserved style slot {index}"); }
+        cursor += 2 + length;
+    }
+}
+
+#[test]
+fn imported_normal_retains_its_font_and_has_a_unique_doc_style_name() {
+    let mut document = Document::default();
+    let mut normal = document.styles.get(&StyleId::from(STYLE_NORMAL)).unwrap().clone();
+    normal.id = StyleId::from("WordNormal");
+    normal.character.set_font_family(Some("Arial".into()));
+    let id = normal.id.clone();
+    document.styles.styles.insert(id.clone(), normal);
+    let mut paragraph = Paragraph::plain("Imported Word text");
+    paragraph.style = Some(id);
+    document.sections[0].blocks = vec![Block::Paragraph(paragraph)].into();
+    let mut output = Cursor::new(Vec::new());
+    DocFormat.export(&document, &mut output).unwrap();
+    use std::io::Read;
+    let mut compound = cfb::CompoundFile::open(Cursor::new(output.get_ref())).unwrap();
+    let mut word = Vec::new();
+    compound.open_stream("/WordDocument").unwrap().read_to_end(&mut word).unwrap();
+    let offset = u32::from_le_bytes(word[162..166].try_into().unwrap()) as usize;
+    let mut table = Vec::new();
+    compound.open_stream("/1Table").unwrap().read_to_end(&mut table).unwrap();
+    let styles = &table[offset..];
+    let count = u16::from_le_bytes(styles[2..4].try_into().unwrap());
+    let mut cursor = usize::from(u16::from_le_bytes(styles[..2].try_into().unwrap())) + 2;
+    let mut names = std::collections::BTreeSet::new();
+    for _ in 0..count {
+        let length = usize::from(u16::from_le_bytes(styles[cursor..cursor+2].try_into().unwrap()));
+        if length != 0 {
+            let data = &styles[cursor+2..cursor+2+length];
+            let count = usize::from(u16::from_le_bytes(data[10..12].try_into().unwrap()));
+            let units = data[12..12+count*2].chunks_exact(2)
+                .map(|unit| u16::from_le_bytes(unit.try_into().unwrap())).collect::<Vec<_>>();
+            let name = String::from_utf16(&units).unwrap();
+            assert!(names.insert(name.to_lowercase()), "duplicate DOC style {name}");
+        }
+        cursor += 2 + length;
+    }
+    output.set_position(0);
+    let saved = DocFormat.import(&mut output).unwrap();
+    let p = find_paragraph(&saved, "Imported Word text");
+    assert_eq!(saved.styles.resolve_character(p.style.as_ref()).font_family.as_deref(), Some("Arial"));
+}

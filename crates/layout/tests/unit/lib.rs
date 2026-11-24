@@ -329,3 +329,36 @@ fn ruler_margin_metadata_follows_sections_including_intentional_blank_pages() {
         assert!((page.size.height - rect.max_y() - 28.0 * MM_TO_PT).abs() < 0.001);
     }
 }
+
+#[test]
+fn automatic_tables_keep_the_expanded_grid_and_fixed_tables_use_the_requested_width() {
+    let cell = || TableCell {
+        id: NodeId::new(),
+        blocks: vec![Block::Paragraph(Paragraph::plain("Cell"))].into(),
+        column_span: 1, row_span: 1, width_mm: None, shading: None,
+        borders: None, vertical_alignment: CellVerticalAlignment::Top,
+        margins: None, text_direction: None,
+    };
+    for (fixed, expected_mm) in [(None, 80.0), (Some(true), 60.0)] {
+        let table = Table {
+            id: NodeId::new(),
+            properties: model::TableProperties {
+                fixed_layout: fixed, preferred_width_mm: Some(60.0),
+                grid_column_widths_mm: vec![40.0,40.0], ..Default::default()
+            },
+            rows: vec![model::TableRow {
+                id: NodeId::new(), cells: vec![cell(),cell()], repeat_as_header: false,
+                allow_break_across_pages: true, height_mm: None,
+            }],
+        };
+        let mut document = Document::default();
+        document.sections[0].blocks = vec![Block::Table(table)].into();
+        let scene = LayoutEngine::default().layout_document(&document).unwrap();
+        let cells = scene.pages[0].object_regions.iter()
+            .filter(|region| matches!(region.kind, ObjectKind::TableCell(_))).collect::<Vec<_>>();
+        let left = cells.iter().map(|c| c.rect.x).fold(f32::INFINITY,f32::min);
+        let right = cells.iter().map(|c| c.rect.max_x()).fold(f32::NEG_INFINITY,f32::max);
+        assert!((right-left-expected_mm*MM_TO_PT).abs()<0.1,
+            "fixed={fixed:?}, expected {expected_mm} mm, actual {} mm; regions {cells:?}", (right-left)/MM_TO_PT);
+    }
+}

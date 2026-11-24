@@ -36,6 +36,9 @@ Standard DrawingML picture preset geometry and adjustment values survive DOCX/na
 
 ## Verification
 
+The current desktop Word regression fixes, focused test results and remaining
+verification work are recorded in [Word 2013 regressions](WORD-2013-REGRESSIONS.md).
+
 Focused regressions cover regional shaping/inheritance/export, actual XML mutation and peer synchronization, atomic failed edits, typed check/date values, multiline controls, row/cell/block scope, SDT/revision/hyperlink nesting, malformed bindings and inline-to-block promotion. These checks validate behavior and are not implementation credit. Compatibility diagnostics remain available for features beyond the implemented model.
 
 Release 0.8.6-43 passed all 183 workspace Rust tests, including 16 content-control, four theme-font and 12 tracked-change regressions. Both release converters passed combined DOCX → Impress → DOCX → Impress cycles checking theme resolution, bound XML, exact breaks, five revision authors, linked moves and unequal columns. Windows checks used isolated Wine. Linux execve tracing with an empty executable search path recorded only the converter process. Interface checks passed 64 tests with one skipped and two unchanged baseline source-assertion failures.

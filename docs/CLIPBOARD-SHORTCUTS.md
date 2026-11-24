@@ -41,3 +41,19 @@ Armenian, Georgian and Devanagari keymaps, plus French AZERTY, German QWERTZ,
 Dvorak and Turkish Latin letters. Full application testing records the layouts
 and commands actually exercised; it does not claim every possible input method
 has been manually tested.
+
+## Committed text and repeat
+
+Printable text is inserted only from native character events or committed IME
+strings. It never starts Impress's physical-key repeat timer. A composed
+character can arrive after key release, and a shifted character's key-up code
+can differ from its key-down code; binding either to that timer caused runaway
+quotes and other repeated characters. Native character events provide held-key
+typing. The timer remains limited to navigation and editing keys, including
+batched Backspace/Delete.
+
+`tools/keyboard_input_smoke.py` checks the saved text in a synthetic document on
+a disposable X server. It covers Greek quotes, tonos, diaeresis and combined
+accents, US International and Brazilian dead keys, AltGr, shifted punctuation,
+held typing, and held deletion, including an idle check after release. This is
+native GTK coverage; it does not claim a Windows/IMM32 or every-IME test.

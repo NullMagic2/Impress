@@ -541,3 +541,15 @@ fn independent_binary_hyperlink_field_data_keeps_external_and_bookmark_targets()
         );
     }
 }
+
+#[test]
+fn deleted_word97_text_remains_a_reversible_revision() {
+    let document = import(include_bytes!("fixtures/reviewed-table-word97.doc")).unwrap();
+    let text = model::document_paragraphs(&document).into_iter()
+        .map(|p| model::inline_text(&p.content)).collect::<Vec<_>>().join("\n");
+    assert!(!text.contains("obsolete target wording"));
+    assert!(text.contains("approved target wording"));
+    assert!(document.review.tracked_changes.values().any(|change| {
+        change.effects.iter().any(|effect| matches!(effect, model::RevisionEffect::Inline { change: model::InlineRevisionKind::Deletion, .. }))
+    }));
+}

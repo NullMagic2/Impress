@@ -9,6 +9,7 @@ pub(super) struct Flow {
 }
 
 struct PlacedTable {
+    bounds: Rect,
     exclusion: Rect,
     allow_overlap: bool,
     wrap: TableWrap,
@@ -41,18 +42,18 @@ impl Flow {
         let right_gap = position.distance_right_mm * MM_TO_PT;
         let top_gap = position.distance_top_mm * MM_TO_PT;
         let bottom_gap = position.distance_bottom_mm * MM_TO_PT;
-        let mut bounds = Rect::new(x, (anchor_y + top).max(y), width, height);
+        let mut bounds = Rect::new(x, (anchor_y + top).max(0.0), width, height);
         let exclusion = loop {
             let exclusion = Rect::new(x - left_gap, bounds.y - top_gap,
                 width + left_gap + right_gap, height + top_gap + bottom_gap);
             let next = self.tables.iter().filter(|table| {
                 !(position.allow_overlap && table.allow_overlap)
-                    && !exclusion.intersection(table.exclusion).is_empty()
-            }).map(|table| table.exclusion.max_y() + top_gap).fold(bounds.y, f32::max);
+                    && !bounds.intersection(table.bounds).is_empty()
+            }).map(|table| table.bounds.max_y()).fold(bounds.y, f32::max);
             if next <= bounds.y + 0.001 { break exclusion; }
             bounds.y = next;
         };
-        self.tables.push(PlacedTable { exclusion, allow_overlap: position.allow_overlap, wrap: position.wrap });
+        self.tables.push(PlacedTable { bounds, exclusion, allow_overlap: position.allow_overlap, wrap: position.wrap });
         bounds
     }
 
@@ -88,5 +89,26 @@ impl Flow {
             }
             *y = next;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn positioned_tables_share_a_row_when_only_text_clearance_overlaps() {
+        let mut flow = Flow::new(400.0, 100.0);
+        let mut position = TablePosition::default();
+        position.vertical_from = VerticalFrom::Page;
+        position.vertical = VerticalPlacement::Offset(4.0);
+        position.horizontal = HorizontalPlacement::Right;
+        position.allow_overlap = false;
+        position.distance_left_mm = 3.175;
+        position.distance_right_mm = 3.175;
+        let right = flow.place(&position, 180.0, 80.0, 0.0);
+        position.horizontal = HorizontalPlacement::Left;
+        let left = flow.place(&position, 200.0, 80.0, 100.0);
+        assert!((left.y - right.y).abs() < 0.01);
+        assert!(left.intersection(right).is_empty());
     }
 }

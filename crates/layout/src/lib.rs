@@ -2388,8 +2388,13 @@ fn prepare_table(
     let grid_width_mm = (explicit_grid_mm.len() == column_count)
         .then(|| explicit_grid_mm.iter().sum::<f32>())
         .filter(|sum| sum.is_finite() && *sum > 0.0);
-    let requested_width = table.properties.preferred_width_mm
-        .or(grid_width_mm)
+    // An automatic Word table's grid records its laid-out width. The preferred
+    // width is only a request and may be smaller after content expands it.
+    let requested_width = if table.properties.fixed_layout == Some(true) {
+        table.properties.preferred_width_mm.or(grid_width_mm)
+    } else {
+        grid_width_mm.or(table.properties.preferred_width_mm)
+    }
         .map(|mm| mm * MM_TO_PT)
         .unwrap_or(available_width);
     // An authored table may extend into page margins. Shrinking it to the

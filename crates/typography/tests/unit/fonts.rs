@@ -41,3 +41,40 @@ fn resolved_font_ids_cannot_alias_a_different_catalog() {
     assert_eq!(fa.id,fb.id,"Fixture deliberately reuses a database-local ID");assert_ne!(fa,fb);
     assert!(a.with_font_data(fb,|_,_|()).is_none());assert!(b.with_font_data(fa,|_,_|()).is_none());
 }
+
+#[test]
+fn missing_office_fonts_use_installed_substitutes_but_original_faces_win() {
+    let mut db = Database::new();
+    db.load_font_data(include_bytes!("../fixtures/neo-aegean/NeoAegean-Regular.otf").to_vec());
+    let mut substitute = db.faces().next().unwrap().clone();
+    db.remove_face(substitute.id);
+    substitute.families = vec![("Carlito".into(), fontdb::Language::Unknown)];
+    db.push_face_info(substitute);
+    let catalog = FontCatalog { store: Arc::new(FontStore::new(db.clone())) };
+    assert_eq!(catalog.resolve("Calibri", false, false), catalog.resolve("Carlito", false, false));
+    assert_eq!(catalog.resolve_for_text("Calibri", false, false, "Latin text"), catalog.resolve("Carlito", false, false));
+
+    db.load_font_data(include_bytes!("../fixtures/neo-aegean/NeoAegean-Italic.otf").to_vec());
+    let alias = db.faces().find(|face| face.style == Style::Italic).unwrap().id;
+    let mut store = FontStore::new(db.clone());
+    store.embedded.insert(("calibri".into(), false, false), vec![ResolvedFont {
+        id: alias, face_index: 0, catalog_id: store.identity,
+    }]);
+    let catalog = FontCatalog { store: Arc::new(store) };
+    assert_eq!(catalog.resolve_for_text("Calibri", false, false, "Latin text"),
+        catalog.resolve("Carlito", false, false), "a mislabeled embedded font must not replace the compatible font");
+
+    let mut original = db.faces().find(|face| face.style == Style::Italic).unwrap().clone();
+    db.remove_face(original.id);
+    original.families = vec![("Calibri".into(), fontdb::Language::Unknown)];
+    original.style = Style::Normal;
+    db.push_face_info(original);
+    let mut store = FontStore::new(db);
+    let alias = store.db.faces().find(|face| face.families[0].0 == "Carlito").unwrap().id;
+    store.embedded.insert(("calibri".into(), false, false), vec![ResolvedFont {
+        id: alias, face_index: 0, catalog_id: store.identity,
+    }]);
+    let catalog = FontCatalog { store: Arc::new(store) };
+    assert_ne!(catalog.resolve("Calibri", false, false), catalog.resolve("Carlito", false, false));
+    assert!(catalog.resolve("Calibri", false, false).is_some());
+}

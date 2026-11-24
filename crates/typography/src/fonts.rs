@@ -128,7 +128,21 @@ impl FontCatalog {
 
 
     pub fn resolve(&self, family: &str, bold: bool, italic: bool) -> Option<ResolvedFont> {
-        self.resolve_family(Family::Name(family), bold, italic)
+        let requested = self.resolve_family(Family::Name(family), bold, italic);
+        if requested.is_some_and(|font| self.store.db.face(font.id).is_some_and(|face|
+            face.families.iter().any(|(name, _)| name.eq_ignore_ascii_case(family)))) {
+            return requested;
+        }
+        (|| {
+                // Preserve Office's font intent in the model while using an
+                // installed metric-compatible family for on-screen layout.
+                let substitute = match family.to_ascii_lowercase().as_str() {
+                    "calibri" => "Carlito",
+                    "cambria" => "Caladea",
+                    _ => return None,
+                };
+                self.resolve_family(Family::Name(substitute), bold, italic)
+            })().or(requested)
     }
 
     /// Resolve a requested family and fall back to the platform serif family.
@@ -143,11 +157,11 @@ impl FontCatalog {
     /// family always wins when it has the glyphs; otherwise script-appropriate
     /// system families are tried before a generic serif/sans fallback.
     pub fn resolve_for_text(&self, family: &str, bold: bool, italic: bool, text: &str) -> Option<ResolvedFont> {
+        let requested = self.resolve(family, bold, italic);
+        if requested.is_some_and(|font| self.font_covers_text(font, text)) { return requested; }
         if let Some(fonts)=self.store.embedded.get(&(family.to_lowercase(),bold,italic)) {
             if let Some(font)=fonts.iter().find(|font|self.font_covers_text(**font,text)) {return Some(*font);}
         }
-        let requested = self.resolve(family, bold, italic);
-        if requested.is_some_and(|font| self.font_covers_text(font, text)) { return requested; }
 
         let mut candidates: Vec<&str> = script_fallback_families(text).to_vec();
         // Broad Windows/Linux/macOS families that commonly cover Greek,
@@ -228,8 +242,13 @@ impl FontCatalog {
     }
 
     fn resolve_family(&self, family: Family<'_>, bold: bool, italic: bool) -> Option<ResolvedFont> {
+        let mut embedded_alias = None;
         if let Family::Name(name)=family {
-            if let Some(font)=self.store.embedded.get(&(name.to_lowercase(),bold,italic)).and_then(|fonts|fonts.first()) {return Some(*font);}
+            if let Some(fonts)=self.store.embedded.get(&(name.to_lowercase(),bold,italic)) {
+                if let Some(font)=fonts.iter().find(|font| self.store.db.face(font.id).is_some_and(|face|
+                    face.families.iter().any(|(family, _)| family.eq_ignore_ascii_case(name)))) {return Some(*font);}
+                embedded_alias=fonts.first().copied();
+            }
         }
         let key=(self.store.db.family_name(&family).to_owned(),bold,italic);
         if let Some(result)=self.store.queries.lock().unwrap_or_else(|e|e.into_inner()).get(&key).copied(){return result;}
@@ -251,7 +270,7 @@ impl FontCatalog {
             weight: if bold { Weight::BOLD } else { Weight::NORMAL },
             stretch: Stretch::Normal,
             style: if italic { Style::Italic } else { Style::Normal },
-        }).and_then(|id| self.store.db.face(id).map(|face| ResolvedFont { id, face_index: face.index,catalog_id:self.store.identity })));
+        }).and_then(|id| self.store.db.face(id).map(|face| ResolvedFont { id, face_index: face.index,catalog_id:self.store.identity }))).or(embedded_alias);
         let mut cache=self.store.queries.lock().unwrap_or_else(|e|e.into_inner());
         if cache.len()>=512 {cache.clear();}cache.insert(key,result);result
     }

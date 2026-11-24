@@ -775,6 +775,15 @@ pub(super) fn export(document: &Document, output: &mut dyn WriteSeek) -> FormatR
     }
     put16(&mut dop, 10, 720);
     part(&mut table, &mut pairs, 31, &dop);
+    // MS-DOC requires SttbfAssoc even when all associated strings are empty.
+    let mut associated = Vec::new();
+    word(&mut associated, 0xFFFF);
+    word(&mut associated, 18);
+    word(&mut associated, 0);
+    for _ in 0..18 {
+        word(&mut associated, 0);
+    }
+    part(&mut table, &mut pairs, 32, &associated);
     fib(&mut word_stream, text_end, counts, &pairs);
     let mut compound =
         cfb::CompoundFile::create_with_version(cfb::Version::V3, Cursor::new(Vec::new()))?;

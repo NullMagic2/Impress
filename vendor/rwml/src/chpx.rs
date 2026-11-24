@@ -134,6 +134,8 @@ pub(crate) struct Chp {
     pub underline: bool,
     pub strike: bool,
     pub hidden: bool,
+    pub revision_deleted: bool,
+    pub revision_inserted: bool,
     /// Font size in half-points (`sprmCHps`), if set.
     pub size_half_pt: Option<u16>,
     /// Font index into `SttbfFfn` (`sprmCRgFtc0`), resolved to a name by the
@@ -735,6 +737,8 @@ fn scan_grpprl(gp: &[u8]) -> Chp {
         };
         let toggle = || matches!(operand.first().copied().unwrap_or(0), 0x01 | 0x81);
         match sprm {
+            0x0800 => chp.revision_deleted = toggle(),
+            0x0801 => chp.revision_inserted = toggle(),
             SPRM_C_F_BOLD => chp.bold = toggle(),
             SPRM_C_F_ITALIC => chp.italic = toggle(),
             SPRM_C_F_STRIKE => chp.strike = toggle(),

@@ -89,7 +89,7 @@ impl ImportReview {
             };
             self.comments.push(ImportedComment {
                 source: source.into(), author: comment.attr("w:author").unwrap_or("").into(),
-                text: paragraphs.iter().map(|p| p.descendant_text()).collect::<Vec<_>>().join("\n"),
+                text: paragraphs.iter().map(|p| comment_text(p)).collect::<Vec<_>>().join("\n"),
                 date: comment.attr("w:date").map(str::to_owned), para, decision,
             });
         }
@@ -600,4 +600,15 @@ pub(super) fn parse_review_paragraph(node: &XmlNode, context: &ImportContext) ->
         .borrow_mut()
         .insert(node as *const XmlNode as usize, final_p.id.clone());
     final_p
+}
+
+/// Comment text is the displayed field result, never the field instruction.
+fn comment_text(node: &XmlNode) -> String {
+    match node.name.as_str() {
+        "w:t" => node.descendant_text(),
+        "w:tab" => "\t".into(),
+        "w:br" | "w:cr" => "\n".into(),
+        "w:del" | "w:moveFrom" | "w:instrText" => String::new(),
+        _ => node.children.iter().map(comment_text).collect(),
+    }
 }
