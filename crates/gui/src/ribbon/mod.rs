@@ -36,10 +36,11 @@ mod section_break_menu;
 mod contents_menu;
 mod recent_files_menu;
 mod context_menu;
-mod content_controls;
+pub(crate) mod content_controls;
 mod columns_dialog;
 pub use recovery_dialog::recovery_dialog;
 mod table_position;
+mod table_layout;
 pub use output_dialogs::import_pdf;
 mod bitmap_button;
 mod face;
@@ -47,6 +48,9 @@ mod skin;
 mod generated;
 mod group_relief;
 mod navigation;
+mod word_count;
+mod colour_menu;
+mod custom_colours;
 mod review_ui;
 mod original_review;
 pub(crate) mod revision_tools;
@@ -101,7 +105,7 @@ use editor::FormattingSummary;
 use std::{cell::Cell, collections::HashMap, sync::{OnceLock,mpsc::{self, Receiver, TryRecvError}}};
 use wxdragon::{
     color::Colour,
-    dialogs::{colour_dialog::ColourDialog, message_dialog::MessageDialog},
+    dialogs::message_dialog::MessageDialog,
     event::{menu_events::MenuEvents, scroll_events::ScrollEvents, text_events::TextEvents},
     id::ID_OK,
     menus::Menu,
@@ -231,6 +235,7 @@ pub struct Ribbon {
     tab_index: Cell<usize>,
     /// Insert > Table was chosen: the Table tools replace the Insert page until closed.
     table_tools: Cell<bool>,
+    table_insert_requested: Cell<bool>,
     /// A header or footer is being edited: its tools replace the Insert page.
     header_tools: Cell<bool>,
     /// A picture is selected: its tools replace the Insert page.
@@ -248,6 +253,7 @@ pub struct Ribbon {
     last_scroll: Cell<Option<(ScrollMetrics, ScrollMetrics)>>,
     navigation: RefCell<Vec<navigation::Entry>>,
     navigation_revision: Cell<Option<u64>>,
+    word_count: RefCell<word_count::State>,
     search_options: Cell<editor::search::SearchOptions>,
     search_report: RefCell<Option<Arc<editor::search::SearchReport>>>,
     search_job: RefCell<Option<Receiver<search_ui::ResultSet>>>,
@@ -318,10 +324,10 @@ impl Ribbon {
             styles_view: RefCell::new(Default::default()), styles_revision: Cell::new(None), document_epoch: Cell::new(0), last_theme_check: Cell::new(Instant::now() - Duration::from_secs(10)), split_ratio: Cell::new(0.5), window_active: Cell::new(true), doc_switcher: RefCell::new(None), styles_snapshot: RefCell::new(None), styles_syncing: Cell::new(false),
             ui, state, buttons,
             button_states: RefCell::new(vec![None; count]),
-            dpi: Cell::new(0), prepared_pages: RefCell::default(), mode: Cell::new(ViewMode::Graphical), tab_index: Cell::new(1), table_tools: Cell::new(false), header_tools: Cell::new(false), picture_tools: Cell::new(false), tab_before_tools: Cell::new(None), syncing: Cell::new(false),
+            dpi: Cell::new(0), prepared_pages: RefCell::default(), mode: Cell::new(ViewMode::Graphical), tab_index: Cell::new(1), table_tools: Cell::new(false), table_insert_requested: Cell::new(false), header_tools: Cell::new(false), picture_tools: Cell::new(false), tab_before_tools: Cell::new(None), syncing: Cell::new(false),
             last_key: RefCell::new(None), last_activity: Cell::new(Instant::now()), last_poll: Cell::new(Instant::now() - Duration::from_secs(1)),
             last_status: RefCell::new(String::new()), last_title: RefCell::new(String::new()),
-            last_scroll: Cell::new(None), navigation: RefCell::new(Vec::new()), navigation_revision: Cell::new(None),
+            word_count: RefCell::default(), last_scroll: Cell::new(None), navigation: RefCell::new(Vec::new()), navigation_revision: Cell::new(None),
             search_options: Cell::new(Default::default()), search_report: RefCell::new(None), search_job: RefCell::new(None), search_due: Cell::new(Instant::now()), search_cursor: Cell::new(None),
             last_context: RefCell::new(None), context_key: RefCell::new(None), label_text: RefCell::new(HashMap::new()), equation: RefCell::new(None), comments: RefCell::new(None), style_gallery: RefCell::new(None), style_context: RefCell::new(None), tab_strip: RefCell::new(None), tab_ruler: RefCell::new(None), recent_paths: RefCell::new(Vec::new()), recent_settings_open: Rc::new(Cell::new(false)), table_bar: RefCell::new(None), picture_bar: RefCell::new(None), spell_job: RefCell::new(None), review_pane: RefCell::default(), revision_gutter: revision_gutter::Gutter::default(), original_preview: RefCell::default(), original_reader, spelling_languages: RefCell::new(Vec::new()), output_progress: RefCell::new(None), dictionary_install: RefCell::new(None), dictionary_manager: RefCell::new(None), spelling_context: RefCell::new(None), table_context_menu: RefCell::new(None),
             source_revision: Cell::new(None), source_job: RefCell::new(None), source_copy_pending: Cell::new(false),
@@ -334,6 +340,7 @@ impl Ribbon {
         )));
         this.comments.replace(Some(comment_notes::CommentNotes::install(&this)));
         this.bind();
+        content_controls::bind(&this);
         revision_tools::bind(&this);
         revision_gutter::bind(&this);
         this.style_gallery.replace(Some(style_gallery::install(&this)));
@@ -394,6 +401,10 @@ impl Ribbon {
             spec.button.on_click(move |_| { if let Some(ribbon) = weak.upgrade() { ribbon.run(action); } });
         }
         let weak = Rc::downgrade(self);
+        self.ui.status_word_count.on_mouse_left_up(move |_| {
+            if let Some(ribbon) = weak.upgrade() { ribbon.run(Action::WordCount); }
+        });
+        let weak = Rc::downgrade(self);
         self.ui.track_changes_button.on_mouse_right_up(move |_| {
             if let Some(ribbon) = weak.upgrade() { ribbon.show_review_menu(); }
         });
@@ -435,6 +446,8 @@ impl Ribbon {
                     HYPHENATION_DOCUMENT_OFF_ID => Some((false, true)),
                     _ => None,
                 };
+                if table_layout::handle(&ribbon, event.get_id()) { return; }
+                if content_controls::handle(&ribbon, event.get_id()) { return; }
                 if ribbon.handle_style_context(event.get_id()) { return; }
                 if contents_menu::handle(&ribbon, event.get_id()) { return; }
                 if section_break_menu::handle(&ribbon, event.get_id()) { return; }
@@ -570,8 +583,13 @@ impl Ribbon {
             Action::SelectCells(mode) => { objects_ui::select_cells(&mut self.state.borrow_mut(), mode)?; self.focus_document(); }
             Action::Table(op) => {
                 let edit = crate::table_ui::operation(&self.state.borrow(), op)?;
-                { let mut state = self.state.borrow_mut(); state.table_band = None; state.selected_object = None; }
-                self.edit(edit)?;
+                if matches!(op, crate::table_ui::TableOp::Float(_) | crate::table_ui::TableOp::WrapAround(_)) {
+                    let id = crate::table_ui::context(&self.state.borrow()).ok_or("Place the caret in a table first")?.table_id;
+                    self.edit_table(&id, edit)?;
+                } else {
+                    { let mut state = self.state.borrow_mut(); state.table_band = None; state.selected_object = None; }
+                    self.edit(edit)?;
+                }
             }
             Action::PictureAlign(value) => {
                 let id = match self.state.borrow().selected_object.as_ref() {
@@ -624,14 +642,9 @@ impl Ribbon {
             }
             Action::Typography => self.show_typography_menu(),
             Action::FontColor => {
-                let dialog = ColourDialog::builder(&self.ui.main_frame).with_title(&crate::i18n::text(&("Font color")))
-                    .with_initial_colour(Colour::rgb(30, 40, 55)).with_choose_full(true).build();
-                if ({crate::placement::centre(&dialog);dialog.show_modal()}) == ID_OK {
-                    if let Some(c) = dialog.get_colour() {
-                        let color = format!("#{:02X}{:02X}{:02X}", c.r, c.g, c.b);
-                        self.edit_formatting(|e| e.apply_character_properties(&CharacterProperties { color: Some(color), ..Default::default() }))?;
-                    }
-                }
+                let button = self.ui.font_color_button;
+                colour_menu::show(self, colour_menu::Kind::Text, crate::gtk_native::to_screen(&button,
+                    wxdragon::geometry::Point::new(0, button.get_size().height)));
             }
             Action::Align(alignment) => self.edit_formatting(|e| e.apply_paragraph_properties(&ParagraphProperties { alignment: Some(alignment), ..Default::default() }))?,
             Action::Direction(direction) => self.edit_formatting(|e| e.apply_paragraph_properties(&ParagraphProperties { direction: Some(direction), ..Default::default() }))?,
@@ -646,12 +659,7 @@ impl Ribbon {
             Action::Bullets => self.edit_formatting(|editor| editor.toggle_list(ListFormat::Bullet))?,
             Action::Numbering => self.edit_formatting(|editor| editor.toggle_list(ListFormat::Decimal))?,
             Action::Columns => columns_menu::show(self, &self.ui.columns_button),
-            Action::InsertTable => {
-                // Word's Insert > Table: in a table, open its tools; otherwise
-                // pick a size from the grid, insert, then open the tools.
-                if self.state.borrow().editor.table_cell_context().is_some() { self.open_table_tools(); }
-                else { table_picker::show(self); }
-            }
+            Action::InsertTable => table_layout::show(self),
             Action::CloseTableTools => self.close_table_tools(),
             Action::InsertImage => {
                 let existing = self.state.borrow().editor.inline_image_size_at_caret();
@@ -835,6 +843,16 @@ impl Ribbon {
         result
     }
 
+    fn edit_table(&self, id: &NodeId, operation: impl FnOnce(&mut EditorState) -> Result<(), String>) -> Result<(), String> {
+        let result = self.edit_canvas(|state| {
+            operation(&mut state.editor)?;
+            crate::table_ui::select_after_position(state, id);
+            Ok(())
+        });
+        self.focus_document();
+        result
+    }
+
     fn edit_formatting(&self, operation: impl FnOnce(&mut EditorState) -> Result<(), String>) -> Result<(), String> {
         let result = self.edit_canvas(|state| state.apply_formatting(operation));
         self.focus_document();
@@ -959,6 +977,7 @@ impl Ribbon {
         self.source_revision.set(None); self.navigation_revision.set(None); self.styles_revision.set(None);
         self.pending_search.borrow_mut().take(); self.search_cursor.set(None); self.search_report.borrow_mut().take();
         self.context_key.replace(None);
+        self.word_count.replace(Default::default());
         self.focus_document();
     }
 
@@ -973,7 +992,7 @@ impl Ribbon {
         let dialog = MessageDialog::builder(&self.ui.main_frame, &crate::i18n::text(&(&format!("Save the changes to “{name}” before closing it?"))), &crate::i18n::text(&("Close document")))
             .with_style(MessageDialogStyle::YesNo | MessageDialogStyle::Cancel | MessageDialogStyle::IconWarning).build();
         dialog.set_yes_no_labels(&crate::i18n::text(&("Save")), &crate::i18n::text(&("Don't save")));
-        dialog.set_ok_cancel_labels("Save", "Cancel");
+        dialog.set_ok_cancel_labels(&crate::i18n::text("Save"), &crate::i18n::text("Cancel"));
         match {crate::placement::centre(&dialog); dialog.show_modal()} {
             wxdragon::id::ID_YES => {
                 background_io::queue_save(&self.ui.main_frame, &self.state, false)?;
@@ -1498,6 +1517,7 @@ impl Ribbon {
         self.sync_revision_controls();
         self.doc_switcher.borrow().as_ref().map(|switcher|switcher.refresh());
         dropdown::poll();font_preview::poll();
+        content_controls::poll(self);
         typst_highlight::poll(self.ui.typst_editor);
         if self.last_theme_check.get().elapsed() >= Duration::from_secs(2) { self.last_theme_check.set(Instant::now()); self.follow_theme(); }
         let print=std::mem::take(&mut self.state.borrow_mut().pending_print);
@@ -1606,6 +1626,17 @@ impl Ribbon {
             self.ui.status_page_count.set_label(&crate::i18n::text(&(&page_text)));
             self.ui.status_panel.layout();
         }
+        let word_text = {
+            let state = self.state.borrow();
+            let cells = key.cells.as_ref().map(|(_, cells)| cells.as_slice());
+            let mut count = self.word_count.borrow_mut();
+            count.update(&state.editor, self.document_epoch.get(), cells);
+            crate::i18n::text(&count.label())
+        };
+        if self.label_changed("words", &word_text) {
+            self.ui.status_word_count.set_label(&word_text);
+            self.ui.status_panel.layout();
+        }
         self.syncing.set(true);
         self.ui.zoom_out_button.enable(zoom>(render::ViewportState::MIN_ZOOM*100.0) as i32);
         self.ui.zoom_in_button.enable(zoom<(render::ViewportState::MAX_ZOOM*100.0) as i32);
@@ -1635,6 +1666,9 @@ impl Ribbon {
 
     fn sync_format(&self, format: &FormattingSummary, section: Option<&SectionProperties>) {
         let enabled = self.mode.get() != ViewMode::Typst;
+        let rgb = |value:Option<&str>|value.and_then(styles::hex_colour).map(|c|[c.r,c.g,c.b]);
+        skin::colour(&self.ui.font_color_button, art::ColourIndicator::Colour(rgb(format.character.color.as_deref()).unwrap_or([0,0,0])));
+        skin::colour(&self.ui.highlight_button, rgb(format.character.highlight.as_deref()).map(art::ColourIndicator::Colour).unwrap_or(art::ColourIndicator::NoColour));
         self.ui.font_family_combo.enable(enabled);
         self.ui.font_family_input.enable(enabled);
         for combo in [self.ui.font_size_combo, self.ui.line_spacing_combo, self.ui.space_before_combo, self.ui.space_after_combo] { combo.enable(enabled); }

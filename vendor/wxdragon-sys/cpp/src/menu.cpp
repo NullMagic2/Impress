@@ -3,9 +3,72 @@
 #include "../include/wxdragon.h"
 #include <wx/menu.h>  // Include for wxMenuBar, wxMenu, wxMenuItem
 #include <wx/frame.h> // Needed for obtaining owning frame from menubar
+#include <wx/dcmemory.h>
+#ifdef __WXGTK3__
+#include <gtk/gtk.h>
+#endif
 #include <cstring>    // C runtime for strlen/memcpy
 
 extern "C" {
+
+// Create bitmap menu items before insertion: GTK chooses the native widget
+// type on Append. Colour chips are content and must remain visible even if
+// the desktop hides decorative menu icons.
+WXD_EXPORTED void wxd_Menu_AppendSwatch(wxd_Menu_t* self, int id, const char* label,
+                                      const wxd_Bitmap_t* image, int selected) {
+    if (!self || !label || !image) return;
+    auto* menu = reinterpret_cast<wxMenu*>(self);
+    wxBitmap bitmap = *reinterpret_cast<const wxBitmap*>(image);
+    if (selected && bitmap.IsOk()) {
+        wxMemoryDC dc(bitmap);
+        dc.SetBrush(*wxTRANSPARENT_BRUSH);
+        dc.SetPen(wxPen(wxColour(58, 104, 194), 2));
+        dc.DrawRectangle(1, 1, bitmap.GetWidth() - 2, bitmap.GetHeight() - 2);
+        dc.SelectObject(wxNullBitmap);
+    }
+    auto* item = new wxMenuItem(menu, id, wxString::FromUTF8(label));
+    item->SetBitmap(bitmap);
+    menu->Append(item);
+#ifdef __WXGTK3__
+    if (GTK_IS_IMAGE_MENU_ITEM(item->GetMenuItem()))
+        gtk_image_menu_item_set_always_show_image(GTK_IMAGE_MENU_ITEM(item->GetMenuItem()), true);
+#endif
+}
+
+// Keep native check semantics and visible illustrations together. GTK creates
+// check items without an image slot, so retain its label in a small image row.
+WXD_EXPORTED void wxd_Menu_AppendIcon(wxd_Menu_t* self, int id, const char* label,
+                                    const wxd_Bitmap_t* image, int checked,
+                                    wxd_Menu_t* submenu) {
+    if (!self || !label) return;
+    auto* menu = reinterpret_cast<wxMenu*>(self);
+    auto* item = new wxMenuItem(menu, id, wxString::FromUTF8(label), wxEmptyString,
+                               checked < 0 ? wxITEM_NORMAL : wxITEM_CHECK,
+                               reinterpret_cast<wxMenu*>(submenu));
+    const auto* bitmap = reinterpret_cast<const wxBitmap*>(image);
+    if (bitmap && bitmap->IsOk()) item->SetBitmap(*bitmap);
+    menu->Append(item);
+    if (checked >= 0) item->Check(checked != 0);
+#ifdef __WXGTK3__
+    GtkWidget* widget = item->GetMenuItem();
+    if (bitmap && bitmap->IsOk() && GTK_IS_CHECK_MENU_ITEM(widget)) {
+        GtkWidget* labelWidget = gtk_bin_get_child(GTK_BIN(widget));
+        if (labelWidget) {
+            g_object_ref(labelWidget);
+            gtk_container_remove(GTK_CONTAINER(widget), labelWidget);
+            GtkWidget* row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+            GtkWidget* icon = gtk_image_new_from_pixbuf(bitmap->GetPixbuf());
+            gtk_box_pack_start(GTK_BOX(row), icon, false, false, 0);
+            gtk_box_pack_start(GTK_BOX(row), labelWidget, true, true, 0);
+            gtk_container_add(GTK_CONTAINER(widget), row);
+            g_object_unref(labelWidget);
+            gtk_widget_show_all(row);
+        }
+    } else if (GTK_IS_IMAGE_MENU_ITEM(widget)) {
+        gtk_image_menu_item_set_always_show_image(GTK_IMAGE_MENU_ITEM(widget), true);
+    }
+#endif
+}
 
 // --- MenuBar Functions ---
 WXD_EXPORTED wxd_MenuBar_t*

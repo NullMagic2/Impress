@@ -147,6 +147,7 @@ set(WXDRAGON_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/cursor.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/colourdatabase.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/colourdialog.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/colour_palette.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/colourpickerctrl.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/combobox.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/src/commandlinkbutton.cpp
@@ -292,7 +293,7 @@ if(wxUSE_GUI AND wxBUILD_TOOLKIT STREQUAL "gtk3")
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(IMPRESS_GTK3 REQUIRED gtk+-3.0)
     list(REMOVE_ITEM IMPRESS_GTK3_INCLUDE_DIRS ${CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES})
-    set_property(SOURCE src/file_dialog.cpp APPEND PROPERTY INCLUDE_DIRECTORIES ${IMPRESS_GTK3_INCLUDE_DIRS})
+    set_property(SOURCE src/file_dialog.cpp src/menu.cpp src/colour_palette.cpp APPEND PROPERTY INCLUDE_DIRECTORIES ${IMPRESS_GTK3_INCLUDE_DIRS})
 endif()
 
 # --- Set Include Directories ---

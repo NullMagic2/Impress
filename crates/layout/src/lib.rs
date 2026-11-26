@@ -2582,19 +2582,63 @@ fn prepare_fragment(
 ) -> Result<PreparedCellFragment, LayoutError> {
     let mut y = 0.0f32;
     let mut commands = Vec::new();
+    let mut behind_text = Vec::new();
+    let mut in_front_of_text = Vec::new();
     let mut hit_regions = Vec::new();
     let mut object_regions = Vec::new();
     let markers = if styles.list_styles.is_empty() { BTreeMap::new() }
         else { list_markers_for_blocks(blocks, &BTreeMap::new(), styles) };
+    // Cell-relative tables have a position independent of their anchor's
+    // source order. Reserve them before laying out earlier paragraphs too.
+    // Keep the prepared table so this does not measure nested tables twice.
+    let mut fixed_tables = BTreeMap::new();
+    if let Some(flow) = cell_flow.as_deref_mut() {
+        for block in blocks {
+            if let Block::Table(source) = block {
+                if let Some(position) = source.properties.position.as_ref().and_then(|p|p.flow_position()).filter(|p| p.vertical_from != model::VerticalFrom::Paragraph) {
+                    let table = prepare_table(source, width, styles, ctx, resources, field_context, true)?;
+                    let bounds = flow.place(position, table.width, table.rows.iter().map(|r| r.height).sum(), 0.0);
+                    fixed_tables.insert(source.id.clone(), (table, bounds));
+                }
+            }
+        }
+    }
     for block in blocks {
         let marker = block_node_id(block).and_then(|id| markers.get(id));
-        let (x, available_width) = if let (Block::Paragraph(_), Some(flow)) = (block, cell_flow.as_deref()) {
-            flow.paragraph_span(&mut y)
-        } else { (0.0, width) };
+        let mut x = 0.0;
+        let mut fixed_bounds = None;
         let prepared = match block {
-            Block::Table(table) if cell_flow.is_some() =>
-                PreparedBlock::Table(prepare_table(table, width, styles, ctx, resources, field_context, true)?),
-            _ => prepare_block(block, available_width, styles, ctx, resources, marker, field_context)?,
+            Block::Paragraph(_) if cell_flow.is_some() => {
+                let flow = cell_flow.as_deref().unwrap();
+                let mut available_width = width;
+                let mut paragraph = prepare_block(block, width, styles, ctx, resources, marker, field_context)?;
+                let mut settled = false;
+                for _ in 0..blocks.len().saturating_mul(2).saturating_add(2) {
+                    let height = match &paragraph {
+                        PreparedBlock::Paragraph { lines, space_before, space_after, .. } =>
+                            (space_before + space_after + lines.iter().map(|line| line.height).sum::<f32>()).max(1.0),
+                        _ => 1.0,
+                    };
+                    let (next_x, next_width) = flow.paragraph_span(&mut y, height);
+                    if (x - next_x).abs() < 0.01 && (available_width - next_width).abs() < 0.01 { settled = true; break; }
+                    x = next_x;
+                    if (available_width - next_width).abs() >= 0.01 {
+                        available_width = next_width;
+                        paragraph = prepare_block(block, available_width, styles, ctx, resources, marker, field_context)?;
+                    }
+                }
+                if !settled {
+                    y = flow.clear(y); x = 0.0;
+                    paragraph = prepare_block(block, width, styles, ctx, resources, marker, field_context)?;
+                }
+                paragraph
+            }
+            Block::Table(source) if cell_flow.is_some() => {
+                let table = if let Some((table, bounds)) = fixed_tables.remove(&source.id) { fixed_bounds = Some(bounds); table }
+                    else { prepare_table(source, width, styles, ctx, resources, field_context, true)? };
+                PreparedBlock::Table(table)
+            }
+            _ => prepare_block(block, width, styles, ctx, resources, marker, field_context)?,
         };
         match prepared {
             PreparedBlock::Paragraph { lines, space_before, space_after, left_indent, marker, decoration, .. } => {
@@ -2641,30 +2685,49 @@ fn prepare_fragment(
             }
             PreparedBlock::Table(table) => {
                 let position = match block { Block::Table(source) => source.properties.position.as_ref(), _ => None };
+                let flow_position = position.and_then(|p|p.flow_position());
                 let table_height = table.rows.iter().map(|row| row.height).sum();
-                let (table_x, mut table_y, floating) = match (cell_flow.as_deref_mut(), position) {
-                    (Some(flow), Some(position)) => {
+                let (table_x, mut table_y, floating) = match (cell_flow.as_deref_mut(), flow_position, fixed_bounds) {
+                    (_, _, Some(bounds)) => (bounds.x, bounds.y, true),
+                    (Some(flow), Some(position), _) => {
                         let rect = flow.place(position, table.width, table_height, y);
                         (rect.x, rect.y, true)
                     }
-                    (Some(flow), None) => (table.x_offset.clamp(0.0, (width - table.width).max(0.0)), flow.clear(y), false),
-                    (None, _) => (table.x_offset, y, false),
+                    (Some(flow), None, _) => (table.x_offset.clamp(0.0, (width - table.width).max(0.0)), flow.clear(y), false),
+                    (None, _, _) => (table.x_offset, y, false),
                 };
+                let reserved_y = table_y + table_height + 3.0;
+                let paint_offset = position.map(|p| {
+                    let a = p.visual_offset.unwrap_or_default();
+                    let b = p.flow_position().and_then(|flow| flow.visual_offset).unwrap_or_default();
+                    (a.x_mm - b.x_mm, a.y_mm - b.y_mm)
+                }).unwrap_or_default();
+                let table_x = table_x + paint_offset.0 * MM_TO_PT;
+                table_y += paint_offset.1 * MM_TO_PT;
                 for row in &table.rows {
                     let mut temp_page = VectorPage::new(Size::new(width, row.height));
                     render_table_row(&mut temp_page, row, table_x, table_y);
-                    commands.extend(temp_page.commands);
+                    // Nested floating tables have the same explicit paint
+                    // layers as body floats, regardless of their source order.
+                    match position.map(|p| p.wrap) {
+                        Some(model::TableWrap::BehindText) => behind_text.extend(temp_page.commands),
+                        Some(model::TableWrap::InFrontOfText) => in_front_of_text.extend(temp_page.commands),
+                        _ => commands.extend(temp_page.commands),
+                    }
                     hit_regions.extend(temp_page.hit_regions);
                     object_regions.extend(temp_page.object_regions);
                     table_y += row.height;
                 }
-                if !floating { y = table_y + 3.0; }
+                if !floating { y = reserved_y; }
             }
             PreparedBlock::PageBreak | PreparedBlock::ColumnBreak => y += 4.0,
             PreparedBlock::Foreign { height } => y += height,
         }
     }
-    if let Some(flow) = cell_flow { y = flow.clear(y); }
+    if let Some(flow) = cell_flow { y = flow.extent(y); }
+    behind_text.extend(commands);
+    behind_text.extend(in_front_of_text);
+    let commands = behind_text;
     Ok(PreparedCellFragment { height: y.max(1.0), commands, hit_regions, object_regions })
 }
 

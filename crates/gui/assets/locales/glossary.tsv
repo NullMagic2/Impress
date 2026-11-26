@@ -1498,3 +1498,30 @@ Preparing original view…	Προετοιμασία αρχικής προβολ�
 Original · Some edits could not be restored	Αρχικό · Ορισμένες αλλαγές δεν επαναφέρθηκαν	Original · Algunos cambios no se pudieron restaurar	Original · Algumas alterações não puderam ser restauradas	Original · Não foi possível restaurar algumas alterações
 The original view could not be prepared.	Δεν ήταν δυνατή η προετοιμασία της αρχικής προβολής.	No se pudo preparar la vista original.	Não foi possível preparar a exibição original.	Não foi possível preparar a vista original.
 Close Original to edit the document.	Κλείστε την αρχική προβολή για να επεξεργαστείτε το έγγραφο.	Cierre la vista Original para editar el documento.	Feche a exibição Original para editar o documento.	Feche a vista Original para editar o documento.
+Words	Λέξεις	Palabras	Palavras	Palavras
+0 words	0 λέξεις	0 palabras	0 palavras	0 palavras
+1 word	1 λέξη	1 palabra	1 palavra	1 palavra
+{count} words	{count} λέξεις	{count} palabras	{count} palavras	{count} palavras
+{selected} of {total} words	{selected} από {total} λέξεις	{selected} de {total} palabras	{selected} de {total} palavras	{selected} de {total} palavras
+{selected} of 1 word	{selected} από 1 λέξη	{selected} de 1 palabra	{selected} de 1 palavra	{selected} de 1 palavra
+Text color	Χρώμα κειμένου	Color del texto	Cor do texto	Cor do texto
+Cell fill	Γέμισμα κελιού	Relleno de celda	Preenchimento da célula	Preenchimento da célula
+Light green	Ανοιχτό πράσινο	Verde claro	Verde-claro	Verde-claro
+Custom colors	Προσαρμοσμένα χρώματα	Colores personalizados	Cores personalizadas	Cores personalizadas
+Add custom color…	Προσθήκη προσαρμοσμένου χρώματος…	Añadir color personalizado…	Adicionar cor personalizada…	Adicionar cor personalizada…
+Remove custom color	Αφαίρεση προσαρμοσμένου χρώματος	Eliminar color personalizado	Remover cor personalizada	Remover cor personalizada
+Remove a custom color before adding another.	Αφαιρέστε ένα προσαρμοσμένο χρώμα πριν προσθέσετε άλλο.	Elimine un color personalizado antes de añadir otro.	Remova uma cor personalizada antes de adicionar outra.	Remova uma cor personalizada antes de adicionar outra.
+Invalid color	Μη έγκυρο χρώμα	Color no válido	Cor inválida	Cor inválida
+Other value…	Άλλη τιμή…	Otro valor…	Outro valor…	Outro valor…
+Standard colors	Τυπικά χρώματα	Colores estándar	Cores padrão	Cores padrão
+Light gray	Ανοιχτό γκρι	Gris claro	Cinza-claro	Cinzento-claro
+Pale blue	Απαλό μπλε	Azul pálido	Azul-claro	Azul-claro
+Pale teal	Απαλό γαλαζοπράσινο	Verde azulado pálido	Verde-azulado claro	Verde-azulado claro
+Pale green	Απαλό πράσινο	Verde pálido	Verde-claro	Verde-claro
+Peach	Ροδακινί	Melocotón	Pêssego	Pêssego
+Lavender	Λεβάντα	Lavanda	Lavanda	Lavanda
+Table tools…	Εργαλεία πίνακα…	Herramientas de tabla…	Ferramentas de tabela…	Ferramentas de tabela…
+Table position…	Θέση πίνακα…	Posición de tabla…	Posição da tabela…	Posição da tabela…
+Move	Μετακίνηση	Mover	Mover	Mover
+Table layout and anchoring	Διάταξη και αγκύρωση πίνακα	Diseño y anclaje de tabla	Layout e ancoragem da tabela	Disposição e ancoragem da tabela
+Placement	Τοποθέτηση	Colocación	Posicionamento	Posicionamento

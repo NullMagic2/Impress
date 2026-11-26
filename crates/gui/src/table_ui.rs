@@ -53,6 +53,7 @@ pub enum Target { Column(usize), Row(usize), Corner, InsertColumn(usize), Insert
 #[derive(Clone, Debug)]
 pub struct TableDrag {
     table: String,
+    start_page: usize,
     resize: bool,
     start: Point,
     current: Point,
@@ -78,7 +79,7 @@ pub struct Hover { pub table: String, pub page: usize, pub target: Option<Target
 pub struct CellFacts { pub width_mm: f32, pub height_mm: Option<f32>, pub actual_height_mm: f32, pub header: bool, pub align: u8, pub merged: bool,
     /// Where a floating table sits; None for an inline table.
     pub position: Option<model::TablePosition>,
-    /// A main-text table (only those can float).
+    /// A body table, including one inside another table's cell.
     pub movable: bool }
 
 /// Accent shared by handles, guides and the cell selection. The picture
@@ -314,7 +315,7 @@ fn start_drag(state: &mut CanvasState, table: &str, page: usize, p: Point, resiz
     let model = state.editor.table_by_id(&NodeId::from(table)).ok_or("Table not found")?;
     let rows = model.rows.len();
     let declared: Vec<Option<f32>> = model.rows.iter().map(|r| r.height_mm).collect();
-    let indent_mm = crate::table_snap::margins(&state.vector_document,&state.viewport,Point::new(g.left,g.top))
+    let indent_mm = container_margins(state, &model.id, Point::new(g.left,g.top))
         .map(|margins|(g.left-margins.x)/state.viewport.points_to_pixels().max(0.01)/MM_TO_PT)
         .unwrap_or(model.properties.left_indent_mm.unwrap_or(0.0));
     let mut widths_pt = Vec::new();
@@ -326,7 +327,7 @@ fn start_drag(state: &mut CanvasState, table: &str, page: usize, p: Point, resiz
         }
     }
     state.table_drag = Some(TableDrag {
-        table: table.to_string(), resize, start: p, current: p, moved: false,
+        table: table.to_string(), start_page: page, resize, start: p, current: p, moved: false,
         bounds: (g.left, g.top, g.right, g.bottom), indent_mm, widths_pt, heights_pt, declared,
         horizontal_only: false, proportional: false, free: model.properties.position.clone(), snapped: None,
     });
@@ -384,10 +385,16 @@ pub fn motion(state: &mut CanvasState, p: Point, shift: bool) -> bool {
     drag.proportional = drag.resize && shift;
     drag.horizontal_only = !drag.resize && shift;
     let ghost = drag.ghost();
-    if let Some(margins)=crate::table_snap::margins(&state.vector_document,&state.viewport,Point::new(ghost.x,ghost.y)) {
+    if let Some(margins)=container_margins(state, &NodeId::from(drag.table.as_str()), Point::new(ghost.x,ghost.y)) {
         let tolerance=crate::table_snap::TOLERANCE_DIP*Metrics::of(state).s;
         drag.snapped=Some(if drag.resize {crate::table_snap::resizing(ghost,margins,tolerance,drag.proportional)}
             else {crate::table_snap::moving(ghost,margins,tolerance,drag.free.is_some()&&!drag.horizontal_only)});
+        if !drag.resize && drag.free.is_some() && state.editor.table_parent_cell(&NodeId::from(drag.table.as_str())).is_some() {
+            if let Some(snap) = &mut drag.snapped {
+                snap.rect.x = snap.rect.x.clamp(margins.x, (margins.max_x() - snap.rect.width).max(margins.x));
+                if !drag.horizontal_only { snap.rect.y = snap.rect.y.clamp(margins.y, (margins.max_y() - snap.rect.height).max(margins.y)); }
+            }
+        }
     }
     drag.moved |= (p.x - drag.start.x).abs() + (p.y - drag.start.y).abs() > 3.0;
     let scale = state.viewport.points_to_pixels().max(0.01);
@@ -399,7 +406,7 @@ pub fn motion(state: &mut CanvasState, p: Point, shift: bool) -> bool {
         state.action_status = Some(format!("Table: {width:.1} × {height:.1} mm — Shift keeps proportions; Escape cancels"));
     } else if drag.free.is_some() {
         drag.horizontal_only = shift;
-        state.action_status = Some("Free position — release to place the table here; text wraps around it (Shift: sideways only)".into());
+        state.action_status = Some("Free position — release to place the table here (Shift: sideways only)".into());
     } else {
         drag.horizontal_only = shift;
         let indent = new_indent(&drag, scale);
@@ -435,8 +442,8 @@ pub fn up(state: &mut CanvasState) -> bool {
             else { drag.heights_pt.iter().map(|h| Some((h * fy / MM_TO_PT).clamp(2.0, 500.0))).collect() };
         state.editor.scale_table(&table_id, widths, heights)
     } else if let Some(position) = drag.free.clone() {
-        match free_drop(state, &table_id, drag.ghost(), position, drag.horizontal_only) {
-            Ok((anchor, position)) => state.editor.set_table_position(&table_id, anchor, Some(position)),
+        match drag_offset(state, &table_id, &drag, position.visual_offset.unwrap_or_default()) {
+            Ok(offset) => state.editor.offset_table(&table_id, offset),
             Err(e) => Err(e),
         }
     } else {
@@ -448,8 +455,7 @@ pub fn up(state: &mut CanvasState) -> bool {
         state.editor.move_table(&table_id, target, Some(indent))
     };
     if let Err(e) = result { state.action_status = Some(e); } else { state.action_status = None; }
-    state.selected_object = None;
-    state.table_band = None;
+    select_after_position(state, &table_id);
     if state.editor.revision != revision { submit_layout(state); }
     refresh_overlay(state);
     state.needs_present = true;
@@ -609,8 +615,42 @@ fn finish(state: &mut CanvasState, revision: u64) {
 }
 
 /// Sizes and settings of the cell holding the caret.
+pub fn context(state: &CanvasState) -> Option<editor::TableCellContext> {
+    selected_context(&state.editor, state.selected_object.as_ref())
+}
+fn selected_context(editor: &EditorState, selected: Option<&objects_ui::SelectedObject>) -> Option<editor::TableCellContext> {
+    if let Some(objects_ui::SelectedObject::Cells { table_id, cell_ids }) = selected {
+        return cell_ids.iter().find_map(|cell| editor.table_cell_context_for(table_id, cell));
+    }
+    editor.table_cell_context()
+}
+
+/// Keep the edited table and selected cells active across a move/re-layout.
+/// Resolve IDs from the model, since the accepted hit geometry is still old.
+pub fn select_after_position(state: &mut CanvasState, id: &NodeId) {
+    let Some(table) = state.editor.table_by_id(id) else { return; };
+    let cells: Vec<_> = table.rows.iter().flat_map(|r| r.cells.iter().map(|c| c.id.clone())).collect();
+    let selected = positioned_selection(id, &cells, state.selected_object.as_ref());
+    let whole_table = matches!(&selected, objects_ui::SelectedObject::Cells { cell_ids, .. } if cell_ids == &cells);
+    state.selected_object = Some(selected);
+    if !state.table_band.as_ref().is_some_and(|(table, _)| table == &id.0) {
+        state.table_band = whole_table.then(|| (id.0.clone(), Band::Table));
+    }
+    state.table_hover = None;
+    state.needs_present = true;
+}
+
+fn positioned_selection(id: &NodeId, cells: &[NodeId], selected: Option<&objects_ui::SelectedObject>) -> objects_ui::SelectedObject {
+    let retained = match selected {
+        Some(objects_ui::SelectedObject::Cells { table_id, cell_ids }) if table_id == id =>
+            cell_ids.iter().filter(|id| cells.contains(id)).cloned().collect::<Vec<_>>(),
+        _ => Vec::new(),
+    };
+    objects_ui::SelectedObject::Cells { table_id: id.clone(), cell_ids: if retained.is_empty() { cells.to_vec() } else { retained } }
+}
+
 pub fn facts(state: &CanvasState) -> Option<CellFacts> {
-    let context = state.editor.table_cell_context()?;
+    let context = context(state)?;
     let table = state.editor.table_by_id(&context.table_id)?;
     let row = table.rows.get(context.row_index)?;
     let cell = row.cells.get(context.cell_index)?;
@@ -629,7 +669,7 @@ pub fn facts(state: &CanvasState) -> Option<CellFacts> {
         align: match cell.vertical_alignment { CellVerticalAlignment::Top => 0, CellVerticalAlignment::Center => 1, _ => 2 },
         merged: cell.column_span > 1 || cell.row_span > 1,
         position: table.properties.position.clone(),
-        movable: state.editor.document.sections.iter().any(|s| s.blocks.iter().any(|b| matches!(b, model::Block::Table(t) if t.id == context.table_id))),
+        movable: state.editor.table_can_move(&context.table_id),
     })
 }
 
@@ -678,19 +718,19 @@ pub fn operation(state: &CanvasState, op: TableOp) -> Result<Edit, String> {
         TableOp::Height(d) => { let h = step(facts.height_mm.unwrap_or(facts.actual_height_mm), d); Box::new(move |e| e.set_table_row_height(Some(h))) }
         TableOp::HeightAuto => Box::new(|e| e.set_table_row_height(None)),
         TableOp::Float(free) => {
-            if !facts.movable { return Err("Only tables in the main text can float; header and nested tables stay in line.".into()); }
-            let id = state.editor.table_cell_context().ok_or("Place the caret in a table first")?.table_id;
+            if !facts.movable { return Err("Only tables in the main text can be positioned freely.".into()); }
+            let id = context(state).ok_or("Place the caret in a table first")?.table_id;
             // Start where the table is: at its indent, at the top of the paragraph it precedes.
             let indent = state.editor.table_by_id(&id).and_then(|t| t.properties.left_indent_mm).unwrap_or(0.0);
             let position = free.then(|| facts.position.clone().unwrap_or(model::TablePosition {
                 horizontal: model::HorizontalPlacement::Offset(indent), ..Default::default() }));
-            Box::new(move |e| e.set_table_position(&id, None, position))
+            Box::new(move |e| e.set_table_position(&id, position))
         }
         TableOp::WrapAround(around) => {
-            let id = state.editor.table_cell_context().ok_or("Place the caret in a table first")?.table_id;
+            let id = context(state).ok_or("Place the caret in a table first")?.table_id;
             let mut position = facts.position.clone().ok_or("Make the table free first")?;
             position.wrap = if around { model::TableWrap::Around } else { model::TableWrap::TopAndBottom };
-            Box::new(move |e| e.set_table_position(&id, None, Some(position)))
+            Box::new(move |e| e.set_table_position(&id, Some(position)))
         }
     })
 }
@@ -871,8 +911,9 @@ fn drop_target(state: &CanvasState, table: &NodeId, at: Point) -> Option<(NodeId
     let (page, rect) = rects.iter().enumerate()
         .min_by(|a, b| distance(*a.1, at).total_cmp(&distance(*b.1, at)))?;
     let q = Point::new((at.x - rect.x) / scale, (at.y - rect.y) / scale);
+    let allowed: std::collections::BTreeSet<_> = state.editor.table_drag_paragraphs(table).into_iter().map(|id| id.0).collect();
     let region = state.vector_document.pages[page].hit_regions.iter()
-        .filter(|r| !paragraph_in_table(state, table, &NodeId::from(r.node_id.as_str())))
+        .filter(|r| allowed.contains(&r.node_id))
         .min_by(|a, b| {
             let d = |r: &render::TextHitRegion| { let c = r.rect.y + r.rect.height * 0.5; (q.y - c).abs() };
             d(a).total_cmp(&d(b))
@@ -886,43 +927,71 @@ fn distance(r: Rect, p: Point) -> f32 {
     dx * dx + dy * dy
 }
 
-/// Where a floating table dropped at `ghost` (view pixels) goes: the
-/// paragraph it will be anchored to (placed before), and its new position
-/// in the same reference frames as before, as offsets.
-fn free_drop(state: &CanvasState, table: &NodeId, ghost: Rect, mut position: model::TablePosition, sideways: bool) -> Result<(Option<NodeId>, model::TablePosition), String> {
+/// Nested-table coordinates use the containing cell's content box.
+fn containing_cell_rect(state: &CanvasState, table: &NodeId, page: usize) -> Option<Rect> {
+    let (outer, cell) = state.editor.table_parent_cell(table)?;
+    let region = state.vector_document.pages.get(page)?.object_regions.iter()
+        .find(|r| r.node_id == cell.id.0 && matches!(r.kind, ObjectKind::TableCell(_)))?;
+    let margins = cell.margins.unwrap_or_default().over(outer.properties.cell_margins.unwrap_or_default());
+    let pad = |mm: Option<f32>| mm.filter(|v| v.is_finite() && *v >= 0.0).map_or(model::TABLE_TEXT_PADDING_PT, |v| v * MM_TO_PT);
+    let (mut left, mut right) = (pad(margins.left_mm), pad(margins.right_mm));
+    if left + right > (region.rect.width - 1.0).max(0.0) {
+        let factor = (region.rect.width - 1.0).max(0.0) / (left + right);
+        left *= factor; right *= factor;
+    }
+    let top = pad(margins.top_mm);
+    Some(Rect::new(region.rect.x + left, region.rect.y + top, (region.rect.width - left - right).max(1.0),
+        (region.rect.height - top - pad(margins.bottom_mm)).max(1.0)))
+}
+
+fn container_margins(state: &CanvasState, table: &NodeId, at: Point) -> Option<Rect> {
+    if state.editor.table_parent_cell(table).is_none() {
+        return crate::table_snap::margins(&state.vector_document, &state.viewport, at);
+    }
+    let rects = state.viewport.page_rects_px(&state.vector_document);
+    let (page, origin) = rects.iter().enumerate().min_by(|a, b| distance(*a.1, at).total_cmp(&distance(*b.1, at)))?;
+    let bounds = containing_cell_rect(state, table, page)?;
+    let scale = state.viewport.points_to_pixels().max(0.01);
+    Some(Rect::new(origin.x + bounds.x * scale, origin.y + bounds.y * scale, bounds.width * scale, bounds.height * scale))
+}
+
+fn position_in_cell(mut position: model::TablePosition, bounds: Rect, at: Point, size: render::Size, sideways: bool) -> model::TablePosition {
+    let mm = |pt: f32| ((pt / MM_TO_PT) * 10.0).round() / 10.0;
+    position.horizontal_from = model::HorizontalFrom::Margin;
+    position.horizontal = model::HorizontalPlacement::Offset(mm((at.x - bounds.x).clamp(0.0, (bounds.width - size.width).max(0.0))));
+    if !sideways {
+        position.vertical_from = model::VerticalFrom::Margin;
+        position.vertical = model::VerticalPlacement::Offset(mm((at.y - bounds.y).clamp(0.0, (bounds.height - size.height).max(0.0))));
+    }
+    position
+}
+
+/// Drags move a table relative to its original placement without moving its
+/// source block or its anchor paragraph. This also preserves nested settings.
+fn drag_offset(state: &CanvasState, table: &NodeId, drag: &TableDrag, old: model::TableOffset) -> Result<model::TableOffset, String> {
     let scale = state.viewport.points_to_pixels().max(0.01);
     let rects = state.viewport.page_rects_px(&state.vector_document);
-    let at = Point::new(ghost.x, ghost.y);
-    let (page, origin) = rects.iter().enumerate().min_by(|a, b| distance(*a.1, at).total_cmp(&distance(*b.1, at))).map(|(i, r)| (i, *r)).ok_or("No page")?;
-    let q = Point::new((ghost.x - origin.x) / scale, (ghost.y - origin.y) / scale);
-    // Top-level paragraphs that start on this page, by the top of their first line.
-    let document = &state.editor.document;
-    let mut section_of = std::collections::HashMap::new();
-    for (index, section) in document.sections.iter().enumerate() {
-        for block in section.blocks.iter() { if let model::Block::Paragraph(p) = block { section_of.insert(p.id.0.clone(), index); } }
+    let source = *rects.get(drag.start_page).ok_or("No page")?;
+    let mut ghost = drag.ghost();
+    if let Some(bounds) = containing_cell_rect(state, table, drag.start_page) {
+        // Cell bounds returned in document points; the drag is in view pixels.
+        let bounds = Rect::new(source.x + bounds.x * scale, source.y + bounds.y * scale,
+            bounds.width * scale, bounds.height * scale);
+        ghost.x = ghost.x.clamp(bounds.x, (bounds.max_x() - ghost.width).max(bounds.x));
+        ghost.y = ghost.y.clamp(bounds.y, (bounds.max_y() - ghost.height).max(bounds.y));
+        return Ok(model::TableOffset { x_mm: old.x_mm + (ghost.x - drag.bounds.0) / scale / MM_TO_PT,
+            y_mm: old.y_mm + (ghost.y - drag.bounds.1) / scale / MM_TO_PT, page_delta: 0 });
     }
-    let first_line = |page: usize| {
-        let mut tops: std::collections::BTreeMap<String, f32> = std::collections::BTreeMap::new();
-        if let Some(p) = state.vector_document.pages.get(page) {
-            for r in &p.hit_regions { if section_of.contains_key(&r.node_id) { let t = tops.entry(r.node_id.clone()).or_insert(f32::MAX); *t = t.min(r.rect.y); } }
-        }
-        tops
-    };
-    let previous = if page > 0 { first_line(page - 1) } else { Default::default() };
-    let starts: Vec<(String, f32)> = first_line(page).into_iter().filter(|(id, _)| !previous.contains_key(id) && !paragraph_in_table(state, table, &NodeId::from(id.as_str()))).collect();
-    let anchor = starts.iter().filter(|(_, y)| *y <= q.y + 0.5).max_by(|a, b| a.1.total_cmp(&b.1))
-        .or_else(|| starts.iter().min_by(|a, b| a.1.total_cmp(&b.1)))
-        .ok_or("Drop the table on a page with text to anchor it to.")?;
-    let section = &document.sections[section_of[&anchor.0]];
-    let (margin_left, margin_top) = (section.properties.margin_left_mm * MM_TO_PT, section.properties.margin_top_mm * MM_TO_PT);
-    let mm = |pt: f32| ((pt / MM_TO_PT) * 10.0).round() / 10.0;
-    let x = match position.horizontal_from { model::HorizontalFrom::Page => q.x, _ => q.x - margin_left };
-    position.horizontal = model::HorizontalPlacement::Offset(mm(x).clamp(-500.0, 500.0));
-    // Shift: sideways only, keeping the anchor and vertical placement.
-    if sideways { return Ok((None, position)); }
-    let y = match position.vertical_from { model::VerticalFrom::Page => q.y, model::VerticalFrom::Margin => q.y - margin_top, model::VerticalFrom::Paragraph => q.y - anchor.1 };
-    position.vertical = model::VerticalPlacement::Offset(mm(y).clamp(-500.0, 500.0));
-    Ok((Some(NodeId::from(anchor.0.as_str())), position))
+    let step = source.height + state.viewport.page_gap_pt * scale;
+    let delta = ((ghost.y - source.y) / step).floor() as i32;
+    let page = (drag.start_page as i32 + delta).clamp(0, 9999) as usize;
+    let target = rects.get(page).copied().unwrap_or(Rect::new(source.x,
+        source.y + (page as i32 - drag.start_page as i32) as f32 * step, source.width, source.height));
+    Ok(model::TableOffset {
+        x_mm: old.x_mm + ((ghost.x - target.x) - (drag.bounds.0 - source.x)) / scale / MM_TO_PT,
+        y_mm: old.y_mm + ((ghost.y - target.y) - (drag.bounds.1 - source.y)) / scale / MM_TO_PT,
+        page_delta: old.page_delta + page as i32 - drag.start_page as i32,
+    })
 }
 
 #[cfg(test)] #[path="../tests/unit/table_drag_snap.rs"] mod snap_tests;

@@ -15,6 +15,7 @@ BUTTONS=[]; SIZES=[]; GROUPS=[]; COMBOS=[]
 # button width/height, artwork width/height (before the 2-DIP transparent inset).
 BUTTON_METRICS = {
     'large': (68, 66, 30, 30),
+    'large-menu': (62, 78, 32, 32),
     'file-main': (78, 78, 32, 32),
     'file-menu': (78, 78, 32, 32),
     'file-minor': (98, 36, 18, 18),
@@ -462,6 +463,8 @@ button(s,'text_language_button','Spelling','spell','TextLanguage','small','Spell
 status_text=label(s,'Ready','status_label',option=1,flag='wxLEFT|wxALIGN_CENTER_VERTICAL',border=10)
 prop(status_text,'style','wxST_ELLIPSIZE_END');size(status_text,'status_label',1,-1)
 label(s,'Page 1 of 1','status_page_count',flag='wxLEFT|wxRIGHT|wxALIGN_CENTER_VERTICAL',border=10)
+word_count=label(s,'0 words','status_word_count',flag='wxRIGHT|wxALIGN_CENTER_VERTICAL',border=10)
+prop(word_count,'tooltip','Word count')
 button(s,'status_navigation_button','Navigation','sidebar','ToggleNavigation','quick','Show navigation pane')
 button(s,'zoom_out_button','Zoom out','zoom_out','ZoomStep(-0.1)','quick')
 z=obj(item(s,0,'wxALIGN_CENTER_VERTICAL'),'wxSlider','zoom_slider',style='wxSL_HORIZONTAL',min='20',max='800',value='100')

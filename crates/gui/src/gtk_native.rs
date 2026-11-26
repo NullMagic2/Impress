@@ -219,6 +219,9 @@ static PRESS_SHIFT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 static SCROLL_STATE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 #[cfg(target_os = "linux")]
+unsafe extern "C" { fn wxd_ColourPalette_FilterNative(event: *mut std::ffi::c_void) -> bool; }
+
+#[cfg(target_os = "linux")]
 extern "C" fn on_gdk_event(event: *mut std::ffi::c_void, _data: *mut std::ffi::c_void) {
     // GdkEventButton (GTK 3): type at 0, modifier state (guint) at 48, x_root
     // and y_root (f64) at 64 and 72.
@@ -238,7 +241,7 @@ extern "C" fn on_gdk_event(event: *mut std::ffi::c_void, _data: *mut std::ffi::c
             let state = *(base.add(48) as *const u32);
             PRESS_SHIFT.store(state & GDK_SHIFT_MASK != 0, std::sync::atomic::Ordering::Relaxed);
         }
-        ffi::gtk_main_do_event(event);
+        if !wxd_ColourPalette_FilterNative(event) { ffi::gtk_main_do_event(event); }
     }
 }
 

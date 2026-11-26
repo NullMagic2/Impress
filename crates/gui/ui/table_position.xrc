@@ -149,7 +149,6 @@
                                       <border>24</border>
                                       <object class="wxStaticText" name="i18n_control_6">
                                         <label>Offset</label>
-                                        <size>78,-1</size>
                                         <fg>#243042</fg>
                                       </object>
                                     </object>
@@ -311,7 +310,6 @@
                                       <border>24</border>
                                       <object class="wxStaticText" name="i18n_control_13">
                                         <label>Offset</label>
-                                        <size>78,-1</size>
                                         <fg>#243042</fg>
                                       </object>
                                     </object>
@@ -668,6 +666,22 @@
                                   <border>10</border>
                                   <object class="wxRadioButton" name="tpos_topbottom">
                                     <label>Text stops above and continues below</label>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>10</border>
+                                  <object class="wxRadioButton" name="tpos_front">
+                                    <label>In Front of Text</label>
+                                  </object>
+                                </object>
+                                <object class="sizeritem">
+                                  <option>0</option>
+                                  <flag>wxBOTTOM</flag>
+                                  <border>10</border>
+                                  <object class="wxRadioButton" name="tpos_behind">
+                                    <label>Behind Text</label>
                                   </object>
                                 </object>
                                 <object class="sizeritem">

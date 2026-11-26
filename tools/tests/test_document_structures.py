@@ -21,7 +21,7 @@ class Structures(unittest.TestCase):
         self.assertIn('fn render_header_footer_for_page',l); self.assertIn('FieldKind::PageNumber => format_page_number(context.page_number',l)
     def test_images_keep_original_and_render_preview(self):
         e=text('crates/editor/src/formatting.rs'); l=text('crates/layout/src/lib.rs')
-        self.assertIn('Resource { id: resource_id.clone(), media_type, original_name, data: data.into() }',e)
+        self.assertRegex(e, r'Resource \{[^}]*id: resource_id\.clone\(\), media_type, original_name, data: data\.into\(\)')
         self.assertIn('fn raster_preview_commands',l); self.assertIn('decode_raster_cached',l)
         self.assertIn('DrawCommand::Image',l)
         self.assertNotIn('let max_axis = 96u32',l)

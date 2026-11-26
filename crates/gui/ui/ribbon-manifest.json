@@ -383,10 +383,10 @@
       "label": "",
       "icon": "font-color",
       "action": "FontColor",
-      "kind": "icon",
+      "kind": "colour-menu",
       "tip": "Font color",
       "disabled": false,
-      "width_dip": 30,
+      "width_dip": 42,
       "height_dip": 28,
       "art_width_dip": 18,
       "art_height_dip": 18,
@@ -397,10 +397,10 @@
       "label": "",
       "icon": "highlight",
       "action": "Highlight",
-      "kind": "icon",
+      "kind": "colour-menu",
       "tip": "Highlight",
       "disabled": false,
-      "width_dip": 30,
+      "width_dip": 42,
       "height_dip": 28,
       "art_width_dip": 18,
       "art_height_dip": 18,
@@ -789,7 +789,7 @@
       "label": "Table",
       "icon": "table",
       "action": "InsertTable",
-      "kind": "large",
+      "kind": "large-menu",
       "tip": "Insert table",
       "disabled": false,
       "width_dip": 62,
@@ -3207,12 +3207,12 @@
     ],
     [
       "font_color_button",
-      30,
+      42,
       28
     ],
     [
       "highlight_button",
-      30,
+      42,
       28
     ],
     [
@@ -4664,6 +4664,12 @@
       66,
       30,
       30
+    ],
+    "large-menu": [
+      62,
+      78,
+      32,
+      32
     ],
     "file-main": [
       78,

@@ -137,7 +137,9 @@ pub fn text(source: &str) -> String {
     text_inner(source, 0)
 }
 fn text_inner(source: &str, depth: usize) -> String {
-    let index = language() as usize;
+    translate(source, depth, language() as usize)
+}
+fn translate(source: &str, depth: usize, index: usize) -> String {
     if index == 0 {
         return source.to_string();
     }
@@ -146,6 +148,14 @@ fn text_inner(source: &str, depth: usize) -> String {
     }
     if source.len() > 65536 || depth > 3 {
         return source.to_string();
+    }
+    // Decorative caption suffixes are added at runtime by several painted
+    // controls. Translate the caption before restoring the arrow/ellipsis.
+    for suffix in [" ▾", "…", "..."] {
+        if let Some(caption) = source.strip_suffix(suffix).filter(|s| !s.is_empty()) {
+            let translated = translate(caption, depth + 1, index);
+            if translated != caption { return format!("{translated}{suffix}"); }
+        }
     }
     for template in templates() {
         if !source.contains(&template.needle) {
@@ -183,11 +193,13 @@ fn text_inner(source: &str, depth: usize) -> String {
                 "status",
                 "hint",
                 "notes",
+                "reason",
             ]
             .iter()
             .any(|name| field.as_str().contains(name))
+                || matches!(field.as_str(), "{e}" | "{e:?}")
             {
-                output.push_str(&text_inner(value, depth + 1));
+                output.push_str(&translate(value, depth + 1, index));
             } else {
                 output.push_str(value);
             }
@@ -256,7 +268,8 @@ impl wxdragon::translations::TranslationsLoader for NativeCatalog {
 pub fn install_native() {
     let translations = wxdragon::translations::Translations::new();
     translations.set_loader(NativeCatalog);
-    translations.set_language_str(language().tag());
+    // wxWidgets matches catalog names literally and expects underscore locales.
+    translations.set_language_str(&language().tag().replace('-', "_"));
     if language() != Language::English {
         translations.add_catalog("impress");
     }
@@ -292,4 +305,58 @@ pub fn wildcard(value: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("|")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn runtime_errors_translate_in_every_shipped_language() {
+        for index in 1..=4 {
+            let source = "Simplified document view: Invalid floating image dimensions";
+            let expected = catalog()["Simplified document view: {error}"][index - 1]
+                .replace("{error}", &catalog()["Invalid floating image dimensions"][index - 1]);
+            assert_eq!(translate(source, 0, index), expected);
+            let source = "Cannot embed My Font: Invalid font. Save without embedding to continue.";
+            let template = "Cannot embed {family}: {e}. Save without embedding to continue.";
+            assert_eq!(translate(source, 0, index), catalog()[template][index - 1]
+                    .replace("{family}", "My Font").replace("{e}", &catalog()["Invalid font"][index - 1]));
+        }
+    }
+
+    #[test]
+    fn captured_document_values_remain_unchanged() {
+        for index in 1..=4 {
+            let template = "Unknown function \"{callee}\"";
+            assert_eq!(translate("Unknown function \"Invalid font\"", 0, index),
+                catalog()[template][index - 1].replace("{callee}", "Invalid font"));
+        }
+    }
+    #[test]
+    fn decorated_captions_and_multiline_toolbar_labels_translate() {
+        for index in 1..=4 {
+            for source in ["Select", "Text color", "Cell fill"] {
+                assert_eq!(translate(&format!("{source} ▾"),0,index),
+                    format!("{} ▾",catalog()[source][index-1]));
+            }
+            for source in ["Insert\nAbove", "Insert\nBelow", "Close\nTable Tools", "Close\nPicture Tools"] {
+                let value=translate(source,0,index);
+                assert_eq!(value.lines().count(),2,"{source}: {value}");
+                assert_ne!(value,source);
+            }
+        }
+    }
+
+    #[test]
+    fn every_non_english_language_has_a_matching_native_catalog_tag() {
+        use wxdragon::translations::TranslationsLoader;
+        let available=NativeCatalog.available_translations("impress");
+        for language in Language::ALL.into_iter().skip(1) {
+            let tag=language.tag().replace('-',"_");
+            assert!(available.contains(&tag),"{tag} must match the native catalog name");
+            assert!(NativeCatalog.load_catalog("impress",&tag).is_some());
+        }
+    }
+
 }

@@ -297,9 +297,7 @@ impl Ribbon {
                 .get(index)
                 .ok_or("This suggestion is no longer available")?;
             self.edit(|editor| {
-                editor.set_caret(issue.node.clone(), issue.start);
-                editor.extend_selection(issue.node.clone(), issue.end);
-                editor.insert_text(replacement)
+                editor.replace_spelling_word(&issue.node, issue.start..issue.end, &issue.word, replacement, revision)
             })?;
         } else {
             crate::spelling::Dictionary::load()?.add(&issue.language, &issue.word)?;

@@ -218,7 +218,7 @@ impl PictureBar {
     }
 
     /// Measured with the panel's font, set once at install (see table_bar.rs).
-    fn text_width(&self, text: &str) -> i32 { text.lines().map(|l| self.panel.get_text_extent(&crate::i18n::text(&(l))).width).max().unwrap_or(0) }
+    fn text_width(&self, text: &str) -> i32 { crate::i18n::text(text).lines().map(|l| self.panel.get_text_extent(l).width).max().unwrap_or(0) }
 
     fn layout(&self, facts: &Option<Facts>) -> Layout {
         let full = self.layout_with(facts, false);
@@ -379,11 +379,11 @@ impl PictureBar {
             let (x, y, bw, bh) = b.rect;
             match b.style {
                 Style::Large => {
-                    let mut lines: Vec<String> = b.label.lines().map(str::to_string).collect();
+                    let mut lines: Vec<String> = crate::i18n::text(&b.label).lines().map(str::to_string).collect();
                     if b.cmd == Cmd::Place { if let Some(last) = lines.last_mut() { last.push_str(" ▾"); } }
                     let lh = dc.get_text_extent(&crate::i18n::text(&("Ag"))).1 - d(1);
                     let mut ty = y + large_top(bh as f32, scale) as i32 + d(38);
-                    for l in lines { let lw = dc.get_text_extent(&crate::i18n::text(&(&l))).0; dc.draw_text(&crate::i18n::text(&(&l)), x + (bw - lw) / 2, ty); ty += lh; }
+                    for l in lines { let lw = dc.get_text_extent(&l).0; dc.draw_text(&l, x + (bw - lw) / 2, ty); ty += lh; }
                 }
                 Style::Caption => {
                     dc.set_text_foreground(Colour::rgb(92, 108, 132));

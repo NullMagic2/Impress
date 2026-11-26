@@ -2,6 +2,7 @@
 pub fn asset(name: &str) -> Option<(&'static str, &'static [u8], u32, u32)> {
     match name {
         "accept" => Some(("accept", include_bytes!("../../assets/ribbon/accept.png"), 64, 64)),
+        "add" => Some(("add", include_bytes!("../../assets/ribbon/add.png"), 64, 64)),
         "align-center" => Some(("align-center", include_bytes!("../../assets/ribbon/align-center.png"), 64, 64)),
         "align-justify" => Some(("align-justify", include_bytes!("../../assets/ribbon/align-justify.png"), 64, 64)),
         "align-left" => Some(("align-left", include_bytes!("../../assets/ribbon/align-left.png"), 64, 64)),

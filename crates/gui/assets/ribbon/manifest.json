@@ -5,6 +5,11 @@
     "height": 64
   },
   {
+    "name": "add",
+    "width": 64,
+    "height": 64
+  },
+  {
     "name": "align-center",
     "width": 64,
     "height": 64

@@ -120,6 +120,8 @@ fn nested_merged_tables_keep_grid_colors_and_floating_geometry() {
     outer.properties.alignment = Some(TableAlignment::Center);
     outer.properties.cell_spacing_mm = Some(1.5);
     outer.properties.position = Some(TablePosition {
+        preserved_text_flow: None,
+        visual_offset: None,
         horizontal_from: HorizontalFrom::Page,
         horizontal: HorizontalPlacement::Offset(12.0),
         vertical_from: VerticalFrom::Page,

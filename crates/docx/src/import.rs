@@ -564,7 +564,7 @@ fn canonical_name(name:&str,scope:&BTreeMap<String,String>,attribute:bool)->Stri
     let Some(uri)=scope.get(prefix) else {return name.into();};
     let canonical=match uri.as_str() {
         "http://schemas.openxmlformats.org/markup-compatibility/2006" => "mc",
-        "urn:impress:revisions:1" | "urn:impress:comments:1" => "impress",
+        "urn:impress:revisions:1" | "urn:impress:comments:1" | "urn:impress:tables:1" => "impress",
         "urn:schemas-microsoft-com:vml" => "v",
         "http://schemas.microsoft.com/office/word/2010/wordprocessingShape" => "wps",
         "http://schemas.microsoft.com/office/word/2010/wordml" => "w14",
@@ -974,7 +974,10 @@ fn parse_table(node: &XmlNode, context: &ImportContext) -> Table {
 
             for column in grid_column..grid_column + grid_span { active_vmerge.remove(&column); }
             let width_mm = pr.and_then(|p| p.child("w:tcW")).and_then(|n| n.attr("w:w")).and_then(parse_twips_mm);
-            let shading = pr.and_then(|p| p.child("w:shd")).and_then(|n| n.attr("w:fill")).map(|v| format!("#{v}"));
+            let shading = pr.and_then(|p| p.child("w:shd")).and_then(|n| {
+                if n.attr("w:val") == Some("nil") || n.attr("w:fill") == Some("auto") { Some("none".into()) }
+                else { n.attr("w:fill").filter(|v| v.len() == 6 && v.bytes().all(|b| b.is_ascii_hexdigit())).map(|v| format!("#{v}")) }
+            });
             let vertical_alignment = match pr.and_then(|p| p.child("w:vAlign")).and_then(|n| n.attr("w:val")) { Some("center") => CellVerticalAlignment::Center, Some("bottom") => CellVerticalAlignment::Bottom, _ => CellVerticalAlignment::Top };
             let borders = pr.and_then(|p| p.child("w:tcBorders")).map(parse_border_set).filter(border_set_has_any);
             let margins = pr.and_then(|p| p.child("w:tcMar")).map(parse_cell_margins).unwrap_or_default().over(row_margins);
@@ -1235,8 +1238,21 @@ fn parse_table_position(p: &XmlNode, overlap: Option<&XmlNode>) -> model::TableP
         horizontal_from, horizontal, vertical_from, vertical,
         distance_left_mm: distance("w:leftFromText"), distance_right_mm: distance("w:rightFromText"),
         distance_top_mm: distance("w:topFromText"), distance_bottom_mm: distance("w:bottomFromText"),
-        wrap: model::TableWrap::Around,
+        wrap: match p.attr("impress:wrap") {
+            Some("top_and_bottom") => model::TableWrap::TopAndBottom,
+            Some("overlap" | "in_front_of_text") => model::TableWrap::InFrontOfText,
+            Some("behind_text") => model::TableWrap::BehindText,
+            _ => model::TableWrap::Around,
+        },
         allow_overlap: overlap.and_then(|o| o.attr("w:val")) != Some("never"),
+        visual_offset: p.attr("impress:offset").filter(|json| json.len() <= 160)
+            .and_then(|json| serde_json::from_str::<model::TableOffset>(json).ok()).filter(|offset| offset.valid()),
+        preserved_text_flow: p.attr("impress:flow").filter(|json|json.len() <= 4096 && matches!(p.attr("impress:wrap"), Some("overlap" | "in_front_of_text" | "behind_text")))
+            .and_then(|json|serde_json::from_str::<Box<model::TableTextFlow>>(json).ok())
+            .filter(|flow| match flow.as_ref() {
+                model::TableTextFlow::Inline => true,
+                model::TableTextFlow::Positioned(p) => p.preserved_text_flow.is_none() && p.validate().is_ok(),
+            }),
     }
 }
 

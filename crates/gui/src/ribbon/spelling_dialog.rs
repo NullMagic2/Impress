@@ -419,9 +419,7 @@ fn replace(ribbon: &Ribbon, issue: &Issue, replacement: &str, revision: u64) -> 
         {
             return Err("The text changed. Close this window and check spelling again.".into());
         }
-        editor.set_caret(issue.node.clone(), issue.start);
-        editor.extend_selection(issue.node.clone(), issue.end);
-        editor.insert_text(replacement)
+        editor.replace_spelling_word(&issue.node, issue.start..issue.end, &issue.word, replacement, revision)
     })
 }
 

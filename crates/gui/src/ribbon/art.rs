@@ -126,6 +126,65 @@ thread_local! {
     static RASTERS: std::cell::RefCell<HashMap<RasterKey, Option<std::rc::Rc<[u8]>>>> = Default::default();
 }
 
+/// The live color band in the font-color/highlighter artwork.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(super) enum ColourIndicator { Colour([u8;3]), NoColour }
+type ColourRasterKey = (String,u32,u32,bool,ColourIndicator);
+thread_local! { static COLOUR_RASTERS: std::cell::RefCell<HashMap<ColourRasterKey,std::rc::Rc<[u8]>>> = Default::default(); }
+
+pub(super) fn colour_raster(name:&str,width:u32,height:u32,disabled:bool,indicator:ColourIndicator)->Option<std::rc::Rc<[u8]>> {
+    let key=(name.to_owned(),width,height,disabled,indicator);
+    if let Some(image)=COLOUR_RASTERS.with(|cache|cache.borrow().get(&key).cloned()){return Some(image);}
+    let (source,sw,sh)=asset(name)?;
+    let tinted=tint_indicator(source,sw,sh,indicator);
+    let pixels=fitted_rgba(&tinted,sw,sh,width,height,0);
+    let image=std::rc::Rc::<[u8]>::from(if disabled{disabled_rgba(&pixels)}else{pixels});
+    COLOUR_RASTERS.with(|cache|{
+        let mut cache=cache.borrow_mut();
+        // Imported documents can contain arbitrarily many colors.
+        if cache.len()>=128{cache.clear();}
+        cache.insert(key,image.clone());
+    });
+    Some(image)
+}
+fn tint_indicator(source:&[u8],width:u32,height:u32,indicator:ColourIndicator)->Vec<u8>{
+    let accent=|p:&[u8]|p[3]>0 && p[..3].iter().max().unwrap()-p[..3].iter().min().unwrap()>20;
+    let mut bounds:Option<(u32,u32,u32,u32)>=None;
+    let mut strongest=1u8;
+    for y in 0..height {for x in 0..width {
+        let p=&source[((y*width+x)*4) as usize..][..4];
+        if accent(p){
+            strongest=strongest.max(*p[..3].iter().max().unwrap());
+            // Both 64px source icons place their full-width band below 2/3.
+            if y>=height*2/3 {bounds=Some(match bounds{
+                Some((left,top,right,bottom))=>(x.min(left),y.min(top),x.max(right),y.max(bottom)),
+                None=>(x,y,x,y),
+            });}
+        }
+    }}
+    let mut out=source.to_vec();
+    for y in 0..height {for x in 0..width {
+        let i=((y*width+x)*4) as usize;let p=&source[i..i+4];if !accent(p){continue;}
+        let shade=*p[..3].iter().max().unwrap() as f32/strongest as f32;
+        let color=match indicator{ColourIndicator::Colour(c)=>c,ColourIndicator::NoColour=>[143,150,160]};
+        for channel in 0..3{out[i+channel]=(color[channel] as f32*shade.min(1.0)).round() as u8;}
+        if let Some((left,top,right,bottom))=bounds {
+            if y>=top {
+                let edge=x<=left+1||x+1>=right||y<=top+1||y+1>=bottom;
+                match indicator {
+                    ColourIndicator::NoColour=>{
+                        let slash=((x-left) as f32/(right-left).max(1) as f32+(y-top) as f32/(bottom-top).max(1) as f32-1.0).abs()<0.09;
+                        out[i+3]=if edge||slash{255}else{0};
+                    }
+                    ColourIndicator::Colour(c) if c.iter().all(|v|*v>220)&&edge=>out[i..i+3].copy_from_slice(&[143,150,160]),
+                    _=>{}
+                }
+            }
+        }
+    }}
+    out
+}
+
 /// DPI-sized transparent artwork for the native full-button painter.
 pub(super) fn raster(name: &str, width: u32, height: u32, disabled: bool) -> Option<std::rc::Rc<[u8]>> {
     let key = (name.to_owned(), width, height, disabled);

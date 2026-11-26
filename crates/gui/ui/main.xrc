@@ -823,7 +823,7 @@
                                                       <object class="wxButton" name="font_color_button">
                                                         <label></label>
                                                         <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
-                                                        <minsize>30,28</minsize>
+                                                        <minsize>42,28</minsize>
                                                         <tooltip>Font color</tooltip>
                                                       </object>
                                                     </object>
@@ -833,7 +833,7 @@
                                                       <object class="wxButton" name="highlight_button">
                                                         <label></label>
                                                         <style>wxBU_EXACTFIT|wxBU_NOTEXT|wxBORDER_NONE</style>
-                                                        <minsize>30,28</minsize>
+                                                        <minsize>42,28</minsize>
                                                         <tooltip>Highlight</tooltip>
                                                       </object>
                                                     </object>
@@ -6050,6 +6050,15 @@
                 <border>10</border>
                 <object class="wxStaticText" name="status_page_count">
                   <label>Page 1 of 1</label>
+                </object>
+              </object>
+              <object class="sizeritem">
+                <option>0</option>
+                <flag>wxRIGHT|wxALIGN_CENTER_VERTICAL</flag>
+                <border>10</border>
+                <object class="wxStaticText" name="status_word_count">
+                  <label>0 words</label>
+                  <tooltip>Word count</tooltip>
                 </object>
               </object>
               <object class="sizeritem">

@@ -68,6 +68,9 @@ fn visit_blocks(blocks: &[Block], warnings: &mut Vec<String>) {
                         "DOC top-and-bottom table wrapping uses side exclusion distances.".into(),
                     );
                 }
+                if table.properties.position.as_ref().is_some_and(|p| p.wrap.overlaps_text()) {
+                    warnings.push("DOC text-overlap table wrapping exports as text around the table.".into());
+                }
                 for row in &table.rows {
                     for cell in &row.cells {
                         visit_blocks(&cell.blocks, warnings);

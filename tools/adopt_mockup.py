@@ -91,7 +91,7 @@ def adopt(env):
         # a box in the text line.
         'display_equation_button':'Editor(AppCommand::InsertEquation)',
         'insert_inline_equation_button':'Editor(AppCommand::InsertInlineEquation)'}
-    styles={'big-button':('large',62,78,32,32), 'wide-button':('wide',98,66,30,30),
+    styles={'big-button':('large',62,78,32,32), 'menu-button':('large-menu',62,78,32,32), 'wide-button':('wide',98,66,30,30),
             'file-main':('file-main',78,78,32,32), 'file-menu':('file-menu',78,78,32,32), 'file-minor':('file-minor',98,36,18,18),
             'small-button':('small',68,24,16,16),
             'tool-button':('icon',30,28,18,18), 'style-choice':('gallery',74,70,64,30)}
@@ -140,6 +140,8 @@ def adopt(env):
             # Typography and Hyphenation open menus: a caret, and one width.
             menu_buttons=('typography_menu_button','hyphenation_button','show_markup_button','markup_display_button')
             if name in menu_buttons: w=156 if name=='markup_display_button' else 132
+            colour_menu = name in ('font_color_button', 'highlight_button')
+            if colour_menu: w=42
             art=style_icons.get(name,data['icon'])
             text=data['label']; tip=data['tip']
             if name in original:
@@ -152,6 +154,7 @@ def adopt(env):
                 spec.update(label=text,icon=art,kind=button_kind,tip=tip,width_dip=w,height_dip=h,
                             art_width_dip=aw,art_height_dip=ah,segment='single')
                 if name in menu_buttons: spec['kind']='typography-menu'
+                if colour_menu: spec['kind']='colour-menu'
                 sizes.append((name,w,h))
             else:
                 action=(mockup_actions.get(name) or
@@ -162,6 +165,7 @@ def adopt(env):
                 spec=buttons[-1]
                 spec.update(width_dip=w,height_dip=h,art_width_dip=aw,art_height_dip=ah)
                 if name in menu_buttons: spec['kind']='typography-menu'
+                if colour_menu: spec['kind']='colour-menu'
                 node=next(n for n in parent.iter('object') if n.get('name')==name)
                 set_prop(node,'minsize',f'{w},{h}')
                 sizes.append((name,w,h))

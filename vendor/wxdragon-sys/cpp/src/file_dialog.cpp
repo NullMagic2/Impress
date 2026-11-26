@@ -3,6 +3,7 @@
 #include "wx/filedlg.h"
 #include "wx/filedlgcustomize.h"
 #include "wx/arrstr.h"
+#include "wx/filename.h"
 #ifdef __WXGTK3__
 #include <gtk/gtk.h>
 #endif
@@ -22,7 +23,7 @@ public:
     explicit ImpressFontSaveHook(wxFileDialog* dialog) : dialog(dialog) {}
     bool value = false;
     void AddCustomControls(wxFileDialogCustomize& controls) override {
-        checkbox = controls.AddCheckBox("Embed fonts");
+        checkbox = controls.AddCheckBox(wxGetTranslation("Embed fonts", "impress"));
         checkbox->SetValue(value);
         UpdateCustomControls();
     }
@@ -48,15 +49,56 @@ public:
     // GTK restores the previous chooser size, even on a smaller monitor.
     // wxFileDialog::SetSize is a no-op on GTK. Resize the mapped GTK chooser.
     int ShowModal() override {
+        // Windows' native save picker handles this itself. GTK doesn't replace
+        // the displayed suffix when the user changes the file-type filter.
+        auto* chooser = GTK_FILE_CHOOSER(GetHandle());
+        lastSaveFilter = GetFilterIndex();
+        gulong filterChanged = 0;
+        if (HasFlag(wxFD_SAVE))
+            filterChanged = g_signal_connect(chooser, "notify::filter",
+                                             G_CALLBACK(SaveFilterChanged), this);
         GSource* fit = g_idle_source_new();
         g_source_set_callback(fit, FitChooser, GetParent() ? GetParent()->GetHandle() : nullptr, nullptr);
         g_source_attach(fit, nullptr);
         int result = wxFileDialog::ShowModal();
+        if (filterChanged) g_signal_handler_disconnect(chooser, filterChanged);
         g_source_destroy(fit);
         g_source_unref(fit);
         return result;
     }
 private:
+    int lastSaveFilter = -1;
+
+    static void SaveFilterChanged(GObject* object, GParamSpec*, gpointer data) {
+        auto* dialog = static_cast<ImpressFileDialog*>(data);
+        const int filter = dialog->GetFilterIndex();
+        if (filter == dialog->lastSaveFilter) return;
+        dialog->lastSaveFilter = filter;
+
+        wxArrayString descriptions, patterns;
+        wxParseCommonDialogsFilter(dialog->GetWildcard(), descriptions, patterns);
+        if (filter < 0 || static_cast<size_t>(filter) >= patterns.size()) return;
+        // A multi-pattern or wildcard-only filter has no unambiguous suffix.
+        const wxString pattern = patterns[filter];
+        if (!pattern.StartsWith("*.") || pattern.find_first_of(";*?/\\", 2) != wxString::npos)
+            return;
+
+        auto* chooser = GTK_FILE_CHOOSER(object);
+        gchar* currentName = gtk_file_chooser_get_current_name(chooser);
+        const wxString name = wxString::FromUTF8(currentName ? currentName : "");
+        g_free(currentName);
+        if (!name.empty()) {
+            wxFileName filename(name);
+            const wxString extension = pattern.Mid(2);
+            if (filename.GetExt().CmpNoCase(extension) != 0) {
+                filename.SetExt(extension);
+                const wxString updated = filename.GetFullPath();
+                gtk_file_chooser_set_current_name(chooser, updated.utf8_str());
+            }
+        }
+        dialog->fontHook.UpdateCustomControls();
+    }
+
     static gboolean FitChooser(gpointer parent) {
         GList* windows = gtk_window_list_toplevels();
         for (GList* item = windows; item; item = item->next) {

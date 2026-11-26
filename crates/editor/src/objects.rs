@@ -43,6 +43,30 @@ fn table_in_blocks<'a>(blocks: &'a [Block], id: &NodeId)->Option<&'a Table> {
         for row in &t.rows {for cell in &row.cells {if let Some(t)=table_in_blocks(&cell.blocks,id) {return Some(t);}}}
     }} None
 }
+fn table_siblings<'a>(blocks: &'a [Block], id: &NodeId) -> Option<(&'a [Block], usize)> {
+    if let Some(index) = blocks.iter().position(|b| matches!(b, Block::Table(t) if &t.id == id)) {
+        return Some((blocks, index));
+    }
+    for block in blocks {
+        if let Block::Table(table) = block {
+            for row in &table.rows { for cell in &row.cells {
+                if let Some(found) = table_siblings(&cell.blocks, id) { return Some(found); }
+            }}
+        }
+    }
+    None
+}
+fn parent_cell<'a>(blocks: &'a [Block], id: &NodeId) -> Option<(&'a Table, &'a model::TableCell)> {
+    for block in blocks {
+        if let Block::Table(table) = block {
+            for row in &table.rows { for cell in &row.cells {
+                if cell.blocks.iter().any(|b| matches!(b, Block::Table(t) if &t.id == id)) { return Some((table, cell)); }
+                if let Some(found) = parent_cell(&cell.blocks, id) { return Some(found); }
+            }}
+        }
+    }
+    None
+}
 fn resize_inline(content:&mut [Inline], id:&NodeId, width:f32,height:f32)->bool {
     for i in content {match i {
         Inline::Image(p) if &p.id==id=>{p.width_mm=width;p.height_mm=height;return true;},
@@ -237,10 +261,46 @@ impl EditorState {
             for hf in s.header_footers(){if let Some(t)=table_in_blocks(&hf.stream.blocks,id){return Some(t);}}
         }None
     }
+    /// Body tables can be positioned, including tables contained in cells.
+    pub fn table_can_move(&self, id: &NodeId) -> bool {
+        self.document.sections.iter().any(|s| table_siblings(&s.blocks, id).is_some())
+    }
+    pub fn table_parent_cell(&self, id: &NodeId) -> Option<(&Table, &model::TableCell)> {
+        // Ordinary body tables have no containing cell. Avoid walking every
+        // row of a large document during each drag-motion event.
+        if self.document.sections.iter().any(|s| s.blocks.iter().any(|b| matches!(b, Block::Table(t) if &t.id == id))) { return None; }
+        self.document.sections.iter().find_map(|s| parent_cell(&s.blocks, id))
+    }
+    /// Nested tables stay in their containing cell; body tables can move
+    /// between body paragraphs, including across sections.
+    pub fn table_drag_paragraphs(&self, id: &NodeId) -> Vec<NodeId> {
+        let main = self.document.sections.iter().any(|s| s.blocks.iter().any(|b| matches!(b, Block::Table(t) if &t.id == id)));
+        let paragraphs = |blocks: &[Block]| blocks.iter().filter_map(|b| match b {
+            Block::Paragraph(p) => Some(p.id.clone()), _ => None,
+        }).collect::<Vec<_>>();
+        if main { return self.document.sections.iter().flat_map(|s| paragraphs(&s.blocks)).collect(); }
+        self.document.sections.iter().find_map(|s| table_siblings(&s.blocks, id).map(|(blocks, _)| paragraphs(blocks))).unwrap_or_default()
+    }
+    pub fn table_cell_context_for(&self, id: &NodeId, cell_id: &NodeId) -> Option<TableCellContext> {
+        for (section_index, section) in self.document.sections.iter().enumerate() {
+            let table = table_in_blocks(&section.blocks, id).or_else(|| section.header_footers().find_map(|hf| table_in_blocks(&hf.stream.blocks, id)));
+            if let Some(table) = table {
+                for (row_index, row) in table.rows.iter().enumerate() {
+                    if let Some(cell_index) = row.cells.iter().position(|cell| &cell.id == cell_id) {
+                        return Some(TableCellContext { section_index, table_id: id.clone(), row_index, cell_index, cell_id: cell_id.clone() });
+                    }
+                }
+            }
+        }
+        None
+    }
     pub fn select_cell(&mut self,table_id:&NodeId,row:usize,cell:usize)->Result<(),String> {
         let cell=self.table_by_id(table_id).and_then(|t|t.rows.get(row)).and_then(|r|r.cells.get(cell)).ok_or("Cell not found")?;
         let mut paragraphs=Vec::new();collect_paragraph_refs(&cell.blocks,&mut paragraphs);
-        let id=paragraphs.first().map(|p|p.id.clone()).ok_or("Cell has no editable paragraph")?;
+        // A containing cell may start with a nested table. Prefer its own
+        // paragraph so selecting the outer table does not target the inner one.
+        let id=cell.blocks.iter().find_map(|b| match b { Block::Paragraph(p) => Some(p.id.clone()), _ => None })
+            .or_else(|| paragraphs.first().map(|p|p.id.clone())).ok_or("Cell has no editable paragraph")?;
         self.set_caret(id,0);Ok(())
     }
     pub fn resize_table_grid(&mut self,id:&NodeId,widths_mm:Vec<f32>)->Result<(),String> {
@@ -262,22 +322,79 @@ impl EditorState {
             return true;
         }}}false})
     }
-    /// Moves a main-text table. `target` is a paragraph in the main text and
-    /// whether the table goes before it; `left_indent_mm` places the table
+    /// Moves a body table. Nested tables use paragraphs in their containing
+    /// cell; top-level tables use body paragraphs. `left_indent_mm` places it
     /// horizontally (left aligned). Either may be None to keep it.
     pub fn move_table(&mut self,id:&NodeId,target:Option<(NodeId,bool)>,left_indent_mm:Option<f32>)->Result<(),String>{
         if left_indent_mm.is_some_and(|v|!v.is_finite()||!(-200.0..=500.0).contains(&v)){return Err("Invalid table position".into());}
         self.relocate_table(id,target,"Move table",|p|{if let Some(indent)=left_indent_mm{p.left_indent_mm=Some((indent*10.0).round()/10.0);p.alignment=None;}})
     }
-    /// Makes a table float at `position` (or back inline with None), in one
-    /// step. A floating table is anchored to the paragraph after it, so
-    /// `anchor` (a main-text paragraph) moves the table in front of it.
-    pub fn set_table_position(&mut self,id:&NodeId,anchor:Option<NodeId>,position:Option<model::TablePosition>)->Result<(),String>{
+    /// Change only paint order when entering/switching overlap modes. Keep
+    /// the inline slot or existing exclusions so no table or text jumps.
+    pub fn set_table_wrap(&mut self, id: &NodeId, wrap: model::TableWrap) -> Result<(), String> {
+        let table = self.table_by_id(id).ok_or("Table not found")?;
+        if table.properties.position.as_ref().is_some_and(|p| p.wrap == wrap) { return Ok(()); }
+        let mut position = table.properties.position.clone().unwrap_or(model::TablePosition {
+            horizontal: model::HorizontalPlacement::Offset(table.properties.left_indent_mm.unwrap_or(0.0)), ..Default::default()
+        });
+        if wrap.overlaps_text() {
+            if position.preserved_text_flow.is_none() {
+                position.preserved_text_flow = Some(Box::new(match &table.properties.position {
+                    None => model::TableTextFlow::Inline,
+                    Some(previous) => model::TableTextFlow::Positioned(Box::new(previous.clone())),
+                }));
+            }
+        } else { position.preserved_text_flow = None; }
+        position.wrap = wrap;
+        position.validate()?;
+        self.relocate_table(id, None, "Table position", |p| p.position = Some(position))
+    }
+
+    /// One drag transaction, scoped to this table. Do not relocate its source
+    /// block or release the inline/exclusion reservation of an overlap table.
+    pub fn offset_table(&mut self, id: &NodeId, offset: model::TableOffset) -> Result<(), String> {
+        let mut position = self.table_by_id(id).ok_or("Table not found")?.properties.position.clone()
+            .ok_or("Invalid table position or distance from text")?;
+        position.visual_offset = Some(offset);
+        position.validate()?;
+        self.relocate_table(id, None, "Move table", |p| p.position = Some(position))
+    }
+
+    /// Sets absolute floating placement, or restores ordinary inline flow.
+    pub fn set_table_position(&mut self,id:&NodeId,mut position:Option<model::TablePosition>)->Result<(),String>{
+        if let Some(p)=&mut position { p.preserved_text_flow = None; }
         if let Some(p)=&position{p.validate()?;}
-        let label=if position.is_none(){"Table in line with text"}else if anchor.is_some(){"Move floating table"}else{"Table position"};
-        self.relocate_table(id,anchor.map(|a|(a,true)),label,|p|{p.position=position;})
+        let label=if position.is_none(){"Table in line with text"}else{"Table position"};
+        self.relocate_table(id,None,label,|p|{p.position=position;})
     }
     fn relocate_table(&mut self,id:&NodeId,target:Option<(NodeId,bool)>,label:&'static str,change:impl FnOnce(&mut model::TableProperties))->Result<(),String>{
+        if self.table_parent_cell(id).is_some() {
+            let (blocks, index) = self.document.sections.iter().find_map(|s| table_siblings(&s.blocks, id)).ok_or("Table not found")?;
+            let destination = match target {
+                Some((paragraph, before)) => Some(blocks.iter().position(|b| matches!(b, Block::Paragraph(p) if p.id == paragraph))
+                    .ok_or("Choose a paragraph in the table's containing cell.")? + usize::from(!before)),
+                None => None,
+            };
+            let id = id.clone();
+            let mut change = Some(change);
+            return self.edit_object(label, move |blocks| {
+                if !matches!(blocks.get(index), Some(Block::Table(t)) if t.id == id) { return false; }
+                if let Block::Table(table) = &mut blocks[index] { (change.take().unwrap())(&mut table.properties); }
+                if let Some(mut destination) = destination {
+                    if destination != index && destination != index + 1 {
+                        let block = blocks.remove(index);
+                        if destination > index { destination -= 1; }
+                        blocks.insert(destination, block);
+                    }
+                }
+                // OOXML requires a cell to end with a paragraph, including
+                // when its nested table was moved after the last text block.
+                if !matches!(blocks.last(), Some(Block::Paragraph(_))) {
+                    blocks.push(Block::Paragraph(Paragraph::plain("")));
+                }
+                true
+            });
+        }
         let (si,bi)=self.document.sections.iter().enumerate().find_map(|(si,s)|s.blocks.iter().position(|b|matches!(b,Block::Table(t) if &t.id==id)).map(|bi|(si,bi)))
             .ok_or("Only tables in the main text can be moved.")?;
         let destination=match &target {

@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Application version and package revision (for example 0.8.6-59)'
+        description: 'Application version and package revision (for example 0.8.7-1)'
         required: true
-        default: '0.8.6-89'
+        default: '0.8.7-1'
       validated_run:
         description: 'Optional completed run with passing tests; reuse only unchanged application inputs'
         required: false

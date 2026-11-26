@@ -349,7 +349,10 @@ fn table_xml(table: &Table, document: &Document, context: &ExportContext, drawin
                 continue;
             }
             if cell.row_span > 1 { tcpr.push_str("<w:vMerge w:val=\"restart\"/>"); }
-            if let Some(fill) = &cell.shading { tcpr.push_str(&format!("<w:shd w:val=\"clear\" w:fill=\"{}\"/>", xml_escape(fill.trim_start_matches('#')))); }
+            if let Some(fill) = &cell.shading {
+                if fill == "none" { tcpr.push_str("<w:shd w:val=\"nil\"/>"); }
+                else { tcpr.push_str(&format!("<w:shd w:val=\"clear\" w:fill=\"{}\"/>", xml_escape(fill.trim_start_matches('#')))); }
+            }
             if let Some(borders) = &cell.borders { tcpr.push_str(&borders_xml("w:tcBorders", borders)); }
             if let Some(margins) = cell.margins { tcpr.push_str(&cell_margins_xml("w:tcMar", margins)); }
             if let Some(direction) = cell.text_direction {
@@ -895,7 +898,8 @@ fn root_relationships(document: &Document) -> String {
     format!(r#"<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>{preserved}</Relationships>"#)
 }
 /// `w:tblpPr` and `w:tblOverlap` for a floating table. Word has no
-/// top-and-bottom wrap for tables; such tables export as wrapping around.
+/// top-and-bottom or text-overlap mode for tables. Keep those modes in an
+/// ignorable extension; other readers use the standard Around fallback.
 fn table_position_xml(p: &model::TablePosition) -> String {
     use model::{HorizontalFrom, HorizontalPlacement, VerticalFrom, VerticalPlacement};
     let horz = match p.horizontal_from { HorizontalFrom::Page => "page", HorizontalFrom::Margin => "margin", HorizontalFrom::Column => "text" };
@@ -912,7 +916,20 @@ fn table_position_xml(p: &model::TablePosition) -> String {
         VerticalPlacement::Bottom => "w:tblpYSpec=\"bottom\"".into(),
     };
     let overlap = if p.allow_overlap { "" } else { "<w:tblOverlap w:val=\"never\"/>" };
-    format!("<w:tblpPr w:leftFromText=\"{}\" w:rightFromText=\"{}\" w:topFromText=\"{}\" w:bottomFromText=\"{}\" w:vertAnchor=\"{vert}\" w:horzAnchor=\"{horz}\" {x} {y}/>{overlap}",
+    let wrap = match p.wrap {
+        model::TableWrap::Around => "",
+        model::TableWrap::TopAndBottom => "top_and_bottom",
+        model::TableWrap::InFrontOfText => "in_front_of_text",
+        model::TableWrap::BehindText => "behind_text",
+    };
+    let flow = p.preserved_text_flow.as_ref().map(|flow| format!(r#" impress:flow="{}""#,
+        xml_escape(&serde_json::to_string(flow).expect("finite validated table position")))).unwrap_or_default();
+    let offset = p.visual_offset.map(|value| format!(r#" impress:offset="{}""#,
+        xml_escape(&serde_json::to_string(&value).expect("validated table offset")))).unwrap_or_default();
+    let extension = if wrap.is_empty() && flow.is_empty() && offset.is_empty() { String::new() } else {
+        format!(r#" xmlns:impress="urn:impress:tables:1" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="impress" mc:PreserveAttributes="impress:wrap impress:flow impress:offset" impress:wrap="{wrap}"{flow}{offset}"#)
+    };
+    format!("<w:tblpPr w:leftFromText=\"{}\" w:rightFromText=\"{}\" w:topFromText=\"{}\" w:bottomFromText=\"{}\" w:vertAnchor=\"{vert}\" w:horzAnchor=\"{horz}\" {x} {y}{extension}/>{overlap}",
         twips(p.distance_left_mm), twips(p.distance_right_mm), twips(p.distance_top_mm), twips(p.distance_bottom_mm))
 }
 

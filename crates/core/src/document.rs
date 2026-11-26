@@ -521,6 +521,32 @@ pub struct TablePosition {
     /// Other floating tables may overlap this one (DOCX `w:tblOverlap`).
     #[serde(default = "yes")]
     pub allow_overlap: bool,
+    /// Switching paint layers retains the original layout slot/exclusions.
+    /// Explicit positioning clears this reservation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preserved_text_flow: Option<Box<TableTextFlow>>,
+    /// A drag relative to the table's original placement. Keeping this separate
+    /// from its text-flow reservation lets overlap tables move without reflow.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub visual_offset: Option<TableOffset>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct TableOffset { pub x_mm: f32, pub y_mm: f32, pub page_delta: i32 }
+
+impl TableOffset {
+    pub fn valid(self) -> bool {
+        self.x_mm.is_finite() && self.y_mm.is_finite()
+            && self.x_mm.abs() <= 1000.0 && self.y_mm.abs() <= 1000.0
+            && self.page_delta.unsigned_abs() <= 9999
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TableTextFlow {
+    Inline,
+    Positioned(Box<TablePosition>),
 }
 
 fn yes() -> bool { true }
@@ -531,13 +557,30 @@ impl Default for TablePosition {
             horizontal_from: HorizontalFrom::Margin, horizontal: HorizontalPlacement::Offset(0.0),
             vertical_from: VerticalFrom::Paragraph, vertical: VerticalPlacement::Offset(0.0),
             distance_left_mm: 3.2, distance_right_mm: 3.2, distance_top_mm: 0.0, distance_bottom_mm: 0.0,
-            wrap: TableWrap::Around, allow_overlap: true,
+            wrap: TableWrap::Around, allow_overlap: true, preserved_text_flow: None, visual_offset: None,
         }
     }
 }
 
 impl TablePosition {
+    /// Layout and paint layering are independent. None retains an inline slot.
+    pub fn flow_position(&self) -> Option<&TablePosition> {
+        match self.preserved_text_flow.as_deref() {
+            Some(TableTextFlow::Inline) => None,
+            Some(TableTextFlow::Positioned(position)) => Some(position),
+            None => Some(self),
+        }
+    }
+
     pub fn validate(&self) -> Result<(), String> {
+        if self.visual_offset.is_some_and(|offset| !offset.valid()) { return Err("Invalid table position or distance from text".into()); }
+        if let Some(flow) = self.preserved_text_flow.as_deref() {
+            if !self.wrap.overlaps_text() { return Err("Invalid table position or distance from text".into()); }
+            if let TableTextFlow::Positioned(position) = flow {
+                if position.preserved_text_flow.is_some() { return Err("Invalid table position or distance from text".into()); }
+                position.validate()?;
+            }
+        }
         let offset_ok = |v: f32| v.is_finite() && v.abs() <= 1000.0;
         let offsets = [match self.horizontal { HorizontalPlacement::Offset(v) => v, _ => 0.0 }, match self.vertical { VerticalPlacement::Offset(v) => v, _ => 0.0 }];
         let distances = [self.distance_left_mm, self.distance_right_mm, self.distance_top_mm, self.distance_bottom_mm];
@@ -574,6 +617,15 @@ pub enum TableWrap {
     Around,
     /// Text stops above the table and continues below it.
     TopAndBottom,
+    /// The table paints over text without changing its normal flow.
+    #[serde(alias = "overlap")]
+    InFrontOfText,
+    /// Text paints over the table without changing its normal flow.
+    BehindText,
+}
+
+impl TableWrap {
+    pub fn overlaps_text(self) -> bool { matches!(self, Self::InFrontOfText | Self::BehindText) }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

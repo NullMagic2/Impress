@@ -536,7 +536,7 @@
         "layout": {
           "kind": "button",
           "name": "insert_table_button",
-          "style": "big-button",
+          "style": "menu-button",
           "label": "Table",
           "tip": "Insert table",
           "icon": "table"

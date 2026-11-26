@@ -15,7 +15,7 @@ thread_local! {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-struct RenderKey { width: i32, height: i32, dpi: i32, selected: bool, language: u8, background: [u8; 3] }
+struct RenderKey { width: i32, height: i32, dpi: i32, selected: bool, language: u8, background: [u8; 3], colour: Option<art::ColourIndicator> }
 
 struct ButtonFace {
     button: Button,
@@ -28,6 +28,7 @@ struct ButtonFace {
     width_dip: i32,
     height_dip: i32,
     selected: Cell<bool>,
+    colour: Cell<Option<art::ColourIndicator>>,
     busy: Cell<bool>,
     key: Cell<Option<RenderKey>>,
     bundles: RefCell<Vec<BitmapBundle>>,
@@ -81,6 +82,7 @@ pub fn install(spec: &ButtonSpec) -> bool {
         width_dip: spec.width_dip,
         height_dip: spec.height_dip,
         selected: Cell::new(false),
+        colour: Cell::new(None),
         busy: Cell::new(false),
         key: Cell::new(None),
         bundles: RefCell::new(Vec::new()),
@@ -117,6 +119,13 @@ pub fn selected(button: &Button, value: bool) {
     }
 }
 
+/// Update all native button faces, including hover, pressed and disabled states.
+pub(super) fn colour(button:&Button, value:art::ColourIndicator){
+    if let Some(face)=lookup(button){
+        if face.colour.replace(Some(value))!=Some(value){face.key.set(None);face.update();}
+    }
+}
+
 impl ButtonFace {
     /// Device-independent pixels to the face bitmap's physical pixels.
     fn px(&self, dip: i32) -> i32 {
@@ -145,7 +154,7 @@ impl ButtonFace {
         let width = ((actual.width as f32 * scale).round() as i32).max(self.px(self.width_dip)).clamp(1, 4096);
         let height = ((actual.height as f32 * scale).round() as i32).max(self.px(self.height_dip)).clamp(1, 2048);
         let dpi = self.px(96).max(72);
-        let key = RenderKey { width, height, dpi, selected: self.selected.get(), language: crate::i18n::language() as u8, background: self.background() };
+        let key = RenderKey { width, height, dpi, selected: self.selected.get(), language: crate::i18n::language() as u8, background: self.background(), colour: self.colour.get() };
         if self.key.get() != Some(key) {
             if let Some([normal, hover, pressed, disabled]) = self.images(key) {
                 let bundles = [normal, hover, pressed, disabled].map(|image| face_bundle(&image, key.dpi));
@@ -202,7 +211,8 @@ impl ButtonFace {
         let art_height = self.px(self.art_height_dip).max(0) as u32;
         let icon = if matches!(self.kind, "tab" | "pane-default") || art_width == 0 || art_height == 0 {
             None
-        } else if self.icon == "interface-language" { art::raster(super::interface_language::flag_name(), art_width, art_height, state.disabled) }
+        } else if let Some(colour)=key.colour { art::colour_raster(self.icon,art_width,art_height,state.disabled,colour) }
+        else if self.icon == "interface-language" { art::raster(super::interface_language::flag_name(), art_width, art_height, state.disabled) }
         else { art::raster(self.icon, art_width, art_height, state.disabled) };
         // On a dark title bar the quick-access icons become glyphs in its text
         // colour: an icon's darker ink shows, its light parts (the "?" of
@@ -224,9 +234,9 @@ impl ButtonFace {
             let (x, y) = self.icon_position(key, art_width as i32, art_height as i32);
             face::icon(&mut pixels, width, height, icon, art_width, art_height, x, y);
         }
-        if matches!(self.kind, "dialog-menu" | "typography-menu" | "status-menu") {
+        if matches!(self.kind, "dialog-menu" | "typography-menu" | "status-menu" | "colour-menu") {
             face::dropdown_caret(&mut pixels, width, height, scale, palette.text);
-        } else if self.kind == "file-menu" {
+        } else if matches!(self.kind, "file-menu" | "large-menu") {
             face::large_dropdown_caret(&mut pixels, width, height, scale, palette.text);
         } else if self.kind == "gallery-more" {
             face::gallery_more_mark(&mut pixels, width, height, scale, palette.text);
@@ -266,8 +276,9 @@ impl ButtonFace {
 
     fn icon_position(&self, key: RenderKey, width: i32, height: i32) -> (i32, i32) {
         let gap = self.px(4);
+        if self.kind == "colour-menu" { return (self.px(4), (key.height-height)/2); }
         if self.label.get().is_empty() { return ((key.width-width)/2, (key.height-height)/2); }
-        if matches!(self.kind, "large" | "wide" | "gallery" | "file-main" | "file-menu") {
+        if matches!(self.kind, "large" | "large-menu" | "wide" | "gallery" | "file-main" | "file-menu") {
             ((key.width-width)/2, ((key.height-height-self.px(18)-gap)/2).max(gap))
         } else { (gap, (key.height-height)/2) }
     }
@@ -275,7 +286,7 @@ impl ButtonFace {
     fn text_position(&self, key: RenderKey, text_width: i32, text_height: i32, icon_width: i32, icon_height: i32) -> (i32, i32) {
         let gap = self.px(4);
         if self.kind == "gallery" { return ((key.width-text_width)/2, key.height-text_height-gap); }
-        if matches!(self.kind, "large" | "wide" | "file-main" | "file-menu") {
+        if matches!(self.kind, "large" | "large-menu" | "wide" | "file-main" | "file-menu") {
             let y = self.icon_position(key, icon_width, icon_height).1 + icon_height + gap;
             return ((key.width-text_width)/2, y.min(key.height-text_height));
         }

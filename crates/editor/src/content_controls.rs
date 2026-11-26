@@ -178,24 +178,26 @@ fn replace_value(
         };
         let (mut prefix, _) = split_content(&before.content, start)?;
         let (_, suffix) = split_content(&before.content, end)?;
-        let properties = before
-            .content
-            .iter()
-            .find_map(|i| {
-                if let Inline::Text(t) = i {
-                    Some(t.properties.clone())
-                } else {
-                    None
-                }
+        // A control may follow ordinary text in the same paragraph. Inherit
+        // from its own first run, including a character style, not from the
+        // paragraph's first (unrelated) run.
+        fn first_run(items: &[Inline]) -> Option<&TextRun> {
+            items.iter().find_map(|item| match item {
+                Inline::Text(run) => Some(run),
+                Inline::Hyperlink(link) => first_run(&link.content),
+                _ => None,
             })
-            .unwrap_or_default();
+        }
+        let (_, tail) = split_content(&before.content, start)?;
+        let length = end.checked_sub(start).ok_or("The content control’s range is invalid")?;
+        let (selected, _) = split_content(&tail, length)?;
+        let template = first_run(&selected).or_else(|| first_run(&tail))
+            .or_else(|| first_run(&prefix)).cloned();
         if !replacement.is_empty() {
-            prefix.push(Inline::Text(TextRun {
-                id: NodeId::new(),
-                text: replacement.clone(),
-                style: None,
-                properties,
-            }));
+            let mut run = template.unwrap_or_else(|| TextRun::plain(""));
+            run.id = NodeId::new();
+            run.text = replacement.clone();
+            prefix.push(Inline::Text(run));
         }
         prefix.extend(suffix);
         let mut after = before.clone();

@@ -166,12 +166,22 @@ impl ViewportState {
         let (page_index, page_rect) = rects.iter().copied().enumerate().find(|(_, rect)| contains(*rect, view_point))?;
         let page = &document.pages[page_index];
         let page_point = Point::new((view_point.x - page_rect.x) / scale, (view_point.y - page_rect.y) / scale);
+        // Nearest-text selection must stay in the clicked stream's band.
+        // Otherwise blank body space below a table snaps to the footer (or
+        // space above the first paragraph snaps to the header), entering it.
+        let bands: Vec<Rect> = page.object_regions.iter()
+            .filter(|region| matches!(region.kind, crate::ObjectKind::HeaderFooter { .. }))
+            .map(|region| region.rect).collect();
+        let band_at = |point| bands.iter().position(|rect| contains(*rect, point));
+        let clicked_band = band_at(page_point);
+        let same_band = |region: &&TextHitRegion| band_at(Point::new(
+            region.rect.x + region.rect.width * 0.5, region.rect.y + region.rect.height * 0.5)) == clicked_band;
         // Inside a table cell, the nearest text of that cell wins, so a click
         // in a cell's empty space never lands in the paragraph around the table.
         let cell = page.object_regions.iter()
             .filter(|r| matches!(r.kind, crate::ObjectKind::TableCell(_)) && distance_to_rect(r.rect, page_point) == 0.0)
             .min_by(|a, b| (a.rect.width * a.rect.height).total_cmp(&(b.rect.width * b.rect.height)));
-        let inside: Vec<TextHitRegion> = cell.map(|c| page.hit_regions.iter().filter(|r| {
+        let inside: Vec<TextHitRegion> = cell.map(|c| page.hit_regions.iter().filter(same_band).filter(|r| {
             let (x, y) = (r.rect.x + r.rect.width * 0.5, r.rect.y + r.rect.height * 0.5);
             x >= c.rect.x && x <= c.rect.max_x() && y >= c.rect.y && y <= c.rect.max_y()
         }).cloned().collect()).unwrap_or_default();
@@ -180,7 +190,7 @@ impl ViewportState {
         } else {
             // Blank page space must not reactivate a table by snapping to
             // its nearest cell. Dragging still uses hit_test_nearest below.
-            let outside = page.hit_regions.iter().filter(|region| {
+            let outside = page.hit_regions.iter().filter(same_band).filter(|region| {
                 let center = Point::new(region.rect.x + region.rect.width * 0.5, region.rect.y + region.rect.height * 0.5);
                 !page.object_regions.iter().any(|object| matches!(object.kind, crate::ObjectKind::TableCell(_)) && contains(object.rect, center))
             });

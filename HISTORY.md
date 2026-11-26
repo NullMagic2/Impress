@@ -1,3 +1,55 @@
+## 0.8.7
+
+- Keep body clicks and word selection out of header/footer text, including empty space beside tables and across zoom levels.
+
+- Remove the Move table menu command and its dialog implementation; retain direct table dragging.
+
+- Keep overlap-table drag placement separate from its reserved text space, paginate moved rows onto destination pages, and retain nested-table settings and exact Undo/Redo snapshots.
+- Stabilize wrapped-table anchors independently of the text they exclude; restore document keyboard focus after releasing a table drag.
+
+- Use ordinary row pagination for table paint-layer changes so switching Behind/In Front of Text cannot add pages or displace following text; verify cold, cached and sparse-page layouts.
+
+- Keep the table's original layout slot and surrounding text coordinates when switching to In Front of Text or Behind Text; mode changes affect paint order only.
+- Preserve layout reservations through native/DOCX saves and Undo/Redo; release them only for explicit position or anchor moves.
+
+- Replace the ambiguous table overlap switch with In Front of Text and Behind Text, with actual paint-layer ordering for body and nested tables.
+- Do not push inline content away from nonwrapping nested tables; retain containing-cell bounds and page placement.
+- Preserve both overlap directions in Impress/DOCX round trips and upgrade the earlier overlap setting to In Front of Text.
+
+- Add explicit text-overlap mode for body and nested tables, with native wrapping-menu and position-dialog controls; preserve wrapping modes on DOCX reload.
+- Keep the table/cell selection active after position, wrapping, anchor moves and direct dragging.
+
+- Enable positioning and moves for tables nested inside body table cells, with cell-relative coordinates, scoped destinations, and undoable DOCX-safe moves.
+- Keep table selection on the selected outer table instead of its first nested table.
+- Reserve positioned nested tables before flowing surrounding text so moving their anchors cannot cover earlier paragraphs.
+
+- Simplify color swatches to one Add command for custom colors; remove the duplicate More colors button and its keyboard stop.
+
+- Use Yaru Add and Delete artwork in the shared color swatches, with DPI-aware disabled icons and proper spacing.
+
+- Put table positioning and text-alignment menus on Insert → Table; remove the extra contextual Table dropdown.
+- Translate custom close-dialog buttons, native Save font-embedding controls, and complete multiline/dropdown captions in every interface language.
+
+- Group cell text alignment and wrapping under the Table dropdown, with native menu icons and a visible arrow.
+- Correct editing and typography mistranslations across Greek, Spanish and both Portuguese variants, and preserve literal font names, format syntax and math commands.
+
+- Update font-color and highlight button bands from the current formatting, including custom colors, No Color, and Undo/Redo.
+- Complete Greek, Spanish and both Portuguese runtime message catalogs; audit runtime errors alongside dialog resources.
+
+- Use the shared swatch grid with 16 custom slots and Add/Delete buttons across ribbon, table and formatting dialogs.
+
+- Preserve colors, character styles, highlighting and mixed formatting when correcting spelling, including right-click suggestions.
+
+- Preserve a dropdown field’s own font, character style and color when choosing an answer.
+
+- Show inline dropdown arrows for Word list and combo-box content controls, with Alt+Down access and linked-value editing.
+- Remember a shared palette of custom colors, with add and remove commands.
+
+- Use swatch menus for text color and highlighting; add Text color and Cell fill to Table Tools.
+
+- Update the filename extension immediately when changing the file type in the Save dialog on GTK.
+- Show a live word count beside the page count in the status bar, including selected text and table cells. Click the count for document statistics.
+
 ## 0.8.6-89
 
 - Update Ctrl/Shift modifiers while navigation keys are held, so releasing Ctrl returns to character selection immediately.

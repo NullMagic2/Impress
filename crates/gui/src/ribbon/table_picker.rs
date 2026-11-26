@@ -5,10 +5,10 @@ use super::*;
 use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap};
 use wxdragon::{
     dc::AutoBufferedPaintDC,
-    event::window_events::WindowEvents,
+    event::{window_events::WindowEvents, EventType, WxEvtHandler},
     font::{Font, FontFamily, FontStyle, FontWeight},
     geometry::{Point, Size},
-    widgets::panel::Panel,
+    widgets::panel::{Panel, PanelStyle},
     window::BackgroundStyle,
     DeviceContext,
 };
@@ -84,7 +84,10 @@ pub(super) fn show(ribbon: &Ribbon) {
     let height = HEADER + ROWS as i32 * (CELL + GAP) - GAP + PAD;
     let scaled = ribbon.ui.main_frame.from_dip(Size::new(width, height));
     let popup = dropdown::create(&ribbon.ui.main_frame, "Insert Table", scaled);
-    let surface = Panel::builder(&popup).with_pos(dropdown::origin(&popup)).with_size(scaled).build();
+    let surface = Panel::builder(&popup)
+        // wxWANTS_CHARS: arrow keys select grid cells rather than move GTK focus.
+        .with_style(PanelStyle::from_bits_retain(0x0004_0000))
+        .with_pos(dropdown::origin(&popup)).with_size(scaled).build();
     surface.set_background_style(BackgroundStyle::Paint);
     let chosen = Rc::new(Cell::new(Some((3, 3))));
     { let chosen = Rc::clone(&chosen); surface.on_paint(move |_| paint(surface, chosen.get())); }
@@ -100,23 +103,43 @@ pub(super) fn show(ribbon: &Ribbon) {
         if let Some(ribbon) = weak.upgrade() { insert(&ribbon, size); }
     }); }
     { let chosen = Rc::clone(&chosen); let weak = ribbon.owner.clone();
-      dropdown::bind_keys(popup, ribbon.ui.paper_canvas, move |key| {
+      let canvas = ribbon.ui.paper_canvas;
+      // GTK handles navigation on the focused painted surface. Bind here,
+      // rather than relying on a character hook bubbling to its parent panel.
+      surface.bind_internal(EventType::KEY_DOWN, move |event| {
         use wxdragon::keycode::*;
+        let Some(key) = event.get_key_code() else { event.skip(true); return; };
+        if !matches!(key, WXK_ESCAPE | WXK_TAB | WXK_RETURN | WXK_NUMPAD_ENTER
+            | WXK_LEFT | WXK_RIGHT | WXK_UP | WXK_DOWN) {
+            event.skip(true);
+            return;
+        }
+        // wxDragon starts each callback as skipped. Consume grid keys so GTK
+        // cannot also navigate controls or activate the invoking button.
+        event.skip(false);
+        if key == WXK_ESCAPE || key == WXK_TAB {
+            dropdown::dismiss(popup);
+            crate::focus_canvas(&canvas);
+            return;
+        }
         let (rows, columns) = chosen.get().unwrap_or((1, 1));
         let next = match key {
             WXK_RETURN | WXK_NUMPAD_ENTER => {
                 dropdown::dismiss(popup);
                 if let Some(ribbon) = weak.upgrade() { insert(&ribbon, (rows, columns)); }
-                return true;
+                return;
             }
             WXK_LEFT => (rows, columns.saturating_sub(1).max(1)),
             WXK_RIGHT => (rows, (columns + 1).min(COLUMNS)),
             WXK_UP => (rows.saturating_sub(1).max(1), columns),
             WXK_DOWN => ((rows + 1).min(ROWS), columns),
-            _ => return false,
+            _ => { event.skip(true); return; }
         };
         chosen.set(Some(next)); surface.refresh(false, None);
-        true
     }); }
+
     dropdown::show(popup, &ribbon.ui.insert_table_button, &surface);
+    // A painted wxPanel has no native focusable child; focus the grid itself
+    // so arrow keys and Enter do not return to the invoking menu button.
+    crate::focus_canvas(&surface);
 }

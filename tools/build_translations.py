@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""Build the four shipped catalogs and report untranslated resource text."""
+"""Build all shipped catalogs and audit resources and runtime application messages."""
 import json,re,struct
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 LOCALES=ROOT/'crates/gui/assets/locales'
 CATALOG=json.loads((LOCALES/'messages.json').read_text()) if (LOCALES/'messages.json').exists() else {}
-for number,line in enumerate((LOCALES/'glossary.tsv').read_text().splitlines(),1):
- if not line.strip() or line.startswith('#'):continue
- cells=[cell.replace('\\n','\n') for cell in line.split('\t')]
- if len(cells)==4:cells.append(cells[-1])
- if len(cells)!=5:raise ValueError(f'glossary line {number}: expected English and four translations')
- CATALOG[cells[0]]=cells[1:]
+for filename in ['glossary.tsv', 'runtime-messages.tsv']:
+ path=LOCALES/filename
+ if not path.exists():continue
+ for number,line in enumerate(path.read_text().splitlines(),1):
+  if not line.strip() or line.startswith('#'):continue
+  cells=[cell.replace('\\n','\n') for cell in line.split('\t')]
+  if len(cells)==4:cells.append(cells[-1])
+  if len(cells)!=5:raise ValueError(f'{filename} line {number}: expected English and four translations')
+  CATALOG[cells[0]]=cells[1:]
+
 PROPER={'Impress','Typst','A4','APA','Chicago','IEEE','MLA','Letter','Linux Libertine G','Times New Roman','Cambria','Georgia','Calibri','Arial','Segoe UI','Consolas','Latin Modern Math','SVG','PDF','PNG','JPEG','DOCX','RTF','HTML','RGB','CMYK','Ctrl','Shift','Alt','Enter','Tab','Esc','F7','F11','BCP 47','DIP','OCR','OpenType','Harvard','A5','Legal','cm','mm','pt','document.pdf'}
 TECHNICAL=re.compile(r'^(?:[\d\W]+|[A-Z]|(?:\d+(?:[.,½¼]\d+)?\s*(?:pt|mm|cm|%|°|dpi))|(?:\d+:)|(?:Col #))$')
 
@@ -63,7 +67,12 @@ for key,row in CATALOG.items():
   if Counter(re.findall(r'\{[^{}]*\}',value))!=expected:raise ValueError(f'Changed format placeholders: {key!r}: {value!r}')
 (LOCALES/'translations.json').write_text(json.dumps(CATALOG,ensure_ascii=False,indent=2,sort_keys=True)+'\n')
 if missing:print('Missing resource strings:\n'+'\n'.join(missing))
-print(f'{len(CATALOG)} catalog entries; {len(missing)} resource strings need translation.')
+from audit_runtime_translations import missing_messages, unlocalized_labels
+runtime_missing=missing_messages(ROOT,CATALOG,derive)
+label_bypasses=unlocalized_labels(ROOT)
+if label_bypasses:print("Labels bypassing translation:\n"+json.dumps(label_bypasses,ensure_ascii=False,indent=2))
+if runtime_missing:print('Missing runtime messages:\n'+'\n'.join(runtime_missing))
+print(f'{len(CATALOG)} catalog entries; {len(missing)} resource strings and {len(runtime_missing)} runtime messages need translation; {len(label_bypasses)} label bypasses.')
 
 # Native wxWidgets stock labels and XRC resources use the same embedded catalog.
 def mo_bytes(language,column):
@@ -81,3 +90,5 @@ def mo_bytes(language,column):
  return header+tables+first+second
 for index,language in enumerate(['el','es','pt_BR','pt_PT']):
  (LOCALES/(language+'.mo')).write_bytes(mo_bytes(language,index))
+
+if missing or runtime_missing or label_bypasses:raise SystemExit(1)

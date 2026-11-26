@@ -39,7 +39,7 @@ pub(super) fn word_count(parent: &Frame, stats: navigation::TextStats) {
         .with_gap(window.from_dip(Size::new(24, 8)))
         .build();
     for (label, value) in [
-        ("Words (whitespace-delimited)", stats.words),
+        ("Words", stats.words),
         ("Unicode characters, including spaces", stats.characters),
         ("Paragraphs", stats.paragraphs),
     ] {

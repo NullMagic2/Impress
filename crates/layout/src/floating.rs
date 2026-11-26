@@ -18,7 +18,7 @@ struct Floating {
     id:NodeId,
     /// The paragraph whose position decides the page (and the vertical
     /// origin for paragraph-relative placement).
-    paragraph:NodeId,place:Place,wrap:Wrap,
+    paragraph:NodeId,place:Place,wrap:Wrap,layer:Wrap,paint_position:Option<TablePosition>,
     /// Distance from text: left, right, top, bottom (points).
     gaps:[f32;4],
     raster:Option<Arc<render::RasterImage>>,rows:Arc<Vec<Option<(u32,u32)>>>,
@@ -32,13 +32,13 @@ pub(super) fn has_floats(section:&Section)->bool{
     section.blocks.iter().any(|b|match b{
         Block::Image(i)=>i.anchor.is_some()&&i.wrap!=ImageWrap::Inline,
         Block::Paragraph(p)=>anchored_boxes(&p.content).next().is_some(),
-        Block::Table(t)=>floating_table(section,t),
+        Block::Table(t)=>t.properties.position.is_some()&&section.properties.column_count<=1,
         _=>false,
     })
 }
 /// Floating tables need a single-column section; elsewhere they stay inline.
 pub(super) fn floating_table(section:&Section,table:&Table)->bool{
-    table.properties.position.is_some()&&section.properties.column_count<=1
+    table.properties.position.as_ref().and_then(|p|p.flow_position()).is_some()&&section.properties.column_count<=1
 }
 fn anchored_boxes(items:&[Inline])->impl Iterator<Item=&TextBox>{
     items.iter().filter_map(|item|match item{
@@ -69,7 +69,7 @@ impl Floating{
     }
     fn image(id:NodeId,anchor:ImageAnchor,wrap:ImageWrap,rect:Rect)->Self{
         let gap=anchor.gap_mm*MM_TO_PT;
-        Floating{id,paragraph:anchor.paragraph.clone(),place:Place::Image(anchor),wrap:wrap.into(),gaps:[gap;4],
+        Floating{id,paragraph:anchor.paragraph.clone(),place:Place::Image(anchor),wrap:wrap.into(),layer:wrap.into(),paint_position:None,gaps:[gap;4],
             raster:None,rows:Arc::new(Vec::new()),commands:Vec::new(),hit_regions:Vec::new(),object_regions:Vec::new(),page:0,rect}
     }
 }
@@ -83,9 +83,10 @@ fn free_span(floats:&[Floating],page:usize,y:f32,height:f32,left:f32,right:f32)-
 fn clear_y(floats:&[Floating],page:usize,y:f32,h:f32)->f32{
     floats.iter().filter(|f|f.page==page&&f.blocked(y,h).is_some()).map(|f|f.rect.y+f.rect.height+f.gaps[3]).fold(y+h,f32::max)
 }
-fn position(floats:&mut[Floating],starts:&Starts,geometry:&SectionGeometry)->Result<(),LayoutError>{
+fn position(floats:&mut[Floating],starts:&Starts,table_starts:&Starts,geometry:&SectionGeometry)->Result<(),LayoutError>{
     for f in floats{
-        let (page,x,y)=starts.get(&f.paragraph).copied().ok_or_else(||error("Floating drawing anchor must be a surviving top-level body paragraph"))?;
+        let source = if matches!(f.place, Place::Table(_)) { table_starts } else { starts };
+        let (page,x,y)=source.get(&f.paragraph).copied().ok_or_else(||error("Floating drawing anchor must be a surviving top-level body paragraph"))?;
         f.page=page;
         match &f.place{
             Place::Image(a)=>{
@@ -97,7 +98,8 @@ fn position(floats:&mut[Floating],starts:&Starts,geometry:&SectionGeometry)->Res
             }
             Place::Table(p)=>{
                 p.validate().map_err(error)?;
-                let rect=table_rect(p,page,y,f.rect.width,f.rect.height,geometry);
+                f.page = (page as i32 + p.visual_offset.unwrap_or_default().page_delta).clamp(0,9999) as usize;
+                let rect=table_rect(p,f.page,y,f.rect.width,f.rect.height,geometry);
                 if f.rect.height>geometry.height_at(page)+0.1{return Err(error("A floating table must fit on one page; make it inline to let it break across pages."));}
                 f.rect=rect;
             }
@@ -132,8 +134,9 @@ fn table_rect(p:&TablePosition,page:usize,paragraph_y:f32,width:f32,height:f32,g
         VerticalPlacement::Center=>top+(extent-height)*0.5,
         VerticalPlacement::Bottom=>top+extent-height,
     };
-    let x=x.min(g.page_width-width).max(0.0);
-    let y=y.min(g.bottom(page)-height).max(0.0);
+    let offset = p.visual_offset.unwrap_or_default();
+    let x=(x+offset.x_mm*MM_TO_PT).min(g.page_width-width).max(0.0);
+    let y=(y+offset.y_mm*MM_TO_PT).min(g.bottom(page)-height).max(0.0);
     Rect::new(x,y,width,height)
 }
 /// A prepared table drawn at the origin, as one unbreakable floating block.
@@ -146,9 +149,11 @@ fn table_float(id:&NodeId,paragraph:NodeId,position:&TablePosition,table:&Prepar
         width=row.cells.iter().fold(width,|w,c|w.max(c.x+c.width));
         y+=row.height;
     }
-    let wrap=match position.wrap{TableWrap::Around=>Wrap::Square,TableWrap::TopAndBottom=>Wrap::TopAndBottom};
-    Floating{id:id.clone(),paragraph,place:Place::Table(position.clone()),wrap,
-        gaps:[position.distance_left_mm*MM_TO_PT,position.distance_right_mm*MM_TO_PT,position.distance_top_mm*MM_TO_PT,position.distance_bottom_mm*MM_TO_PT],
+    let flow_position = position.flow_position().unwrap_or(position);
+    let mode = |wrap| match wrap {TableWrap::Around=>Wrap::Square,TableWrap::TopAndBottom=>Wrap::TopAndBottom,TableWrap::InFrontOfText=>Wrap::Front,TableWrap::BehindText=>Wrap::Behind};
+    let wrap = mode(flow_position.wrap); let layer = mode(position.wrap);
+    Floating{id:id.clone(),paragraph,place:Place::Table(flow_position.clone()),wrap,layer,paint_position:Some(position.clone()),
+        gaps:[flow_position.distance_left_mm*MM_TO_PT,flow_position.distance_right_mm*MM_TO_PT,flow_position.distance_top_mm*MM_TO_PT,flow_position.distance_bottom_mm*MM_TO_PT],
         raster:None,rows:Arc::new(Vec::new()),commands:page.commands,hit_regions:page.hit_regions,object_regions:page.object_regions,
         page:0,rect:Rect::new(0.0,0.0,width.max(1.0),y.max(1.0))}
 }
@@ -198,25 +203,39 @@ pub(super) fn paginate<T:AsRef<PreparedBlock>>(section:&Section,document:&Docume
             f.commands=commands;f.hit_regions=hit_regions;floats.push(f);
         }
     }}
+    // A paint-layer choice is not a floating placement. In particular, the
+    // floating pass clears the height of a whole table before placing rows;
+    // doing that here changes page breaks and displaces following exercises.
+    // Use the exact ordinary block paginator, then reorder only its commands.
+    if floats.is_empty() {
+        return paginate_inline_layers(&flow, &flow_prepared, geometry, initial, background, cancel);
+    }
     let mut starts=Starts::new();
     // First iteration has no exclusions; following iterations converge anchors
     // and line wrapping. Each pass runs on the existing background layout worker.
-    let (mut pages,mut cursor,first)=flow_pass(&flow,&flow_prepared,document,geometry,initial,background,fields,&[],cancel)?;starts.extend(first);
+    let (mut pages,mut cursor,first)=flow_pass(&flow,&flow_prepared,document,geometry,initial,background,fields,&[],cancel)?;let table_starts = first.clone();starts.extend(first);
     let mut stable=false;
     for _ in 0..12{
-        check_cancel(cancel)?;position(&mut floats,&starts,geometry)?;
+        check_cancel(cancel)?;position(&mut floats,&starts,&table_starts,geometry)?;
         let prior=floats.iter().map(|f|(f.page,f.rect)).collect::<Vec<_>>();
         let result=flow_pass(&flow,&flow_prepared,document,geometry,initial,background,fields,&floats,cancel)?;
-        pages=result.0;cursor=result.1;starts=result.2;position(&mut floats,&starts,geometry)?;
+        pages=result.0;cursor=result.1;starts=result.2;position(&mut floats,&starts,&table_starts,geometry)?;
         stable=prior.iter().zip(&floats).all(|((p,r),f)|*p==f.page&&(r.x-f.rect.x).abs()<0.05&&(r.y-f.rect.y).abs()<0.05);
         if stable{break;}
     }
     if !stable{return Err(error("Drawing anchors and text wrapping did not settle in twelve passes; adjust anchor position or drawing size"));}
-    for f in floats{
+    for mut f in floats{
+        if let Some(p) = &f.paint_position {
+            if let Some(&(page, _, y)) = table_starts.get(&f.paragraph) {
+                f.page = (page as i32 + p.visual_offset.unwrap_or_default().page_delta).clamp(0,9999) as usize;
+                f.rect = table_rect(p, f.page, y, f.rect.width, f.rect.height, geometry);
+            }
+        }
+        while pages.len() <= f.page { pages.push(geometry.page(pages.len(), background)); }
         let page=pages.get_mut(f.page).ok_or_else(||error("Floating drawing page is missing"))?;
         if page.has_paint {
             let commands=f.commands.into_iter().map(|c|c.translated(f.rect.x,f.rect.y));
-            if f.wrap==Wrap::Behind{
+            if f.layer==Wrap::Behind{
                 let at=usize::from(background&&!page.commands.is_empty());page.commands.splice(at..at,commands);
             }else{page.commands.extend(commands);}
         }
@@ -228,15 +247,136 @@ pub(super) fn paginate<T:AsRef<PreparedBlock>>(section:&Section,document:&Docume
                 kind:if f.raster.is_some(){ObjectKind::Picture{source:None}}else{ObjectKind::TextBox{source:None}}});
         }
     }
+    if cursor.page_index + 1 < pages.len() {
+        cursor.page_index = pages.len() - 1;
+        cursor.column_index = 0;
+        cursor.y = pages[cursor.page_index].object_regions.iter().map(|r| r.rect.max_y())
+            .fold(geometry.content_top, f32::max).min(geometry.bottom(cursor.page_index));
+    }
     Ok((pages,cursor))
 }
+
+type TableLayers = BTreeMap<usize, (Vec<DrawCommand>, Vec<DrawCommand>)>;
+
+fn retain_table_layer(source: &Block, pages: &mut [VectorPage], first_page: usize,
+    before: usize, background: bool, layers: &mut TableLayers) {
+    let Block::Table(table) = source else { return; };
+    let Some(position) = table.properties.position.as_ref().filter(|p| p.flow_position().is_none()) else { return; };
+    for (index, page) in pages.iter_mut().enumerate().skip(first_page) {
+        let base = if index == first_page { before } else { usize::from(background && page.has_paint) };
+        let drawn = page.commands.split_off(base.min(page.commands.len()));
+        let layer = layers.entry(index).or_default();
+        if position.wrap == TableWrap::BehindText { layer.0.extend(drawn); } else { layer.1.extend(drawn); }
+    }
+}
+
+fn paint_table_layers(pages: &mut [VectorPage], layers: TableLayers, background: bool) {
+    for (index, (behind, front)) in layers {
+        let page = &mut pages[index];
+        let at = usize::from(background && !page.commands.is_empty());
+        page.commands.splice(at..at, behind);
+        page.commands.extend(front);
+    }
+}
+
+type InlineMoves = Vec<(PreparedTable, TablePosition, (usize, f32, f32))>;
+
+#[allow(clippy::too_many_arguments)]
+fn take_moved_table(source: &Block, prepared: &PreparedBlock, pages: &mut [VectorPage],
+    first_page: usize, before: usize, hits: usize, objects: usize, background: bool,
+    moved: &mut InlineMoves) -> bool {
+    if let (Block::Table(source), PreparedBlock::Table(table)) = (source, prepared) {
+            if let Some(position) = source.properties.position.as_ref().filter(|p| p.visual_offset.is_some()) {
+                let origin = pages.iter().enumerate().skip(first_page).find_map(|(index, page)| {
+                    let regions = page.object_regions.iter().filter(|r| matches!(&r.kind,
+                        ObjectKind::TableCell(c) if c.table_id == source.id.0));
+                    let rect = regions.fold(None, |rect: Option<Rect>, r| Some(rect.map_or(r.rect, |a| Rect::new(a.x.min(r.rect.x), a.y.min(r.rect.y), a.max_x().max(r.rect.max_x())-a.x.min(r.rect.x), a.max_y().max(r.rect.max_y())-a.y.min(r.rect.y)))));
+                    rect.map(|rect| (index, rect.x, rect.y))
+                });
+                if let Some(origin) = origin {
+                    moved.push((table.clone(), position.clone(), origin));
+                    for (index, page) in pages.iter_mut().enumerate().skip(first_page) {
+                        page.commands.truncate(if index == first_page { before } else { usize::from(background && page.has_paint) });
+                        page.hit_regions.truncate(if index == first_page { hits } else { 0 });
+                        page.object_regions.truncate(if index == first_page { objects } else { 0 });
+                    }
+                    return true;
+                }
+            }
+    }
+    false
+}
+
+fn paint_moved_tables(moved: InlineMoves, pages: &mut Vec<VectorPage>, cursor: &mut FlowCursor,
+    geometry: &SectionGeometry, background: bool, layers: &mut TableLayers) -> Result<(), LayoutError> {
+    // Finish the ordinary text flow first. A moved overlap table is then
+    // paginated independently, so its rows can continue on another page while
+    // the following text keeps its original space and remains fully visible.
+    for (mut table, position, (page, x, y)) in moved {
+        let offset = position.visual_offset.unwrap_or_default();
+        let destination = (page as i32 + offset.page_delta).clamp(0, 9999) as usize;
+        let mut drawn = (0..=destination).map(|index| geometry.page(index, false)).collect::<Vec<_>>();
+        let mut at = FlowCursor { page_index: destination, column_index: 0,
+            y: (y + offset.y_mm * MM_TO_PT).max(0.0) };
+        table.x_offset = (x + offset.x_mm * MM_TO_PT).clamp(0.0, (geometry.page_width - table.width).max(0.0)) - geometry.content_left;
+        paginate_table(&table, &mut drawn, &mut at, geometry, false)?;
+        let old_len = pages.len();
+        while pages.len() < drawn.len() { pages.push(geometry.page(pages.len(), background)); }
+        for (index, mut drawn) in drawn.into_iter().enumerate() {
+            let layer = layers.entry(index).or_default();
+            if position.wrap == TableWrap::BehindText { layer.0.extend(drawn.commands); } else { layer.1.extend(drawn.commands); }
+            pages[index].hit_regions.append(&mut drawn.hit_regions);
+            pages[index].object_regions.append(&mut drawn.object_regions);
+        }
+        if pages.len() > old_len { *cursor = at; }
+    }
+    Ok(())
+}
+
+fn paginate_inline_layers<T: AsRef<PreparedBlock>>(flow: &[&Block], prepared: &[T],
+    geometry: &SectionGeometry, initial: Option<(usize, f32)>, background: bool,
+    cancel: Option<(&AtomicU64, u64)>) -> Result<(Vec<VectorPage>, FlowCursor), LayoutError> {
+    let mut pages = vec![geometry.page(0, background)];
+    let (column, y) = initial.unwrap_or((0, geometry.content_top));
+    let mut cursor = FlowCursor { page_index: 0,
+        column_index: column.min(geometry.column_count.saturating_sub(1)),
+        y: y.clamp(geometry.content_top, geometry.content_bottom) };
+    let mut layers = TableLayers::new();
+    let mut moved = Vec::new();
+    for (index, source) in flow.iter().enumerate() {
+        check_cancel(cancel)?;
+        let first_page = cursor.page_index;
+        let before = pages[first_page].commands.len();
+        let hits = pages[first_page].hit_regions.len();
+        let objects = pages[first_page].object_regions.len();
+        paginate_block(prepared, index, &mut pages, &mut cursor, geometry, background)?;
+        if take_moved_table(source, prepared[index].as_ref(), &mut pages, first_page,
+            before, hits, objects, background, &mut moved) { continue; }
+        retain_table_layer(source, &mut pages, first_page, before, background, &mut layers);
+    }
+    paint_moved_tables(moved, &mut pages, &mut cursor, geometry, background, &mut layers)?;
+    paint_table_layers(&mut pages, layers, background);
+    Ok((pages, cursor))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn flow_pass<T:AsRef<PreparedBlock>>(flow:&[&Block],prepared:&[T],document:&Document,g:&SectionGeometry,initial:Option<(usize,f32)>,background:bool,fields:&FieldContext,floats:&[Floating],cancel:Option<(&AtomicU64,u64)>)->Result<(Vec<VectorPage>,FlowCursor,Starts),LayoutError>{
     let mut pages=vec![g.page(0, background)];let (column,y)=initial.unwrap_or((0,g.content_top));
     let mut cursor=FlowCursor{page_index:0,column_index:column,y};let mut starts=Starts::new();let mut ctx=WorkerContext{fonts:FontCatalog::for_resources(&document.resources),typst:TypstTypesetter::new()};
     if flow.len()!=prepared.len(){return Err(error("Floating flow/preparation order mismatch"));}
-    for (block,p) in flow.iter().zip(prepared){
+    let mut layers = TableLayers::new();
+    let mut moved = InlineMoves::new();
+    for (index,(block,p)) in flow.iter().zip(prepared).enumerate(){
         check_cancel(cancel)?;
+        // An inline table retained only as a paint layer must use the same
+        // paragraph keep-chain placement as ordinary body pagination.
+        if matches!(p.as_ref(), PreparedBlock::Paragraph {keep_with_next:true,..}) {
+            if let Some(height) = minimum_keep_chain_height(prepared,index) {
+                if height <= g.height_at(cursor.page_index) && height > (g.bottom(cursor.page_index)-cursor.y).max(0.0) && cursor.y > g.content_top {
+                    advance_column(&mut pages,&mut cursor,g,background);
+                }
+            }
+        }
         if pages.len()>10000{return Err(error("Floating layout exceeds 10,000 pages"));}
         match (block,p.as_ref()){
             (Block::Paragraph(paragraph),PreparedBlock::Paragraph{lines,space_before,space_after,left_indent,marker,decoration,keep_lines_together,page_break_before,widow_control,..})=>{
@@ -257,12 +397,19 @@ fn flow_pass<T:AsRef<PreparedBlock>>(flow:&[&Block],prepared:&[T],document:&Docu
                 if page.has_paint { page.commands.extend(i.commands.iter().map(|c|c.translated(x,cursor.y))); }
                 page.object_regions.push(ObjectHitRegion{node_id:i.id.clone(),rect:Rect::new(x,cursor.y,i.width,i.height),kind:ObjectKind::Picture{source:None}});cursor.y+=i.height+4.0;
             }
-            (_,PreparedBlock::Table(t))=>{
+            (source,PreparedBlock::Table(t))=>{
                 let height=t.rows.iter().map(|r|r.height).sum::<f32>();clear_fixed(floats,height.min(g.column_height()),&mut pages,&mut cursor,g,background)?;
                 // A split table cannot share a later page with an exclusion until
                 // table fragments themselves support line-level wrap geometry.
                 if height>g.bottom(cursor.page_index)-cursor.y&&floats.iter().any(|f|f.page>cursor.page_index&&matches!(f.wrap,Wrap::Square|Wrap::Tight|Wrap::TopAndBottom)){return Err(error("A table spanning a later floating-drawing page is not supported; move its anchor or keep the table on a separate page"));}
+                let first_page = cursor.page_index;
+                let before = pages[first_page].commands.len();
+                let hits = pages[first_page].hit_regions.len();
+                let objects = pages[first_page].object_regions.len();
                 paginate_table(t,&mut pages,&mut cursor,g,background)?;
+                if !take_moved_table(source, p.as_ref(), &mut pages, first_page, before, hits, objects, background, &mut moved) {
+                    retain_table_layer(source, &mut pages, first_page, before, background, &mut layers);
+                }
             }
             (_,PreparedBlock::Equation{id,fragment,before,after})=>{
                 cursor.y+=*before;clear_fixed(floats,fragment.size.height,&mut pages,&mut cursor,g,background)?;let x=g.content_left+((g.column_width-fragment.size.width)*0.5).max(0.0);
@@ -273,7 +420,10 @@ fn flow_pass<T:AsRef<PreparedBlock>>(flow:&[&Block],prepared:&[T],document:&Docu
             (_,PreparedBlock::Foreign{height})=>{clear_fixed(floats,*height,&mut pages,&mut cursor,g,background)?;cursor.y+=*height;}
             _=>return Err(error("Unexpected floating-flow block preparation")),
         }
-    }Ok((pages,cursor,starts))
+    }
+    paint_moved_tables(moved, &mut pages, &mut cursor, g, background, &mut layers)?;
+    paint_table_layers(&mut pages, layers, background);
+    Ok((pages,cursor,starts))
 }
 fn clear_fixed(floats:&[Floating],height:f32,pages:&mut Vec<VectorPage>,cursor:&mut FlowCursor,g:&SectionGeometry,background:bool)->Result<(),LayoutError>{
     for _ in 0..130{

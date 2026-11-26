@@ -1,6 +1,7 @@
 //! Navigation works with semantic offsets, never widget text offsets.
 use model::{Block, Document, NodeId};
 use editor::{paragraph_flat_text, INLINE_OBJECT_MARKER};
+use unicode_segmentation::UnicodeSegmentation;
 
 #[derive(Clone, Debug)]
 pub struct Entry {
@@ -30,18 +31,29 @@ fn preview(text: &str) -> String {
     if short.trim().is_empty() { "(Empty heading)".to_string() } else { short }
 }
 
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TextStats { pub words: usize, pub characters: usize, pub paragraphs: usize }
+
+pub fn count_words(text: &str) -> usize {
+    text.unicode_words().count()
+}
+
+pub fn count_paragraph(paragraph: &model::Paragraph) -> TextStats {
+    let text = paragraph_flat_text(paragraph);
+    TextStats { words: count_words(&text),
+        characters: text.chars().filter(|&c| c != '\u{fffc}').count(),
+        paragraphs: 1 }
+}
 
 pub fn count_body(document: &Document) -> TextStats {
     fn visit(blocks: &[Block], result: &mut TextStats) {
         for block in blocks {
             match block {
                 Block::Paragraph(p) => {
-                    let text = paragraph_flat_text(p).replace(INLINE_OBJECT_MARKER, " ");
-                    result.words += text.split_whitespace().count();
-                    result.characters += paragraph_flat_text(p).replace(INLINE_OBJECT_MARKER, "").chars().count();
-                    result.paragraphs += 1;
+                    let stats = count_paragraph(p);
+                    result.words += stats.words;
+                    result.characters += stats.characters;
+                    result.paragraphs += stats.paragraphs;
                 }
                 Block::Table(table) => for row in &table.rows { for cell in &row.cells { visit(&cell.blocks, result); } },
                 _ => {}

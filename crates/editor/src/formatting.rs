@@ -1040,6 +1040,27 @@ impl EditorState {
         Ok(())
     }
 
+    /// Fill only the addressed cells, including empty and merged cells. The
+    /// explicit "none" value overrides an inherited table-style fill.
+    pub fn set_table_cell_fill(&mut self, id: &NodeId, cells: &[NodeId], fill: &str) -> Result<(), String> {
+        if fill != "none" && !(fill.len() == 7 && fill.starts_with('#') && fill[1..].bytes().all(|b| b.is_ascii_hexdigit())) {
+            return Err("Cell fill must be #RRGGBB or none".into());
+        }
+        let selected: std::collections::HashSet<_> = cells.iter().collect();
+        if selected.is_empty() { return Ok(()); }
+        let index = self.document.sections.iter().position(|s| find_table_in_section(s, id).is_some()).ok_or("Table not found")?;
+        let before = self.document.sections[index].clone();
+        let mut after = before.clone();
+        let table = find_table_mut_in_section(&mut after, id).ok_or("Table not found")?;
+        let count = table.rows.iter_mut().flat_map(|r| &mut r.cells).filter(|c| selected.contains(&c.id))
+            .map(|c| { c.shading = Some(if fill == "none" { "none".into() } else { fill.to_ascii_uppercase() }); }).count();
+        if count != selected.len() { return Err("Selected table cells no longer exist".into()); }
+        if after == before { return Ok(()); }
+        self.document.sections[index] = after.clone();
+        self.commit("Table cell fill", vec![Mutation::SectionChanged { section_id: after.id.clone(), before, after }], self.selection.clone(), None)?;
+        Ok(())
+    }
+
     pub fn set_table_cell_vertical_alignment(&mut self, alignment: CellVerticalAlignment) -> Result<(), String> {
         let context = self.table_cell_context().ok_or("Place the caret in a table cell first.")?;
         let before = self.document.sections[context.section_index].clone();

@@ -4,6 +4,7 @@
 //! granular undo/redo. It deliberately has no GUI or renderer dependency.
 
 mod formatting;
+mod spelling;
 pub mod search;
 mod styles;
 mod style_tools;

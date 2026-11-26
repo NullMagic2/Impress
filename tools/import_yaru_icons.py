@@ -76,6 +76,7 @@ ICON_SOURCES = {
     'recent': 'recentfilelist',
     'help': 'helpindex', 'chevron-up': 'upsearch', 'caret': 'downsearch',
     'x': 'cancel', 'close': 'closedoc', 'lock': 'protect', 'trash': 'delete',
+    'add': 'add',  # Replaced by the system Yaru source below.
     'error': 'showerrors', 'warning': 'warningcellstyles',
     # Home: clipboard, font and paragraph
     'cut': 'cut', 'copy': 'copy', 'paste': 'paste', 'paste-text': 'pastespecial',
@@ -171,6 +172,7 @@ ICON_SOURCES = {
 # the orange Yaru folder and Save the Yaru floppy disk: Yaru's own file icons
 # are a grey folder and a plain down arrow.
 SYSTEM_ICON_SOURCES = {
+    'add': 'legacy/list-add',
     'new': 'actions/document-new', 'open': 'places/folder-open', 'save': 'devices/media-floppy',
     'print': 'actions/document-print', 'undo': 'actions/edit-undo', 'redo': 'actions/edit-redo',
     'cut': 'actions/edit-cut', 'copy': 'actions/edit-copy', 'paste': 'actions/edit-paste',

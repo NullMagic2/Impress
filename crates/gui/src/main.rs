@@ -152,6 +152,8 @@ struct CanvasState {
     /// rectangle in view pixels, for the Ribbon to open the Wrap Text menu below.
     layout_menu_request: Option<render::Rect>,
     pending_find: Option<bool>,
+    pressed_content_choice: Option<(NodeId, u64)>,
+    pending_content_choice: Option<(NodeId, u64)>,
     /// Ctrl+P: the Ribbon opens the Print dialog on its next poll.
     pending_print: bool,
     pending_spelling: bool,
@@ -294,7 +296,7 @@ fn main() {
             pending_comment: None,
             pending_new_comment: false,
             layout_menu_request: None,
-            pending_find: None,
+            pending_find: None, pressed_content_choice: None, pending_content_choice: None,
             pending_print: false,
             pending_spelling: false,
             inline_spelling: Default::default(),
@@ -492,6 +494,7 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
         let table_chrome = table_ui::chrome(&state);
         overlay.chrome.extend(table_chrome.iter().cloned());
         overlay.chrome.extend(slot_ui::chrome(&state));
+        overlay.chrome.extend(ribbon::content_controls::chrome(&state));
         overlay.chrome.extend(picture_chrome::chrome(&state));
         overlay.chrome.extend(state.comment_leaders.iter().cloned());
         ribbon::revision_tools::adorn(&state, &mut overlay, &table_chrome);
@@ -576,6 +579,11 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
                     drain_native_input(&mut state);
                     if state.input.active() { event.skip(false); return; }
                     let view_point = logical_to_view(position, state.pixel_scale);
+                    state.pressed_content_choice = None;
+                    if !mouse.event.event.shift_down() && !mouse.event.event.control_down() && !mouse.event.event.alt_down()
+                        && ribbon::content_controls::press(&mut state, view_point) {
+                        drop(state); focus_canvas(&down_canvas); down_canvas.refresh(false, None); event.skip(false); return;
+                    }
                     if (mouse.event.event.control_down() || wxdragon::utils::get_key_state(WXK_CONTROL)) && !mouse.event.event.alt_down() {
                         if let Some(target)=hyperlinks::under(&state,view_point) {
                             state.dragging_selection=false;state.cell_drag_anchor=None;state.drag_pointer=None;
@@ -691,6 +699,7 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
             .then(|| picture_chrome::tooltip(&state).unwrap_or_else(|| table_ui::tooltip(&state)).to_string())
             .or_else(|| (NOTE_TOOLTIP.with(|t| t.replace(note_tip.clone())) != note_tip).then(|| note_tip.clone().unwrap_or_default()));
         let mut pointer = objects_ui::hover(&state, view_point);
+        if ribbon::content_controls::arrow_at(&state, view_point).is_some() { pointer = objects_ui::Pointer::Hand; }
         if pointer==objects_ui::Pointer::Text && link.is_some() && wxdragon::utils::get_key_state(WXK_CONTROL) {
             pointer=objects_ui::Pointer::Hand;
         }
@@ -739,16 +748,27 @@ fn bind_canvas_events(ui: &MainUi, state: Rc<RefCell<CanvasState>>) {
     let up_state = Rc::clone(&state);
     let up_canvas = canvas.clone();
     canvas.on_mouse_left_up(move |event: WindowEventData| {
+        let mut table_interaction = false;
         {
             let mut state = up_state.borrow_mut();
             drain_native_input(&mut state);
-            if table_ui::up(&mut state) { up_canvas.refresh(false, None); }
+            let handled = if let WindowEventData::MouseButton(mouse) = &event {
+                mouse.get_position().is_some_and(|position| {
+                    let point = logical_to_view(position, state.pixel_scale);
+                    ribbon::content_controls::release(&mut state, point)
+                })
+            } else { false };
+            if handled { up_canvas.refresh(false, None); }
+            else if table_ui::up(&mut state) { table_interaction = true; up_canvas.refresh(false, None); }
             else if let Err(error) = objects_ui::up(&mut state) { state.action_status = Some(error); }
             state.dragging_selection = false;
             state.cell_drag_anchor = None;
             state.drag_pointer = None;
         }
         if up_canvas.has_capture() { up_canvas.release_mouse(); }
+        // Native capture release can restore focus to the previous ribbon
+        // control. A completed table drag must leave Ctrl+Z/Y with the document.
+        if table_interaction { focus_canvas(&up_canvas); }
         event.skip(false);
     });
 
@@ -1579,7 +1599,7 @@ fn bind_close(ui: &MainUi, shared: Rc<RefCell<CanvasState>>, timer: &'static Tim
                     .with_style(MessageDialogStyle::YesNo|MessageDialogStyle::Cancel|MessageDialogStyle::IconWarning)
                     .build();
                 dialog.set_yes_no_labels(&crate::i18n::text(&("Save and close")), &crate::i18n::text(&("Discard changes")));
-                dialog.set_ok_cancel_labels("Save and close", "Keep editing");
+                dialog.set_ok_cancel_labels(&crate::i18n::text("Save and close"), &crate::i18n::text("Keep editing"));
                 let choice = match {crate::placement::centre(&dialog);dialog.show_modal()} {wxdragon::id::ID_YES=>0,wxdragon::id::ID_NO=>1,_=>2};
                 match choice {
                     0 => {

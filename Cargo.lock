@@ -488,7 +488,7 @@ checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 
 [[package]]
 name = "core"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "base64 0.22.1",
  "image",
@@ -696,7 +696,7 @@ dependencies = [
 
 [[package]]
 name = "docx"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "core",
  "editor",
@@ -729,7 +729,7 @@ dependencies = [
 
 [[package]]
 name = "editor"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "core",
  "format-rtf",
@@ -970,7 +970,7 @@ dependencies = [
 
 [[package]]
 name = "format"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "core",
  "thiserror",
@@ -979,7 +979,7 @@ dependencies = [
 
 [[package]]
 name = "format-doc"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "cfb",
  "core",
@@ -992,7 +992,7 @@ dependencies = [
 
 [[package]]
 name = "format-native"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "core",
  "format",
@@ -1005,7 +1005,7 @@ dependencies = [
 
 [[package]]
 name = "format-pdf"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "core",
  "euclid 0.20.14",
@@ -1019,7 +1019,7 @@ dependencies = [
 
 [[package]]
 name = "format-rtf"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "core",
  "encoding_rs",
@@ -1028,7 +1028,7 @@ dependencies = [
 
 [[package]]
 name = "format-typst"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "codex",
  "core",
@@ -1161,7 +1161,7 @@ checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
 
 [[package]]
 name = "gui"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "core",
  "docx",
@@ -1838,7 +1838,7 @@ dependencies = [
 
 [[package]]
 name = "layout"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "core",
  "image",
@@ -2242,7 +2242,7 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "output"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "core",
  "flate2",
@@ -2756,7 +2756,7 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "render"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "image",
  "thiserror",
@@ -3720,7 +3720,7 @@ checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
 
 [[package]]
 name = "typography"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "core",
  "fontdb 0.24.0",
@@ -3780,7 +3780,7 @@ dependencies = [
 
 [[package]]
 name = "typst-engine"
-version = "0.8.6"
+version = "0.8.7"
 dependencies = [
  "core",
  "format-typst",

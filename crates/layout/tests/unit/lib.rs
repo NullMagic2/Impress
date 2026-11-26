@@ -362,3 +362,178 @@ fn automatic_tables_keep_the_expanded_grid_and_fixed_tables_use_the_requested_wi
             "fixed={fixed:?}, expected {expected_mm} mm, actual {} mm; regions {cells:?}", (right-left)/MM_TO_PT);
     }
 }
+
+#[test]
+fn overlapping_table_keeps_body_text_in_its_original_flow() {
+    use model::{TablePosition, TableWrap, VerticalFrom, VerticalPlacement};
+    let paragraph = Paragraph::plain(&"Text keeps its normal line width even when a table overlaps it. ".repeat(6));
+    let id = paragraph.id.0.clone();
+    for wrap in [TableWrap::InFrontOfText, TableWrap::BehindText] {
+    let cell = TableCell { id: NodeId::new(), blocks: vec![Block::Paragraph(Paragraph::plain("Cell"))].into(),
+        column_span: 1, row_span: 1, width_mm: None, shading: Some("#4488CC".into()), borders: None,
+        vertical_alignment: Default::default(), margins: None, text_direction: None };
+    let table = Table { id: NodeId::new(), properties: model::TableProperties {
+        grid_column_widths_mm: vec![45.0], position: Some(TablePosition { wrap,
+            vertical_from: VerticalFrom::Margin, vertical: VerticalPlacement::Offset(0.0), ..Default::default() }), ..Default::default() },
+        rows: vec![model::TableRow { id: NodeId::new(), cells: vec![cell], repeat_as_header: false,
+            allow_break_across_pages: true, height_mm: Some(18.0) }] };
+    let mut plain = Document::default(); plain.sections[0].blocks = vec![Block::Paragraph(paragraph.clone())].into();
+    let reference = LayoutEngine::default().layout_document(&plain).unwrap();
+    plain.sections[0].blocks = vec![Block::Table(table.clone()), Block::Paragraph(paragraph.clone())].into();
+    let output = LayoutEngine::default().layout_document(&plain).unwrap();
+    let hits = |doc: &VectorDocument| doc.pages[0].hit_regions.iter().filter(|r| r.node_id == id).map(|r| r.rect).collect::<Vec<_>>();
+    assert_eq!(hits(&reference), hits(&output));
+    let bounds = output.pages[0].object_regions.iter().find(|r|matches!(&r.kind, ObjectKind::TableCell(c) if c.table_id == table.id.0)).unwrap().rect;
+    assert!(hits(&output).iter().any(|r| !r.intersection(bounds).is_empty()));
+    let commands = &output.pages[0].commands;
+    let text_index = commands.iter().position(|c|matches!(c.unclipped().0, DrawCommand::TextRun(run) if run.source.as_ref().is_some_and(|s|s.node_id==id))).unwrap();
+    let fill_index = commands.iter().position(|c|matches!(c.unclipped().0, DrawCommand::FillRect {paint:Paint::Solid(color),..} if *color==Color::rgb8(68,136,204))).unwrap();
+    assert_eq!(fill_index > text_index, wrap == TableWrap::InFrontOfText);
+    }
+}
+
+#[test]
+fn changing_body_table_paint_layer_keeps_every_text_and_cell_coordinate() {
+    use model::{TablePosition, TableTextFlow, TableWrap, TableAlignment};
+    for old_wrap in [None, Some(TableWrap::Around), Some(TableWrap::TopAndBottom)] {
+        let cell = TableCell { id: NodeId::new(), blocks: vec![Block::Paragraph(Paragraph::plain("Table text"))].into(),
+            column_span: 1,row_span: 1,width_mm: None,shading: None,borders: None,vertical_alignment: Default::default(),margins:None,text_direction:None };
+        let table = Table { id:NodeId::new(), properties:model::TableProperties { grid_column_widths_mm:vec![55.0],
+            alignment:Some(TableAlignment::Right), position:old_wrap.map(|wrap|TablePosition {wrap,..Default::default()}),..Default::default() },
+            rows:vec![model::TableRow { id:NodeId::new(),cells:vec![cell],repeat_as_header:false,allow_break_across_pages:true,height_mm:None }] };
+        let mut doc=Document::default();
+        let mut title=Paragraph::plain("A heading before the table");title.style=Some(model::StyleId::from("Heading1"));
+        doc.sections[0].blocks=vec![Block::Paragraph(title),Block::Table(table.clone()),
+            Block::Paragraph(Paragraph::plain(&"The surrounding text stays exactly where it was. ".repeat(16)))].into();
+        let before=LayoutEngine::default().layout_document(&doc).unwrap();
+        for wrap in [TableWrap::InFrontOfText,TableWrap::BehindText] {
+            let Block::Table(current)=&mut doc.sections[0].blocks[1] else {unreachable!()};
+            let mut position=table.properties.position.clone().unwrap_or_default();position.wrap=wrap;
+            position.preserved_text_flow=Some(Box::new(match &table.properties.position {
+                None=>TableTextFlow::Inline,Some(p)=>TableTextFlow::Positioned(Box::new(p.clone())),
+            }));current.properties.position=Some(position);
+            let after=LayoutEngine::default().layout_document(&doc).unwrap();
+            assert_eq!(before.pages.len(),after.pages.len());
+            for (a,b) in before.pages.iter().zip(&after.pages) {
+                assert_eq!(a.hit_regions,b.hit_regions,"{old_wrap:?} to {wrap:?} moved text");
+                assert_eq!(a.object_regions,b.object_regions,"{old_wrap:?} to {wrap:?} moved a table");
+            }
+        }
+    }
+}
+
+#[test]
+fn changing_table_layer_preserves_row_breaks_and_following_text_on_every_page() {
+    use model::{TablePosition, TableTextFlow, TableWrap};
+    let mut doc = Document::default();
+    doc.sections[0].properties.page_height_mm = 110.0;
+    doc.sections[0].properties.margin_top_mm = 10.0;
+    doc.sections[0].properties.margin_bottom_mm = 10.0;
+    let table = Table {
+        id: NodeId::new(), properties: model::TableProperties::default(),
+        rows: (0..10).map(|index| model::TableRow {
+            id: NodeId::new(), repeat_as_header: index == 0,
+            allow_break_across_pages: true, height_mm: Some(12.0),
+            cells: vec![TableCell {
+                id: NodeId::new(), blocks: vec![Block::Paragraph(Paragraph::plain(&format!("Row {index}")))].into(),
+                column_span: 1, row_span: 1, width_mm: None, shading: None, borders: None,
+                vertical_alignment: Default::default(), margins: None, text_direction: None,
+            }],
+        }).collect(),
+    };
+    doc.sections[0].blocks = vec![
+        Block::Paragraph(Paragraph::plain("Text before the table")),
+        Block::Table(table),
+        Block::Paragraph(Paragraph::plain("The following exercise must not move")),
+    ].into();
+    let before = LayoutEngine::default().layout_document(&doc).unwrap();
+    assert!(before.pages.len() > 1);
+    let engine = LayoutEngine::default();
+    let mut cache = incremental::LayoutCache::default();
+    // Begin with the same warm inline scene the editor has before the click.
+    engine.layout_document_in_pool_impl(&doc, None, &mut cache, PagePaint::window(0..1)).unwrap();
+    for wrap in [TableWrap::BehindText, TableWrap::InFrontOfText] {
+        let Block::Table(table) = &mut doc.sections[0].blocks[1] else { unreachable!() };
+        table.properties.position = Some(TablePosition {
+            wrap, preserved_text_flow: Some(Box::new(TableTextFlow::Inline)), ..Default::default()
+        });
+        let after = LayoutEngine::default().layout_document(&doc).unwrap();
+        assert_eq!(before.pages.len(), after.pages.len(), "{wrap:?} changed page count");
+        for (page, (a, b)) in before.pages.iter().zip(&after.pages).enumerate() {
+            assert_eq!(a.hit_regions, b.hit_regions, "{wrap:?} moved text on page {page}");
+            assert_eq!(a.object_regions, b.object_regions, "{wrap:?} moved table cells on page {page}");
+        }
+        for window in [0..1, 1..2, 0..1] {
+            let cached = engine.layout_document_in_pool_impl(&doc, None, &mut cache, PagePaint::window(window.clone())).unwrap();
+            assert_eq!(cached.pages.len(), before.pages.len());
+            for (page, (a, b)) in before.pages.iter().zip(&cached.pages).enumerate() {
+                assert_eq!(a.hit_regions, b.hit_regions, "{wrap:?} cached text moved on page {page}");
+                assert_eq!(a.object_regions, b.object_regions, "{wrap:?} cached cells moved on page {page}");
+                if window.contains(&page) { assert_eq!(b.commands, after.pages[page].commands); }
+            }
+        }
+    }
+}
+
+#[test]
+fn dragging_overlap_table_preserves_following_text_and_creates_destination_pages() {
+    use model::{TablePosition, TableOffset, TableTextFlow, TableWrap};
+    let cell = TableCell { id: NodeId::new(), blocks: vec![Block::Paragraph(Paragraph::plain("Table"))].into(),
+        column_span: 1, row_span: 1, width_mm: None, shading: None, borders: None,
+        vertical_alignment: Default::default(), margins: None, text_direction: None };
+    let table = Table { id: NodeId::new(), properties: Default::default(), rows: vec![model::TableRow {
+        id: NodeId::new(), cells: vec![cell], height_mm: Some(20.0), repeat_as_header: false, allow_break_across_pages: true }] };
+    let text = Paragraph::plain(&"Following exercise stays in its own place. ".repeat(120));
+    let text_id = text.id.0.clone(); let table_id = table.id.0.clone();
+    let mut doc = Document::default();
+    doc.sections[0].blocks = vec![Block::Table(table), Block::Paragraph(text)].into();
+    let before = LayoutEngine::default().layout_document(&doc).unwrap();
+    let text_geometry = |scene: &VectorDocument| scene.pages.iter().enumerate().flat_map(|(page, p)|
+        p.hit_regions.iter().filter(|r|r.node_id == text_id).map(move |r|(page,r.clone()))).collect::<Vec<_>>();
+    for wrap in [TableWrap::BehindText, TableWrap::InFrontOfText] {
+        for page_delta in [0, 2] {
+            let Block::Table(t) = &mut doc.sections[0].blocks[0] else {unreachable!()};
+            t.properties.position = Some(TablePosition { wrap,
+                preserved_text_flow: Some(Box::new(TableTextFlow::Inline)),
+                visual_offset: Some(TableOffset { x_mm: 4.0, y_mm: 10.0, page_delta }), ..Default::default() });
+            let moved = LayoutEngine::default().layout_document(&doc).unwrap();
+            assert_eq!(text_geometry(&before), text_geometry(&moved));
+            let page = page_delta as usize;
+            assert!(moved.pages.len() > page);
+            let bounds = moved.pages[page].object_regions.iter().find(|r| matches!(&r.kind,
+                ObjectKind::TableCell(c) if c.table_id == table_id)).unwrap().rect;
+            let old = before.pages[0].object_regions[0].rect;
+            assert!((bounds.x-old.x-4.0*MM_TO_PT).abs()<0.1);
+            assert!((bounds.y-old.y-10.0*MM_TO_PT).abs()<0.1);
+            assert!(bounds.max_y() <= moved.pages[page].size.height);
+        }
+    }
+}
+
+#[test]
+fn wrapped_table_does_not_chase_its_own_anchor_text_down_the_page() {
+    use model::{TablePosition, TableOffset, TableWrap};
+    for wrap in [TableWrap::Around, TableWrap::TopAndBottom] {
+        let cell = TableCell { id: NodeId::new(), blocks: vec![Block::Paragraph(Paragraph::plain("Cell"))].into(),
+            column_span: 1, row_span: 1, width_mm: None, shading: None, borders: None,
+            vertical_alignment: Default::default(), margins: None, text_direction: None };
+        let table = Table { id: NodeId::new(), properties: model::TableProperties {
+            position: Some(TablePosition { wrap, visual_offset: Some(TableOffset { y_mm: 10.0, ..Default::default() }), ..Default::default() }),
+            ..Default::default() }, rows: vec![model::TableRow { id: NodeId::new(), cells: vec![cell],
+                height_mm: Some(25.0), repeat_as_header: false, allow_break_across_pages: true }] };
+        let table_id = table.id.0.clone();
+        let text = Paragraph::plain(&"All following text must survive pagination. ".repeat(300)); let text_id = text.id.0.clone();
+        let end = paragraph_plain_text(&text).len();
+        let mut doc = Document::default(); doc.sections[0].blocks = vec![Block::Table(table), Block::Paragraph(text)].into();
+        let scene = LayoutEngine::default().layout_document(&doc).unwrap();
+        let rect = scene.pages[0].object_regions.iter().find(|r| matches!(&r.kind,
+            ObjectKind::TableCell(c) if c.table_id == table_id)).unwrap().rect;
+        assert!((rect.y - (25.4 + 10.0) * MM_TO_PT).abs() < 0.1, "{wrap:?} chased its anchor: {rect:?}");
+        assert!(scene.pages.len() > 1);
+        let last = scene.pages.iter().flat_map(|p| &p.hit_regions).filter(|r| r.node_id == text_id).map(|r|r.byte_range.end).max();
+        assert_eq!(last, Some(end));
+        for page in &scene.pages { for hit in &page.hit_regions {
+            assert!(hit.rect.max_y() <= page.size.height + 0.1, "{wrap:?} lost text below the paper");
+        } }
+    }
+}

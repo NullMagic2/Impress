@@ -205,3 +205,25 @@ fn comment_decisions_and_threaded_replies_survive_docx() {
         assert_eq!(actual.replies[0].author, comment.replies[0].author);
     }
 }
+
+#[test]
+fn cell_fill_and_explicit_no_fill_survive_docx_round_trip() {
+    let mut document = Document::default();
+    let p = Paragraph::plain(""); let paragraph = p.id.clone();
+    document.sections[0].blocks = vec![Block::Paragraph(p)].into();
+    let mut editor = EditorState::new(document); editor.set_caret(paragraph, 0);
+    editor.insert_table(1, 2).unwrap();
+    let id = editor.table_cell_context().unwrap().table_id;
+    let cells: Vec<_> = editor.table_by_id(&id).unwrap().rows[0].cells.iter().map(|c| c.id.clone()).collect();
+    editor.set_table_cell_fill(&id, &cells[..1], "#A5E7FF").unwrap();
+    editor.set_table_cell_fill(&id, &cells[1..], "none").unwrap();
+    let mut bytes = Cursor::new(Vec::new()); DocxFormat.export(&editor.document, &mut bytes).unwrap();
+    let mut zip = zip::ZipArchive::new(Cursor::new(bytes.get_ref())).unwrap();
+    let mut xml = String::new(); zip.by_name("word/document.xml").unwrap().read_to_string(&mut xml).unwrap();
+    assert!(xml.contains("<w:shd w:val=\"nil\"/>"));
+    assert!(!xml.contains("w:fill=\"none\""));
+    let restored = cycle(&editor.document);
+    let table = restored.sections[0].blocks.iter().find_map(|b| if let Block::Table(t) = b { Some(t) } else { None }).unwrap();
+    assert_eq!(table.rows[0].cells[0].shading.as_deref(), Some("#A5E7FF"));
+    assert_eq!(table.rows[0].cells[1].shading.as_deref(), Some("none"));
+}

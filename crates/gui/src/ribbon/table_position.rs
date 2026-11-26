@@ -29,8 +29,9 @@ fn read(ui: &TablePositionDialogUi) -> TablePosition {
         vertical_from: match ui.tpos_v_from.get_selection().unwrap_or(0) { 1 => VerticalFrom::Margin, 2 => VerticalFrom::Page, _ => VerticalFrom::Paragraph },
         distance_top_mm: ui.tpos_top.get_value() as f32, distance_bottom_mm: ui.tpos_bottom.get_value() as f32,
         distance_left_mm: ui.tpos_left.get_value() as f32, distance_right_mm: ui.tpos_right.get_value() as f32,
-        wrap: if ui.tpos_topbottom.get_value() { TableWrap::TopAndBottom } else { TableWrap::Around },
+        wrap: if ui.tpos_behind.get_value() { TableWrap::BehindText } else if ui.tpos_front.get_value() { TableWrap::InFrontOfText } else if ui.tpos_topbottom.get_value() { TableWrap::TopAndBottom } else { TableWrap::Around },
         allow_overlap: ui.tpos_overlap.get_value(),
+        preserved_text_flow: None, visual_offset: None,
     }
 }
 
@@ -49,6 +50,8 @@ fn write(ui: &TablePositionDialogUi, p: &TablePosition) {
     ui.tpos_top.set_value(p.distance_top_mm as f64); ui.tpos_bottom.set_value(p.distance_bottom_mm as f64);
     ui.tpos_left.set_value(p.distance_left_mm as f64); ui.tpos_right.set_value(p.distance_right_mm as f64);
     ui.tpos_around.set_value(p.wrap == TableWrap::Around); ui.tpos_topbottom.set_value(p.wrap == TableWrap::TopAndBottom);
+    ui.tpos_front.set_value(p.wrap == TableWrap::InFrontOfText);
+    ui.tpos_behind.set_value(p.wrap == TableWrap::BehindText);
     ui.tpos_overlap.set_value(p.allow_overlap);
 }
 
@@ -87,29 +90,32 @@ fn paint_sketch(panel: &wxdragon::widgets::panel::Panel, p: &TablePosition, s: S
     let (ml, mt, mr, mb) = s.margins;
     let (tx, ty, tw, th) = place(p, s);
     let (dl, dr, dt, db) = (p.distance_left_mm, p.distance_right_mm, p.distance_top_mm, p.distance_bottom_mm);
+    let draw_table = |pix: &mut Pixmap| {
+        rect(pix, tx - dl, ty - dt, tw + dl + dr, th + dt + db, (37, 99, 235, 28));
+        rect(pix, tx, ty, tw, th, (37, 99, 235, 80));
+        for i in 1..3 { rect(pix, tx + tw * i as f32 / 3.0, ty, 0.3, th, (37, 99, 235, 200)); rect(pix, tx, ty + th * i as f32 / 3.0, tw, 0.3, (37, 99, 235, 200)); }
+        for (x, y, rw, rh) in [(tx, ty, tw, 0.4), (tx, ty + th - 0.4, tw, 0.4), (tx, ty, 0.4, th), (tx + tw - 0.4, ty, 0.4, th)] { rect(pix, x, y, rw, rh, (37, 99, 235, 255)); }
+    };
+    if p.wrap == TableWrap::BehindText { draw_table(&mut pix); }
     // Text lines, wrapping around (or stopping above and below) the table.
     let line_h = 4.2;
     let mut y = mt;
     while y + 1.6 <= s.page.1 - mb {
-        let blocked = y + 1.6 > ty - dt && y < ty + th + db;
+        let blocked = !p.wrap.overlaps_text() && y + 1.6 > ty - dt && y < ty + th + db;
         let spans: Vec<(f32, f32)> = if !blocked { vec![(ml, s.page.0 - mr)] }
             else if p.wrap == TableWrap::TopAndBottom { Vec::new() }
             else { vec![(ml, (tx - dl).min(s.page.0 - mr)), ((tx + tw + dr).max(ml), s.page.0 - mr)] };
         for (a, b) in spans { if b - a > 6.0 { rect(&mut pix, a, y, b - a, 1.6, (196, 204, 216, 255)); } }
         y += line_h;
     }
-    // Distance from text, then the table.
-    rect(&mut pix, tx - dl, ty - dt, tw + dl + dr, th + dt + db, (37, 99, 235, 28));
-    rect(&mut pix, tx, ty, tw, th, (37, 99, 235, 80));
-    for i in 1..3 { rect(&mut pix, tx + tw * i as f32 / 3.0, ty, 0.3, th, (37, 99, 235, 200)); rect(&mut pix, tx, ty + th * i as f32 / 3.0, tw, 0.3, (37, 99, 235, 200)); }
-    for (x, y, rw, rh) in [(tx, ty, tw, 0.4), (tx, ty + th - 0.4, tw, 0.4), (tx, ty, 0.4, th), (tx + tw - 0.4, ty, 0.4, th)] { rect(&mut pix, x, y, rw, rh, (37, 99, 235, 255)); }
+    if p.wrap != TableWrap::BehindText { draw_table(&mut pix); }
     canvas.present(&dc, &pix, 0, 0);
 }
 
 pub(super) fn table_position(ribbon: &Ribbon) -> Result<(), String> {
-    let (id, current, sheet) = {
+    let (id, current, sheet, nested) = {
         let state = ribbon.state.borrow();
-        let context = state.editor.table_cell_context().ok_or("Place the caret in a table first")?;
+        let context = crate::table_ui::context(&state).ok_or("Place the caret in a table first")?;
         let facts = crate::table_ui::facts(&state).ok_or("Place the caret in a table first")?;
         if !facts.movable { return Err("Only tables in the main text can be positioned freely.".into()); }
         let table = state.editor.table_by_id(&context.table_id).ok_or("Table not found")?;
@@ -127,16 +133,51 @@ pub(super) fn table_position(ribbon: &Ribbon) -> Result<(), String> {
         } }
         height = height.max(rows.values().sum::<f32>());
         let pt = 72.0 / 25.4;
-        (context.table_id, current, Sheet {
+        let mut sheet = Sheet {
             page: (props.page_width_mm, props.page_height_mm),
             margins: (props.margin_left_mm, props.margin_top_mm, props.margin_right_mm, props.margin_bottom_mm),
             table: ((width / pt).max(10.0), (height / pt).max(6.0)),
-        })
+        };
+        let nested = state.editor.table_parent_cell(&context.table_id);
+        if let Some((outer, cell)) = nested {
+            let margins = cell.margins.unwrap_or_default().over(outer.properties.cell_margins.unwrap_or_default());
+            if let Some(bounds) = state.vector_document.pages.iter().flat_map(|p| &p.object_regions)
+                .find(|r| r.node_id == cell.id.0 && matches!(r.kind, render::ObjectKind::TableCell(_))) {
+                sheet.page = (bounds.rect.width / pt, bounds.rect.height / pt);
+            }
+            let padding = model::TABLE_TEXT_PADDING_PT / pt;
+            sheet.margins = (margins.left_mm.unwrap_or(padding), margins.top_mm.unwrap_or(padding),
+                margins.right_mm.unwrap_or(padding), margins.bottom_mm.unwrap_or(padding));
+        }
+        (context.table_id, current, sheet, nested.is_some())
+
     };
     let ui = Rc::new(crate::i18n::localized(TablePositionDialogUi::new(Some(&ribbon.ui.main_frame), false)));
     let chrome = Chrome::new(ui.tpos_dialog, ui.tpos_card, &[], &[], (ui.tpos_ok, "OK"), Some(ui.tpos_cancel), &[], &[]);
     let _ = (H_MODES, V_MODES);
+    // Size translated captions from their actual text, including the label's
+    // sizer border separately; an XRC item minimum can clip longer translations.
+    for label in [ui.i18n_control_6, ui.i18n_control_13] {
+        let mut minimum = label.get_min_size();
+        minimum.width = label.from_dip_int(78).max(label.get_text_extent(&label.get_label()).width + label.from_dip_int(4));
+        label.set_min_size(minimum);
+    }
     write(&ui, &current);
+    if nested {
+        let label = crate::i18n::text("Containing cell");
+        ui.tpos_h_from.clear();
+        ui.tpos_h_from.append(&label);
+        ui.tpos_h_from.set_selection(0);
+        ui.tpos_v_from.clear();
+        for label in ["Paragraph", "Containing cell"] { ui.tpos_v_from.append(&crate::i18n::text(label)); }
+        ui.tpos_v_from.set_selection(if current.vertical_from == VerticalFrom::Paragraph { 0 } else { 1 });
+        for combo in [ui.tpos_h_from, ui.tpos_v_from] {
+            let mut minimum = combo.get_min_size();
+            minimum.width = minimum.width.max(combo.get_text_extent(&label).width + combo.from_dip_int(36));
+            combo.set_min_size(minimum);
+        }
+    }
+    let shown = read(&ui);
     let preview = ui.tpos_preview;
     preview.set_background_style(BackgroundStyle::Paint);
     preview.on_erase_background(|_| {});
@@ -144,15 +185,22 @@ pub(super) fn table_position(ribbon: &Ribbon) -> Result<(), String> {
     let refresh: Rc<dyn Fn()> = { let ui = Rc::clone(&ui); Rc::new(move || {
         ui.tpos_h_value.enable(ui.tpos_h_mode.get_selection().unwrap_or(0) == 0);
         ui.tpos_v_value.enable(ui.tpos_v_mode.get_selection().unwrap_or(0) == 0);
+        for spin in [ui.tpos_top, ui.tpos_bottom, ui.tpos_left, ui.tpos_right] { spin.enable(!(ui.tpos_front.get_value() || ui.tpos_behind.get_value())); }
         ui.tpos_preview.refresh(false, None);
     }) };
     for combo in [ui.tpos_h_mode, ui.tpos_h_from, ui.tpos_v_mode, ui.tpos_v_from] { let r = Rc::clone(&refresh); combo.on_selection_changed(move |_| r()); }
     for spin in [ui.tpos_h_value, ui.tpos_v_value, ui.tpos_top, ui.tpos_bottom, ui.tpos_left, ui.tpos_right] { let r = Rc::clone(&refresh); spin.on_value_changed(move |_| r()); }
-    for radio in [ui.tpos_around, ui.tpos_topbottom] { let r = Rc::clone(&refresh); radio.on_selected(move |_| r()); }
+    for radio in [ui.tpos_around, ui.tpos_topbottom, ui.tpos_front, ui.tpos_behind] { let r = Rc::clone(&refresh); radio.on_selected(move |_| r()); }
     refresh();
     let accepted = chrome.show();
     let position = read(&ui);
     ui.tpos_dialog.destroy();
     if !accepted { return Ok(()); }
-    ribbon.edit(|e| e.set_table_position(&id, None, Some(position)))
+    let mut geometry = position.clone();
+    geometry.wrap = shown.wrap;
+    if geometry == shown {
+        ribbon.edit_table(&id, |e| e.set_table_wrap(&id, position.wrap))
+    } else {
+        ribbon.edit_table(&id, |e| e.set_table_position(&id, Some(position)))
+    }
 }

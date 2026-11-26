@@ -18,6 +18,7 @@ use wxdragon::{
 enum Cmd { Select(u8), Op(TableOp), HeightValue, PositionDialog,
     /// Make the table free with text around it (true) or above and below.
     FreeWrap(bool),
+    Colour(colour_menu::Kind),
     /// A button that opens a menu.
     Menu(MenuKind),
     /// A caption beside a stepper; does nothing.
@@ -26,7 +27,7 @@ enum Cmd { Select(u8), Op(TableOp), HeightValue, PositionDialog,
     Close }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum MenuKind { Select, Position, Delete, InsertCells, Merge }
+enum MenuKind { Select, Delete, InsertCells, Merge }
 
 const MENU_FIRST: i32 = 32100;
 
@@ -37,7 +38,7 @@ pub(super) enum Icon {
     DelRow, DelCol, DelTable, ShiftLeft, ShiftUp,
     MergeRight, MergeDown, Split, Distribute,
     Width, Height, AlignTop, AlignCenter, AlignBottom, Header, Minus, Plus,
-    Inline, Free, WrapAround, WrapTopBottom, Position, Close,
+    Inline, Free, WrapAround, WrapTopBottom, WrapFront, WrapBehind, Position, Close, TextColour, CellFill,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -149,8 +150,15 @@ impl TableBar {
             Cmd::PositionDialog => ribbon.run(Action::TablePosition),
             Cmd::Menu(kind) => self.show_menu(kind),
             Cmd::FreeWrap(around) => {
-                if self.facts().is_some_and(|f| f.position.is_none()) { ribbon.run(Action::Table(TableOp::Float(true))); }
-                ribbon.run(Action::Table(TableOp::WrapAround(around)));
+                if let Err(error) = super::table_layout::float_table(&ribbon, around) {
+                    ribbon.state.borrow_mut().action_status = Some(error);
+                }
+            }
+            Cmd::Colour(kind) => {
+                if let Some(button) = self.layout(&self.facts()).buttons.iter().find(|b| b.cmd == cmd) {
+                    let (x, y, _, h) = button.rect;
+                    colour_menu::show(&ribbon, kind, crate::gtk_native::to_screen(&self.panel, wxdragon::geometry::Point::new(x, y + h)));
+                }
             }
             Cmd::Label => {}
             Cmd::Close => ribbon.run(Action::CloseTableTools),
@@ -173,7 +181,7 @@ impl TableBar {
     /// Windows repeated calls exhaust GDI handles (the Ribbon then paints
     /// blank grey buttons).
     fn text_width(&self, text: &str) -> i32 {
-        text.lines().map(|l| self.panel.get_text_extent(&crate::i18n::text(&(l))).width).max().unwrap_or(0)
+        crate::i18n::text(text).lines().map(|l| self.panel.get_text_extent(l).width).max().unwrap_or(0)
     }
 
     fn layout(&self, facts: &Option<CellFacts>) -> Layout {
@@ -202,15 +210,9 @@ impl TableBar {
             groups.push((start, end, caption));
             *x = end + d(1 + GROUP_PAD);
         };
-        let position_icon = match facts.as_ref().and_then(|f| f.position.as_ref()) {
-            None => Icon::Inline,
-            Some(p) if p.wrap == model::TableWrap::TopAndBottom => Icon::WrapTopBottom,
-            Some(_) => Icon::WrapAround,
-        };
 
         let start = x; x += d(GROUP_PAD);
         large(&mut buttons, &mut x, Cmd::Menu(MenuKind::Select), Icon::SelTable, "Select", "Select the cell, row, column or whole table");
-        large(&mut buttons, &mut x, Cmd::Menu(MenuKind::Position), position_icon, "Position", "Keep the table in line with the text, or let it float with text wrapping around it");
         group(&mut groups, &mut x, start, "Table");
 
         let start = x; x += d(GROUP_PAD);
@@ -251,20 +253,15 @@ impl TableBar {
         x += (label_w + d(42) + value_w).max(dist_w) + d(2);
         group(&mut groups, &mut x, start, "Cell Size");
 
-        // Alignment and the header row.
         let start = x; x += d(GROUP_PAD);
-        let top = (body - 2 * d(SMALL_H) - d(4)) / 2;
-        for (i, (icon, align, tip)) in [(Icon::AlignTop, 0, "Align text to the top of the cell"), (Icon::AlignCenter, 1, "Centre text vertically"),
-            (Icon::AlignBottom, 2, "Align text to the bottom of the cell")].into_iter().enumerate() {
-            buttons.push(Button { cmd: Cmd::Op(TableOp::Align(align)), icon: Some(icon), label: String::new(), tip, style: Style::IconOnly,
-                rect: (x + i as i32 * d(28), top, d(26), d(SMALL_H) + d(2)) });
+        let colour_width = self.text_width("Text color").max(self.text_width("Cell fill")) + d(42);
+        for (row, kind, icon, label) in [(0, colour_menu::Kind::TableText, Icon::TextColour, "Text color"),
+            (1, colour_menu::Kind::CellFill, Icon::CellFill, "Cell fill")] {
+            buttons.push(Button { cmd: Cmd::Colour(kind), icon: Some(icon), label: format!("{label} ▾"), tip: label,
+                style: small_style, rect: (x, (body - 2 * d(28)) / 2 + row * d(28), if compact { d(28) } else { colour_width }, d(26)) });
         }
-        let header_label = "Repeat header";
-        let header_w = if compact { d(26) } else { self.text_width(header_label) + d(34) };
-        buttons.push(Button { cmd: Cmd::Op(TableOp::HeaderRow), icon: Some(Icon::Header), label: header_label.into(),
-            tip: "Repeat this row at the top of every page", style: small_style, rect: (x, top + d(SMALL_H) + d(6), header_w, d(SMALL_H)) });
-        x += header_w.max(3 * d(28));
-        group(&mut groups, &mut x, start, "Alignment");
+        x += if compact { d(30) } else { colour_width };
+        group(&mut groups, &mut x, start, "Colors");
 
         let start = x; x += d(GROUP_PAD);
         large(&mut buttons, &mut x, Cmd::Close, Icon::Close, "Close\nTable Tools", "Close the Table tools and return to the Insert ribbon");
@@ -277,9 +274,6 @@ impl TableBar {
         match kind {
             MenuKind::Select => vec![("Select Cell", Some(Cmd::Select(0))), ("Select Row", Some(Cmd::Select(1))),
                 ("Select Column", Some(Cmd::Select(2))), ("Select Table", Some(Cmd::Select(3)))],
-            MenuKind::Position => vec![("In Line with Text", Some(Cmd::Op(TableOp::Float(false)))),
-                ("Free, Text Around", Some(Cmd::FreeWrap(true))), ("Free, Text Above and Below", Some(Cmd::FreeWrap(false))),
-                ("", None), ("More Position Options…", Some(Cmd::PositionDialog))],
             MenuKind::Delete => vec![("Delete Cell, Shift Left", Some(Cmd::Op(TableOp::DeleteCellsLeft))), ("Delete Cell, Shift Up", Some(Cmd::Op(TableOp::DeleteCellsUp))),
                 ("", None), ("Delete Rows", Some(Cmd::Op(TableOp::DeleteRow))), ("Delete Columns", Some(Cmd::Op(TableOp::DeleteColumn))),
                 ("Delete Table", Some(Cmd::Op(TableOp::DeleteTable)))],
@@ -291,7 +285,7 @@ impl TableBar {
     fn show_menu(&self, kind: MenuKind) {
         let facts = self.facts();
         let items = Self::menu_items(kind);
-        let checks = matches!(kind, MenuKind::Position);
+        let checks = false;
         let mut builder = Menu::builder();
         for (i, (label, cmd)) in items.iter().enumerate() {
             builder = match cmd {
@@ -319,7 +313,7 @@ impl TableBar {
         match cmd {
             Cmd::Op(TableOp::Align(a)) => a == f.align, Cmd::Op(TableOp::HeaderRow) => f.header,
             Cmd::Op(TableOp::Float(free)) => free == f.position.is_some(),
-            Cmd::Op(TableOp::WrapAround(around)) | Cmd::FreeWrap(around) => f.position.as_ref().is_some_and(|p| (p.wrap == model::TableWrap::Around) == around),
+            Cmd::Op(TableOp::WrapAround(around)) | Cmd::FreeWrap(around) => f.position.as_ref().is_some_and(|p| p.wrap == if around { model::TableWrap::Around } else { model::TableWrap::TopAndBottom }),
             _ => false,
         }
     }
@@ -379,12 +373,12 @@ impl TableBar {
             let (x, y, bw, bh) = b.rect;
             match b.style {
                 Style::Large => {
-                    let mut lines: Vec<String> = b.label.lines().map(str::to_string).collect();
+                    let mut lines: Vec<String> = crate::i18n::text(&b.label).lines().map(str::to_string).collect();
                     // Menu buttons end their caption with ▾, as in the Ribbon.
                     if matches!(b.cmd, Cmd::Menu(_)) { if let Some(last) = lines.last_mut() { last.push_str(" ▾"); } }
                     let lh = dc.get_text_extent(&crate::i18n::text(&("Ag"))).1 - d(1);
                     let mut ty = y + large_top(bh as f32, scale_of(&self.panel)) as i32 + d(38);
-                    for l in lines { let lw = dc.get_text_extent(&crate::i18n::text(&(&l))).0; dc.draw_text(&crate::i18n::text(&(&l)), x + (bw - lw) / 2, ty); ty += lh; }
+                    for l in lines { let lw = dc.get_text_extent(&l).0; dc.draw_text(&l, x + (bw - lw) / 2, ty); ty += lh; }
                 }
                 Style::Caption => {
                     dc.set_text_foreground(Colour::rgb(92, 108, 132));
@@ -457,6 +451,12 @@ pub(super) fn draw_icon(pix: &mut Pixmap, icon: Icon, x: f32, y: f32, size: f32,
         line(pix, &[(b.0 - ux * hl - uy * hl, b.1 - uy * hl + ux * hl), b, (b.0 - ux * hl + uy * hl, b.1 - uy * hl - ux * hl)], color, w * 1.2);
     };
     match icon {
+        Icon::TextColour => {
+            line(pix, &[p(3.0, 12.0), p(8.0, 2.0), p(13.0, 12.0)], ink, w * 1.4);
+            line(pix, &[p(5.0, 8.0), p(11.0, 8.0)], ink, w);
+            line(pix, &[p(2.0, 15.0), p(14.0, 15.0)], red, w * 2.0);
+        }
+        Icon::CellFill => { tint(pix, 0, 0, 3, 3, blue, 90); grid(pix); }
         Icon::SelCell => { tint(pix, 1, 1, 2, 2, blue, 200); grid(pix); }
         Icon::SelRow => { tint(pix, 0, 1, 3, 2, blue, 200); grid(pix); }
         Icon::SelCol => { tint(pix, 1, 0, 2, 3, blue, 200); grid(pix); }
@@ -511,7 +511,7 @@ pub(super) fn draw_icon(pix: &mut Pixmap, icon: Icon, x: f32, y: f32, size: f32,
         }
         Icon::Header => { tint(pix, 0, 0, 3, 1, ink, 170); grid(pix); }
         Icon::Minus => line(pix, &[p(4.5, 8.0), p(11.5, 8.0)], ink, w * 1.3),
-        Icon::Inline | Icon::Free | Icon::WrapAround | Icon::WrapTopBottom => {
+        Icon::Inline | Icon::Free | Icon::WrapAround | Icon::WrapTopBottom | Icon::WrapFront | Icon::WrapBehind => {
             // Text lines (grey) and the table (blue grid).
             let text = |pix: &mut Pixmap, y: f32, x0: f32, x1: f32| line(pix, &[p(x0, y), p(x1, y)], grey((150, 160, 176)), w);
             let table = |pix: &mut Pixmap, x0: f32, y0: f32, x1: f32, y1: f32| {
@@ -522,8 +522,19 @@ pub(super) fn draw_icon(pix: &mut Pixmap, icon: Icon, x: f32, y: f32, size: f32,
                 line(pix, &[p(x0, (y0 + y1) * 0.5), p(x1, (y0 + y1) * 0.5)], blue, w * 0.8);
             };
             match icon {
+        Icon::TextColour => {
+            line(pix, &[p(3.0, 12.0), p(8.0, 2.0), p(13.0, 12.0)], ink, w * 1.4);
+            line(pix, &[p(5.0, 8.0), p(11.0, 8.0)], ink, w);
+            line(pix, &[p(2.0, 15.0), p(14.0, 15.0)], red, w * 2.0);
+        }
+        Icon::CellFill => { tint(pix, 0, 0, 3, 3, blue, 90); grid(pix); }
                 Icon::Inline => { text(pix, 2.0, 1.5, 14.5); table(pix, 1.5, 4.5, 10.0, 11.0); text(pix, 13.5, 1.5, 14.5); }
                 Icon::Free => { table(pix, 7.5, 4.0, 14.5, 10.5); for y in [2.0, 5.5, 9.0] { text(pix, y, 1.5, 5.5); } text(pix, 2.0, 1.5, 14.5); text(pix, 13.5, 1.5, 14.5); }
+                Icon::WrapFront | Icon::WrapBehind => {
+                    if icon == Icon::WrapBehind { table(pix, 4.5, 4.5, 11.5, 11.0); }
+                    for y in [2.0, 5.5, 9.0, 13.5] { text(pix, y, 1.5, 14.5); }
+                    if icon == Icon::WrapFront { table(pix, 4.5, 4.5, 11.5, 11.0); }
+                }
                 Icon::WrapAround => { table(pix, 5.0, 4.5, 11.0, 11.0); for y in [4.5, 7.75, 11.0] { text(pix, y, 1.0, 3.0); text(pix, y, 13.0, 15.0); } text(pix, 2.0, 1.0, 15.0); text(pix, 13.5, 1.0, 15.0); }
                 _ => { text(pix, 2.0, 1.5, 14.5); table(pix, 4.5, 4.5, 11.5, 11.0); text(pix, 13.5, 1.5, 14.5); }
             }

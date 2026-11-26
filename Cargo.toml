@@ -20,7 +20,7 @@ exclude = ["vendor/impress-hunspell", "vendor/rwml"]
 resolver = "2"
 
 [workspace.package]
-version = "0.8.6"
+version = "0.8.7"
 edition = "2024"
 license = "MIT"
 authors = ["Impress contributors"]

@@ -114,6 +114,46 @@ fn content_lock_single_line_and_dropdown_constraints_reject_edits_without_partia
     editor.set_content_control_value(&id, "2").unwrap();
     assert_eq!(text(&editor.document, "3"), "Two");
 }
+
+#[test]
+fn spelling_corrections_respect_locked_controls_and_synchronize_bound_values() {
+    let body = format!("<w:p>{}</w:p><w:p>{}</w:p><w:p>{}</w:p>",
+        control("1", "<w:lock w:val=\"sdtContentLocked\"/><w:text/>", "wrng", false),
+        control("2", "<w:text/>", "wrng", true), control("3", "<w:text/>", "wrng", true));
+    let mut editor = EditorState::new(load(package(&body)));
+    let range = find(&editor.document,"1").range.clone();
+    let before = editor.document.clone();
+    assert!(editor.replace_spelling_word(&range.start.paragraph, range.start.offset..range.end.offset,
+        "wrng", "wrong", editor.revision).is_err());
+    assert_eq!(editor.document,before);
+    let range = find(&editor.document,"2").range.clone();
+    editor.replace_spelling_word(&range.start.paragraph, range.start.offset..range.end.offset,
+        "Old", "Older", editor.revision).unwrap();
+    assert_eq!(text(&editor.document,"2"),"Older");
+    assert_eq!(text(&editor.document,"3"),"Older");
+    assert_eq!(text(&cycle(&editor.document),"2"),"Older");
+    assert!(editor.undo()); assert_eq!(editor.document,before);
+}
+
+#[test]
+fn spelling_keeps_docx_word_formatting_after_save_and_reopen() {
+    let body = r#"<w:p><w:r><w:t xml:space="preserve">Before </w:t></w:r><w:r><w:rPr><w:rStyle w:val="Answer"/><w:b/><w:i/><w:u w:val="single"/><w:color w:val="AA2255"/><w:sz w:val="38"/><w:highlight w:val="yellow"/><w:lang w:val="el-GR"/></w:rPr><w:t>μηχανη</w:t></w:r><w:r><w:t xml:space="preserve"> after</w:t></w:r></w:p>"#;
+    let document=load(package(body));
+    let paragraph=document_paragraphs(&document)[0];
+    let id=paragraph.id.clone();
+    let expected=match &paragraph.content[1] {Inline::Text(run)=>run.clone(), _=>panic!()};
+    let mut editor=EditorState::new(document);
+    editor.replace_spelling_word(&id,7..7+"μηχανη".len(),"μηχανη","μηχανή",editor.revision).unwrap();
+    let reopened=cycle(&editor.document);
+    let paragraph=document_paragraphs(&reopened)[0];
+    assert_eq!(inline_text(&paragraph.content),"Before μηχανή after");
+    for run in paragraph.content.iter().filter_map(|inline|if let Inline::Text(run)=inline {Some(run)}else{None}) {
+        if run.text.chars().any(|c| ('\u{370}'..='\u{3ff}').contains(&c)) {
+            assert_eq!(run.properties,expected.properties);
+            assert_eq!(run.style,expected.style);
+        } else {assert_eq!(run.properties,CharacterProperties::default());}
+    }
+}
 #[test]
 fn block_cell_and_row_control_wrappers_preserve_their_structural_scope() {
     let body = r#"<w:sdt><w:sdtPr><w:id w:val="10"/><w:lock w:val="sdtLocked"/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Block</w:t></w:r></w:p></w:sdtContent></w:sdt><w:tbl><w:sdt><w:sdtPr><w:id w:val="11"/></w:sdtPr><w:sdtContent><w:tr><w:sdt><w:sdtPr><w:id w:val="12"/><w:text/></w:sdtPr><w:sdtContent><w:tc><w:p><w:r><w:t>Cell</w:t></w:r></w:p></w:tc></w:sdtContent></w:sdt></w:tr></w:sdtContent></w:sdt></w:tbl>"#;
@@ -551,4 +591,45 @@ fn rejecting_deleted_bound_control_refreshes_current_xml_instead_of_overwriting_
     assert!(!accepting.document.content_controls.contains_key(&dormant));
     assert!(accepting.undo());
     assert_eq!(accepting.document, before);
+}
+
+#[test]
+fn greek_dropdown_and_editable_combo_values_keep_choices_and_custom_text() {
+    let items = r#"<w:listItem w:displayText="__________" w:value="empty"/><w:listItem w:displayText="φόροι" w:value="tax"/>"#;
+    let drop = control("701", &format!("<w:dropDownList>{items}</w:dropDownList>"), "__________", false);
+    let combo = control("702", &format!("<w:comboBox>{items}</w:comboBox>"), "__________", false);
+    let document = load(package(&format!("<w:p>{drop}<w:r><w:t> and </w:t></w:r>{combo}</w:p>")));
+    let mut editor = EditorState::new(document);
+    let dropdown = find(&editor.document, "701").id.clone(); let combo = find(&editor.document, "702").id.clone();
+    editor.set_content_control_value(&dropdown, "tax").unwrap();
+    assert_eq!(text(&editor.document, "701"), "φόροι");
+    editor.set_content_control_value(&combo, "δική μου λέξη").unwrap();
+    assert_eq!(text(&editor.document, "702"), "δική μου λέξη");
+    let restored = cycle(&editor.document);
+    assert_eq!(text(&restored, "701"), "φόροι"); assert_eq!(text(&restored, "702"), "δική μου λέξη");
+    assert!(matches!(&find(&restored, "701").kind, ContentControlKind::DropDown { items } if items.len() == 2 && items[1].value == "tax"));
+    assert!(matches!(&find(&restored, "702").kind, ContentControlKind::ComboBox { items } if items.len() == 2));
+    assert!(editor.undo()); assert_eq!(text(&editor.document, "702"), "__________");
+}
+
+#[test]
+fn changing_inline_dropdown_keeps_its_own_character_style_and_colour() {
+    let options = r#"<w:dropDownList><w:listItem w:displayText="____" w:value="blank"/><w:listItem w:displayText="φόροι" w:value="tax"/></w:dropDownList>"#;
+    let field = control("703", options, "____", false).replace("<w:r><w:t>",
+        r#"<w:r><w:rPr><w:rStyle w:val="AnswerStyle"/><w:b/><w:color w:val="1A5465"/><w:sz w:val="28"/></w:rPr><w:t>"#);
+    let body = format!(r#"<w:p><w:r><w:rPr><w:color w:val="FF0000"/></w:rPr><w:t xml:space="preserve">Before </w:t></w:r>{field}<w:r><w:t> after</w:t></w:r></w:p>"#);
+    let document = load(package(&body));
+    let mut editor = EditorState::new(document.clone());
+    let id = find(&editor.document, "703").id.clone();
+    editor.set_content_control_value(&id, "tax").unwrap();
+    let check = |document: &Document| {
+        let run = model::document_paragraphs(document).into_iter().flat_map(|p| p.content.iter())
+            .find_map(|inline| if let Inline::Text(run) = inline { (run.text == "φόροι").then_some(run) } else { None }).unwrap();
+        assert_eq!(run.style.as_ref().map(|id| id.0.as_str()), Some("AnswerStyle"));
+        assert_eq!(run.properties.color.as_deref(), Some("#1A5465"));
+        assert_eq!(run.properties.bold, Some(true));
+        assert_eq!(run.properties.font_size_pt, Some(14.0));
+    };
+    check(&editor.document); check(&cycle(&editor.document));
+    assert!(editor.undo()); assert_eq!(editor.document, document);
 }

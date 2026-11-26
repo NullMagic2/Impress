@@ -429,3 +429,126 @@ fn contents_tab_fits_the_actual_column_with_rtl_titles_and_wrapped_titles() {
         assert!((number.rect.max_x() - width).abs() < 0.5);
     }
 }
+
+#[test]
+fn nested_fixed_table_reserves_text_even_when_anchored_after_earlier_paragraphs() {
+    use model::{HorizontalPlacement, TablePosition, VerticalFrom, VerticalPlacement};
+    let paragraph = Paragraph::plain("AV fist AV fist AV fist");
+    let paragraph_id = paragraph.id.0.clone();
+    let mut nested = table(vec![row(vec![cell(vec![Block::Paragraph(Paragraph::plain("AV"))])])]);
+    nested.properties.preferred_width_mm = Some(60.0 / MM_TO_PT);
+    nested.properties.position = Some(TablePosition { horizontal: HorizontalPlacement::Center,
+        vertical_from: VerticalFrom::Margin, vertical: VerticalPlacement::Offset(4.0 / MM_TO_PT),
+        distance_left_mm: 1.0, distance_right_mm: 1.0, ..Default::default() });
+    let nested_id = nested.id.0.clone();
+    let outer = table(vec![row(vec![cell(vec![Block::Paragraph(paragraph), Block::Table(nested),
+        Block::Paragraph(Paragraph::plain("AV"))])])]);
+    let prepared = prepare_table(&outer, 100.0, &styles(), &mut context(), &BTreeMap::new(), &fields(), false).unwrap();
+    let g = geometry(); let mut pages = vec![new_page(g.page_width, g.page_height, false)];
+    let mut cursor = FlowCursor { page_index: 0, column_index: 0, y: g.content_top };
+    paginate_table(&prepared, &mut pages, &mut cursor, &g, false).unwrap();
+    let page = &pages[0];
+    let bounds = page.object_regions.iter().find(|r| matches!(&r.kind, ObjectKind::TableCell(c) if c.table_id == nested_id)).unwrap().rect;
+    let text: Vec<_> = page.hit_regions.iter().filter(|r| r.node_id == paragraph_id).collect();
+    assert!(!text.is_empty());
+    assert!(text.iter().all(|hit| hit.rect.intersection(bounds).is_empty()), "Text before the anchor must wrap around the positioned nested table");
+}
+
+#[test]
+fn nested_front_and_behind_tables_have_real_opposite_paint_layers() {
+    use model::{TablePosition, TableWrap, VerticalFrom};
+    use std::sync::atomic::AtomicBool;
+    for source_after_text in [false, true] {
+        let paragraph = Paragraph::plain("AV fist"); let text_id = paragraph.id.0.clone();
+        let make = |wrap| {
+            let mut inner_cell = cell(vec![Block::Paragraph(Paragraph::plain(""))]);
+            inner_cell.shading = Some("#4488CC".into());
+            let no_border = Some(model::Border { width_pt: 0.5, color: "#4488CC".into(), style: model::BorderStyle::None });
+            inner_cell.borders = Some(model::BorderSet { top: no_border.clone(), right: no_border.clone(),
+                bottom: no_border.clone(), left: no_border, ..Default::default() });
+            let mut nested = table(vec![row(vec![inner_cell])]);
+            nested.properties.position = Some(TablePosition { wrap, vertical_from: VerticalFrom::Margin, ..Default::default() });
+            nested.properties.preferred_width_mm = Some(100.0 / MM_TO_PT);
+            let mut blocks = vec![Block::Table(nested), Block::Paragraph(paragraph.clone())];
+            if source_after_text { blocks.reverse(); }
+            let mut flow = cell_table_flow::Flow::new(100.0, 100.0);
+            prepare_fragment(&blocks, 100.0, &styles(), &mut context(), &BTreeMap::new(), &fields(), Some(&mut flow)).unwrap()
+        };
+        let front = make(TableWrap::InFrontOfText); let behind = make(TableWrap::BehindText);
+        let hits = |fragment: &PreparedCellFragment| fragment.hit_regions.iter().filter(|r| r.node_id == text_id).map(|r|r.rect).collect::<Vec<_>>();
+        assert_eq!(hits(&front), hits(&behind)); assert!(!hits(&front).is_empty());
+        let layer = |fragment: &PreparedCellFragment| {
+            let text = fragment.commands.iter().position(|command|matches!(command.unclipped().0,
+                DrawCommand::TextRun(run) if run.source.as_ref().is_some_and(|s|s.node_id==text_id))).unwrap();
+            let fill = fragment.commands.iter().position(|command|matches!(command.unclipped().0,
+                DrawCommand::FillRect { paint: Paint::Solid(c), .. } if *c == Color::rgb8(68,136,204))).unwrap();
+            fill > text
+        };
+        assert!(layer(&front), "Front table must paint after text even when its source comes first");
+        assert!(!layer(&behind), "Behind table must paint before text even when its source comes last");
+        let pixels = |fragment: &PreparedCellFragment| {
+            let mut page = new_page(120.0, 120.0, false); page.commands = fragment.commands.clone();
+            output::raster::BandRenderer::default().render(&page,120,120,Affine2D::IDENTITY,&AtomicBool::new(false)).unwrap()
+        };
+        let front_pixels = pixels(&front); let back_pixels = pixels(&behind);
+        let text = hits(&front);
+        let fill_bounds = front.commands.iter().find_map(|command|match command.unclipped().0 {
+            DrawCommand::FillRect {rect,paint:Paint::Solid(c)} if *c==Color::rgb8(68,136,204)=>Some(*rect), _=>None,
+        }).unwrap();
+        let dark = |pixels: &[u8]| {
+            (0..120).flat_map(|y| (0..100).map(move |x|(x,y))).filter(|&(x,y)| {
+                (x as f32)>=fill_bounds.x&&(x as f32)<fill_bounds.max_x()&&(y as f32)>=fill_bounds.y&&(y as f32)<fill_bounds.max_y()
+                    && text.iter().any(|r|(x as f32)>=r.x&&(x as f32)<r.max_x()&&(y as f32)>=r.y&&(y as f32)<r.max_y())
+                    && { let p=&pixels[(y*120+x)*4..][..4]; p[0]<40&&p[1]<40&&p[2]<40&&p[3]>200 }
+            }).count()
+        };
+        assert_eq!(dark(&front_pixels),0,"Opaque front table must actually cover the intersecting text pixels");
+        assert!(dark(&back_pixels)>5,"Text must actually paint over the behind table");
+    }
+}
+
+#[test]
+fn nested_overlap_does_not_push_a_following_inline_table_out_of_the_way() {
+    use model::{TablePosition, TableWrap, VerticalFrom};
+    let text = Paragraph::plain("AV fist"); let text_id = text.id.0.clone();
+    let inline = table(vec![row(vec![cell(vec![Block::Paragraph(text)])])]);
+    let mut flow = cell_table_flow::Flow::new(100.0, 100.0);
+    let baseline = prepare_fragment(&[Block::Table(inline.clone())],100.0,&styles(),&mut context(),&BTreeMap::new(),&fields(),Some(&mut flow)).unwrap();
+    for wrap in [TableWrap::InFrontOfText,TableWrap::BehindText] {
+        let mut floating = table(vec![row(vec![cell(vec![Block::Paragraph(Paragraph::plain("AV"))])])]);
+        floating.properties.position = Some(TablePosition { wrap, vertical_from: VerticalFrom::Margin, ..Default::default() });
+        floating.rows[0].height_mm = Some(24.0);
+        let mut flow = cell_table_flow::Flow::new(100.0,100.0);
+        let fragment = prepare_fragment(&[Block::Table(floating),Block::Table(inline.clone())],100.0,&styles(),&mut context(),&BTreeMap::new(),&fields(),Some(&mut flow)).unwrap();
+        let rects = |f: &PreparedCellFragment|f.hit_regions.iter().filter(|r|r.node_id==text_id).map(|r|r.rect).collect::<Vec<_>>();
+        assert_eq!(rects(&fragment),rects(&baseline),"Nonwrapping floating tables must not clear following inline content");
+    }
+}
+
+#[test]
+fn changing_nested_table_layer_preserves_both_table_and_surrounding_text_exactly() {
+    use model::{TablePosition,TableTextFlow,TableWrap,TableAlignment};
+    for old_wrap in [None,Some(TableWrap::Around),Some(TableWrap::TopAndBottom)] {
+        let mut nested=table(vec![row(vec![cell(vec![Block::Paragraph(Paragraph::plain("AV fist"))])])]);
+        nested.properties.preferred_width_mm=Some(50.0/MM_TO_PT);nested.properties.alignment=Some(TableAlignment::Right);
+        nested.properties.position=old_wrap.map(|wrap|TablePosition {wrap,..Default::default()});
+        let nested_id=nested.id.clone();
+        let outer=table(vec![row(vec![cell(vec![Block::Paragraph(Paragraph::plain("AV")),Block::Table(nested.clone()),Block::Paragraph(Paragraph::plain("AV fist AV fist"))])])]);
+        let prepare=|table:&Table|{
+            let prepared=prepare_table(table,140.0,&styles(),&mut context(),&BTreeMap::new(),&fields(),false).unwrap();
+            let mut page=new_page(200.0,200.0,false);render_table_row(&mut page,&prepared.rows[0],0.0,0.0);page
+        };
+        let before=prepare(&outer);
+        for wrap in [TableWrap::InFrontOfText,TableWrap::BehindText] {
+            let mut changed=outer.clone();let Block::Table(t)=&mut changed.rows[0].cells[0].blocks[1] else {unreachable!()};
+            assert_eq!(t.id,nested_id);
+            let mut position=nested.properties.position.clone().unwrap_or_default();position.wrap=wrap;
+            position.preserved_text_flow=Some(Box::new(match &nested.properties.position {
+                None=>TableTextFlow::Inline,Some(p)=>TableTextFlow::Positioned(Box::new(p.clone())),
+            }));t.properties.position=Some(position);
+            let after=prepare(&changed);
+            assert_eq!(before.hit_regions,after.hit_regions,"{old_wrap:?} to {wrap:?} shifted text");
+            assert_eq!(before.object_regions,after.object_regions,"{old_wrap:?} to {wrap:?} shifted table");
+        }
+    }
+}

@@ -32,10 +32,13 @@ fn valid_color(value:&Option<String>,label:&str,allow_none:bool)->Result<(),Stri
 /// Colour palette for the swatch drop-downs (Word's standard colours, with the
 /// interface accent). Item labels are the names; custom colours are listed as
 /// "Custom #RRGGBB".
-pub(crate) const FONT_COLOURS:[(&str,&str);14]=[
-    ("Black","#000000"),("Dark gray","#404040"),("Gray","#7F7F7F"),("Dark blue","#1F3864"),("Blue","#2F5597"),
-    ("Accent blue","#3A68C2"),("Teal","#12877F"),("Green","#548235"),("Dark red","#C00000"),("Red","#FF0000"),
-    ("Orange","#ED7D31"),("Gold","#BF9000"),("Purple","#7030A0"),("White","#FFFFFF"),
+pub(crate) const FONT_COLOURS:[(&str,&str);24]=[
+    ("Black","#000000"),("Dark gray","#404040"),("Gray","#808080"),("Light gray","#C0C0C0"),
+    ("White","#FFFFFF"),("Dark blue","#203864"),("Blue","#2F5597"),("Accent blue","#4472C4"),
+    ("Teal","#008C88"),("Green","#548235"),("Light green","#A9D18E"),("Yellow","#FFFF00"),
+    ("Gold","#BF9000"),("Orange","#ED7D31"),("Red","#FF0000"),("Dark red","#C00000"),
+    ("Purple","#7030A0"),("Pink","#FFC0DD"),("Cyan","#9EE6F5"),("Pale blue","#BDD7EE"),
+    ("Pale teal","#B6DFD7"),("Pale green","#D5E8C1"),("Peach","#F8CBAD"),("Lavender","#D8C5E7"),
 ];
 pub(crate) const AUTOMATIC:&str="Automatic";
 /// The "no colour" entry of fill / highlight drop-downs.
@@ -56,7 +59,7 @@ fn colour_label_or(value:Option<&str>,none:&str)->String{
 }
 /// A 1-DIP-framed colour chip for the drop-down, at the window's DPI.
 /// `None` draws the Automatic chip (black) or, with `empty`, a crossed chip.
-fn colour_swatch(window:&impl WxWidget,hex:Option<&str>,empty:bool)->Option<Bitmap>{
+pub(crate) fn colour_swatch(window:&impl WxWidget,hex:Option<&str>,empty:bool)->Option<Bitmap>{
     let size=window.from_dip(Size::new(18,12));let (w,h)=(size.width.max(4) as u32,size.height.max(4) as u32);
     let frame=window.from_dip(Size::new(1,1)).width.max(1) as u32;
     let n=hex.and_then(|h|u32::from_str_radix(h.trim_start_matches('#'),16).ok());
@@ -79,40 +82,22 @@ pub(crate) fn fill_colour_list(combo:BitmapComboBox,window:&impl WxWidget,curren
     combo.append(&crate::i18n::text(none),colour_swatch(window,None,none==NO_COLOUR).as_ref());
     for (name,hex) in FONT_COLOURS{combo.append(&crate::i18n::text(name),colour_swatch(window,Some(hex),false).as_ref());}
     let label=colour_label_or(current,none);
-    if label.starts_with("Custom "){combo.append(&crate::i18n::text(&label),colour_swatch(window,current,false).as_ref());}
+    let mut custom=super::super::custom_colours::load();
+    if let Some(color)=current.filter(|_|label.starts_with("Custom ")) {
+        if !custom.iter().any(|v|v.eq_ignore_ascii_case(color)){custom.push(color.to_owned());}
+    }
+    for color in custom {
+        let name=colour_label(Some(&color));
+        if name.starts_with("Custom "){combo.append(&crate::i18n::text(&name),colour_swatch(window,Some(&color),false).as_ref());}
+    }
     combo.append(&crate::i18n::text(MORE_COLOURS),None);
     let index=(0..combo.get_count()).find(|&i|combo.get_string(i)==crate::i18n::text(&label)).unwrap_or(0);
     combo.set_selection(index as i32);
+    super::super::colour_menu::refresh_combo(combo);
 }
-/// A palette pick applies at once; "More colors…" opens the colour dialog and
-/// adds the result as a custom swatch above it (Cancel restores the previous
-/// choice). `changed` runs after every effective change.
+/// The grid edits this dialog’s private draft; Cancel keeps the document intact.
 pub(crate) fn bind_colour_list(combo:BitmapComboBox,parent:Dialog,changed:impl Fn()+'static){
-    let previous=Rc::new(Cell::new(combo.get_selection()));
-    // A Format subdialog can replace the selected colour between openings.
-    let on_open = Rc::clone(&previous);
-    combo.on_dropdown(move |_| on_open.set(combo.get_selection()));
-    combo.on_selection_changed(move |_|{
-        if crate::i18n::source(&combo.get_value())==MORE_COLOURS{
-            let start=combo.get_string(previous.get().max(0) as u32);
-            let initial=colour_value(&start).and_then(|h|u32::from_str_radix(h.trim_start_matches('#'),16).ok())
-                .map(|n|Colour::rgb((n>>16) as u8,(n>>8) as u8,n as u8)).unwrap_or(Colour::rgb(0,0,0));
-            let dialog=ColourDialog::builder(&parent).with_title(&crate::i18n::text(&("Colors"))).with_initial_colour(initial).with_choose_full(true).build();
-            let picked=(dialog.show_modal()==ID_OK).then(||dialog.get_colour()).flatten();
-            match picked{
-                Some(c)=>{
-                    let hex=format!("#{:02X}{:02X}{:02X}",c.r,c.g,c.b);let label=colour_label(Some(&hex));
-                    let existing=(0..combo.get_count()).find(|&i|combo.get_string(i)==crate::i18n::text(&label));
-                    let index=existing.unwrap_or_else(||{let at=combo.get_count().saturating_sub(1);
-                        combo.insert(&label,colour_swatch(&parent,Some(&hex),false).as_ref(),at as usize);at});
-                    combo.set_selection(index as i32);
-                }
-                None=>combo.set_selection(previous.get()),
-            }
-        }
-        previous.set(combo.get_selection());
-        changed();
-    });
+    super::super::colour_menu::bind_combo(combo, parent, changed);
 }
 /// Apply the main dialog's own controls (base, following style, font, size,
 /// colour) to `draft`, without validation: the Format dialogs and the preview
@@ -636,7 +621,12 @@ impl Ribbon{
   } else { self.edit_without_focus(|e|e.put_styles_with_selection(vec![change]))?; }
   Ok(true)
  }
- pub(crate)fn highlight_dialog(&self)->Result<(),String>{let options=["Yellow".into(),"Green".into(),"Cyan".into(),"Pink".into(),"Remove highlight (override inherited highlight)".into(),"Custom #RRGGBB…".into()];let Some(i)=self.choose_review("Text highlight","Applies to selected text or subsequent typing.",&options)else{return Ok(());};let color=if i==5{let Some(v)=self.text_review("Highlight color","#RRGGBB:","#FFFF00",false)else{return Ok(());};v}else{["#FFFF00","#B6F5A5","#A5E7FF","#FFC2E2","none"][i].into()};self.edit_formatting(|e|e.apply_character_properties(&CharacterProperties{highlight:Some(color),..Default::default()}))}
+ pub(crate) fn highlight_dialog(&self) -> Result<(), String> {
+     let button = self.ui.highlight_button;
+     colour_menu::show(self, colour_menu::Kind::Highlight, crate::gtk_native::to_screen(&button,
+         wxdragon::geometry::Point::new(0, button.get_size().height)));
+     Ok(())
+ }
  pub(crate) fn language_dialog(&self) -> Result<(), String> {
      self.show_spelling_menu();
      Ok(())

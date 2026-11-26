@@ -283,3 +283,37 @@ fn multiline_insertion_is_one_undoable_edit_with_independent_paragraph_styles() 
     e.apply_named_style(&StyleId::from(STYLE_HEADING_1),true).unwrap();
     assert_eq!(model::document_paragraphs(&e.document)[1..].iter().map(|p|(*p).clone()).collect::<Vec<_>>(),untouched);
 }
+
+#[test]
+fn cell_fill_targets_only_selected_cells_and_is_one_undo_step() {
+    let mut e = editor("Outside");
+    e.insert_table(2, 2).unwrap();
+    let table = e.table_cell_context().unwrap().table_id;
+    let ids: Vec<_> = e.table_by_id(&table).unwrap().rows.iter().flat_map(|r| &r.cells).map(|c| c.id.clone()).collect();
+    let targets = [ids[0].clone(), ids[3].clone()];
+    let before = e.document.clone(); let selection = e.selection.clone();
+    e.set_table_cell_fill(&table, &targets, "#a5e7ff").unwrap();
+    let fills: Vec<_> = e.table_by_id(&table).unwrap().rows.iter().flat_map(|r| &r.cells).map(|c| c.shading.as_deref()).collect();
+    assert_eq!(fills, [Some("#A5E7FF"), None, None, Some("#A5E7FF")]);
+    assert_eq!(e.selection, selection);
+    assert!(e.undo()); assert_eq!(e.document, before); assert!(e.redo());
+    e.set_table_cell_fill(&table, &targets, "none").unwrap();
+    assert_eq!(e.table_by_id(&table).unwrap().rows[0].cells[0].shading.as_deref(), Some("none"));
+    let before_invalid = e.document.clone();
+    assert!(e.set_table_cell_fill(&table, &[ids[1].clone(), NodeId::new()], "#FFFF00").is_err());
+    assert!(e.set_table_cell_fill(&table, &targets, "invalid").is_err());
+    assert_eq!(e.document, before_invalid);
+}
+
+#[test]
+fn table_text_colour_and_highlight_are_scoped_to_the_selected_cells() {
+    let mut e = editor(""); e.insert_table(1, 2).unwrap();
+    let table = e.table_cell_context().unwrap().table_id;
+    e.insert_text("Alpha").unwrap(); e.select_cell(&table, 0, 1).unwrap(); e.insert_text("Bravo").unwrap();
+    let target = e.table_by_id(&table).unwrap().rows[0].cells[0].id.clone();
+    let patch = CharacterProperties { color: Some("#C00000".into()), highlight: Some("#FFFF00".into()), ..Default::default() };
+    e.with_table_formatting(&table, &[target.clone()], |e| e.apply_character_properties(&patch)).unwrap();
+    assert_eq!(e.table_formatting_summary(&table, &[target]).character.color, patch.color);
+    assert_ne!(e.formatting_summary().character.color, patch.color);
+    assert_ne!(e.formatting_summary().character.highlight, patch.highlight);
+}

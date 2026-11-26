@@ -214,7 +214,7 @@
       <object class="sizeritem">
         <flag>wxEXPAND|wxLEFT|wxRIGHT</flag>
         <border>12</border>
-        <object class="wxStaticLine"/>
+        <object class="wxStaticLine" />
       </object>
       <object class="sizeritem">
         <option>0</option>
