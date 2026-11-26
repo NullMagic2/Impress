@@ -54,7 +54,7 @@ pub(super) fn show(ribbon: &Ribbon) -> Result<(), String> {
         .with_range(0.1, 100.0)
         .with_initial_value(f64::from(load()))
         .with_increment(0.5)
-        .with_size(Size::new(dip(100), -1))
+        .with_size(Size::new(dip(152), -1))
         .build();
     step.set_digits(1);
     step.set_name(&crate::i18n::text("Default indent step:"));
