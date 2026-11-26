@@ -19,3 +19,19 @@ Empty-line layout and caret metrics use the retained size. Native files retain
 the empty run; DOCX writes its properties as the standard paragraph mark
 w:pPr/w:rPr and restores them on import. No visible placeholder character is
 inserted into the document.
+
+## Indent buttons
+
+Choose **Layout → Paragraph → the small corner launcher** to change **Default
+indent step**. Impress remembers the value for future documents and sessions;
+the default is 5 mm. The Home ribbon's Increase/Decrease Indent buttons use
+that distance. Existing paragraphs change only when an indent button is used.
+
+Selected paragraphs keep their relative indentation and first-line/hanging
+indents. Lists change one nesting level while moving by the chosen step, and
+mixed selections handle list items and ordinary paragraphs together in one
+undoable action. At the left margin, a group moves only as far as its least
+indented paragraph, preserving the spacing between its nesting levels.
+
+For exact paragraph indents, use the left/right fields in **Layout → Paragraph**
+or the ruler markers. Style defaults are under **Modify Style → Format → Paragraph**.

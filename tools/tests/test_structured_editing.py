@@ -37,7 +37,7 @@ class StructuredEditing(unittest.TestCase):
 
     def test_lists_promote_and_demote_with_indent(self):
         self.assertIn('pub fn adjust_list_level', EDITOR)
-        self.assertIn('current_list_level().is_some()', RIBBON)
+        self.assertIn('e.adjust_indent(direction.signum() * step)', RIBBON)
 
     def test_section_breaks_are_semantic_and_undoable(self):
         self.assertIn('pub fn insert_section_break', EDITOR)

@@ -5,6 +5,7 @@
 //! deterministic. File-format adapters never participate in layout.
 
 mod scheduler;
+mod review_projection;
 mod display_recovery;
 mod preparation_cache;
 mod incremental;

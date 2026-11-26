@@ -121,6 +121,7 @@ impl OriginalPreview {
                         1,
                         document.clone(),
                         page..page + render::PAGE_WINDOW_SIZE,
+                        false,
                     );
                     OriginalLayout {
                         document,

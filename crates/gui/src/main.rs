@@ -260,7 +260,7 @@ fn main() {
                 return;
             }
         };
-        scheduler.submit_for_display(editor.revision, Arc::new(editor.document.clone()), 0..render::PAGE_WINDOW_SIZE);
+        scheduler.submit_for_display(editor.revision, Arc::new(editor.document.clone()), 0..render::PAGE_WINDOW_SIZE, true);
 
         let client = ui.paper_canvas.get_client_size();
         let mut viewport = ViewportState::default();
@@ -1136,7 +1136,7 @@ fn display_page_window(viewport: &ViewportState, document: &VectorDocument) -> s
 
 fn queue_display_layout(state: &mut CanvasState, pages: std::ops::Range<usize>) {
     let snapshot = document_snapshot(state);
-    state.scheduler.submit_for_display(state.layout_generation, snapshot, pages);
+    state.scheduler.submit_for_display(state.layout_generation, snapshot, pages, state.revisions.shows_inline_deletions());
     state.layout_inflight = Some(state.layout_generation);
 }
 

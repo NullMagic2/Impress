@@ -210,6 +210,55 @@ impl EditorState {
         Ok(())
     }
 
+    /// Indent a mixed selection in one transaction. Ordinary paragraphs move
+    /// together; semantic lists change level without altering list definitions.
+    pub fn adjust_indent(&mut self, delta_mm: f32) -> Result<(), String> {
+        if !delta_mm.is_finite() { return Err("Invalid indent.".into()); }
+        let before_selection = self.selection.clone();
+        let mut entries = Vec::new();
+        let mut distance = delta_mm;
+        let mut level_delta: i16 = if delta_mm > 0.0 { 1 } else if delta_mm < 0.0 { -1 } else { 0 };
+        for id in self.selected_paragraph_ids() {
+            let before = self.paragraph(&id).cloned().ok_or("paragraph not found")?;
+            let properties = self.document.styles.resolve_paragraph_with_direct(before.style.as_ref(), &before.properties);
+            if properties.list_id.is_some() {
+                let level = i16::from(properties.list_level.unwrap_or(0).min(8));
+                level_delta = level_delta.clamp(-level, 8 - level);
+            } else {
+                let si = self.section_index_for_paragraph(&id).ok_or("section not found")?;
+                let section = &self.document.sections[si].properties;
+                let current = properties.left_indent_mm.unwrap_or(0.0);
+                let maximum = (section.text_width_mm() - properties.right_indent_mm.unwrap_or(0.0) - 10.0).max(current).max(0.0);
+                distance = distance.clamp(-current.max(0.0), maximum - current);
+            }
+            entries.push((id, before, properties));
+        }
+        let mut mutations = Vec::new();
+        for (id, before, properties) in entries {
+            let mut after = before.clone();
+            if let Some(list) = properties.list_id {
+                if level_delta == 0 { continue; }
+                let current_level = properties.list_level.unwrap_or(0).min(8);
+                let definition = self.document.styles.list_definition(&self.document.lists, &list);
+                let level = definition.and_then(|d| d.levels.iter().find(|l| l.level == current_level));
+                let left = properties.left_indent_mm.unwrap_or_else(|| level.map_or(6.35, |l| l.left_indent_mm));
+                after.properties.left_indent_mm = Some((left + delta_mm.abs() * f32::from(level_delta)).max(0.0));
+                if properties.first_line_indent_mm.is_none() {
+                    after.properties.first_line_indent_mm = Some(-level.map_or(3.18, |l| l.hanging_indent_mm));
+                }
+                after.properties.list_id = Some(list);
+                after.properties.list_level = Some((i16::from(current_level) + level_delta) as u8);
+            } else {
+                if distance.abs() < f32::EPSILON { continue; }
+                after.properties.left_indent_mm = Some(properties.left_indent_mm.unwrap_or(0.0) + distance);
+            }
+            self.replace_paragraph(&after)?;
+            mutations.push(Mutation::ParagraphChanged { id, before, after });
+        }
+        self.commit("Paragraph indent", mutations, before_selection, None)?;
+        Ok(())
+    }
+
     /// Effective formatting of the focused paragraph, including its style.
     pub fn paragraph_properties_at_caret(&self) -> Option<ParagraphProperties> {
         let position = self.focus_position()?;
@@ -335,9 +384,10 @@ impl EditorState {
                 ListFormat::LowerRoman => "%1.".to_string(),
                 ListFormat::UpperRoman => "%1.".to_string(),
             };
-            let definition = ListDefinition { id: id.clone(), levels: vec![ListLevel {
-                level: 0, format, text, start_at: 1, left_indent_mm: 6.35, hanging_indent_mm: 3.18,
-            }]};
+            let definition = ListDefinition { id: id.clone(), levels: (0..9).map(|level| ListLevel {
+                level, format, text: text.replace("%1", &format!("%{}", level + 1)), start_at: 1,
+                left_indent_mm: 6.35 + f32::from(level) * 5.0, hanging_indent_mm: 3.18,
+            }).collect() };
             self.document.lists.insert(id.clone(), definition.clone());
             mutations.push(Mutation::ListInserted { id: id.clone(), definition });
             Some(id)

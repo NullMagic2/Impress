@@ -151,7 +151,7 @@ impl PagePreview {
         if loader.requested != Some(current) {
             loader.requested = Some(current);
             loader.generation = loader.generation.wrapping_add(1);
-            loader.scheduler.submit_preview(loader.generation, Arc::clone(&loader.source), current..current + 1);
+            loader.scheduler.submit_preview(loader.generation, Arc::clone(&loader.source), current..current + 1, false);
             loader.timer.start(30, false);
         }
         None

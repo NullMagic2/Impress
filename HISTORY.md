@@ -1,5 +1,10 @@
 ## 0.8.7
 
+- The indent controls use a remembered, configurable step under Layout → Paragraph settings and preserve relative nesting in mixed selections.
+
+- Render pending deleted text inline with strikethrough in All Markup, with normal paragraph and table-cell wrapping; remove the deletion sidebar and its code entirely.
+- Keep Simple Markup on final-text geometry with changed-line bars, including selected tables and soft-wrap/page boundaries. Map visible revision text back to live editing offsets without modifying saved content.
+
 - Keep body clicks and word selection out of header/footer text, including empty space beside tables and across zoom levels.
 
 - Remove the Move table menu command and its dialog implementation; retain direct table dragging.

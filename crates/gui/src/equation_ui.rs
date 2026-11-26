@@ -113,7 +113,7 @@ pub fn poll_preview(state: &mut CanvasState) {
     let generation = state.layout_generation;
     draft.preview_generation = Some(generation);
     let pages = display_page_window(&state.viewport, &state.vector_document);
-    state.scheduler.submit_preview(generation, Arc::new(preview.document), pages);
+    state.scheduler.submit_preview(generation, Arc::new(preview.document), pages, state.revisions.shows_inline_deletions());
     state.layout_inflight = Some(generation);
     state.typing_layout_pending = false;
 }

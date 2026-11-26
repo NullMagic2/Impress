@@ -4763,6 +4763,12 @@
     "Padrão",
     "Predefinido"
   ],
+  "Default indent step:": [
+    "Προεπιλεγμένο βήμα εσοχής:",
+    "Incremento de sangría predeterminado:",
+    "Incremento padrão do recuo:",
+    "Incremento predefinido do avanço:"
+  ],
   "Default tab stops": [
     "Προεπιλεγμένοι στηλοθέτες",
     "Tabulaciones predeterminadas",
@@ -12220,6 +12226,12 @@
     "Párrafo no encontrado",
     "Parágrafo não encontrado",
     "O ponto não foi encontrado"
+  ],
+  "Paragraph settings": [
+    "Ρυθμίσεις παραγράφου",
+    "Configuración de párrafo",
+    "Configurações de parágrafo",
+    "Definições de parágrafo"
   ],
   "Paragraph spacing must be between 0 and 1000 points.": [
     "Το διάστημα παραγράφων πρέπει να είναι μεταξύ 0 και 1000 στιγμών.",

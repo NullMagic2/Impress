@@ -82,7 +82,6 @@ struct Mark {
     range: AnchorRange,
     category: Category,
     deletion: bool,
-    removed: Option<String>,
 }
 
 struct Entry {
@@ -113,9 +112,9 @@ pub(crate) struct ReviewView {
     revision: Option<u64>,
     epoch: u64,
     order: HashMap<NodeId, usize>,
+    lengths: HashMap<String, usize>,
     entries: Vec<Entry>,
     markers: HashMap<String, Vec<(std::ops::Range<usize>, Category, bool)>>,
-    removed_text: HashMap<String, Vec<(usize, String)>>,
     history_marks: HashMap<NodeId, (model::RevisionPayload, Option<Vec<JournalMark>>)>,
     active: Option<ActiveChange>,
     markup: Markup,
@@ -129,9 +128,9 @@ impl Default for ReviewView {
             revision: None,
             epoch: 0,
             order: HashMap::new(),
+            lengths: HashMap::new(),
             entries: Vec::new(),
             markers: HashMap::new(),
-            removed_text: HashMap::new(),
             history_marks: HashMap::new(),
             active: None,
             markup: Markup::All,
@@ -157,7 +156,6 @@ fn paragraph_mark(id: &NodeId, category: Category, deletion: bool) -> Mark {
         range: point(id, 0),
         category,
         deletion,
-        removed: None,
     }
 }
 
@@ -202,7 +200,6 @@ fn word_mark(effect: &RevisionEffect, document: &Document) -> Option<Mark> {
         RevisionEffect::Inline {
             range,
             change,
-            before,
             ..
         } => Mark {
             range: range.clone(),
@@ -215,12 +212,6 @@ fn word_mark(effect: &RevisionEffect, document: &Document) -> Option<Mark> {
                 change,
                 InlineRevisionKind::Deletion | InlineRevisionKind::MoveFrom
             ),
-            removed: matches!(
-                change,
-                InlineRevisionKind::Deletion | InlineRevisionKind::MoveFrom
-            )
-            .then(|| removed_preview(&model::inline_text(before)))
-            .flatten(),
         },
         RevisionEffect::ParagraphProperties { paragraph, .. } => {
             paragraph_mark(paragraph, Category::Formatting, false)
@@ -229,7 +220,6 @@ fn word_mark(effect: &RevisionEffect, document: &Document) -> Option<Mark> {
             range: point(&anchor.paragraph, anchor.offset),
             category: Category::Structure,
             deletion: false,
-            removed: None,
         },
         RevisionEffect::SectionProperties { section, .. } => {
             let section = document.sections.iter().find(|item| &item.id == section)?;
@@ -337,17 +327,14 @@ fn text_mark(id: &NodeId, before: &str, after: &str) -> Mark {
         },
         category: Category::Text,
         deletion: end == prefix,
-        removed: removed_preview(&before[prefix..before.len() - suffix]),
     }
 }
 
-fn removed_preview(text: &str) -> Option<String> {
-    let ink = text.split_whitespace().collect::<Vec<_>>().join(" ");
-    let ink = excerpt(ink);
-    (!ink.is_empty()).then_some(ink)
-}
-
 impl ReviewView {
+    pub(crate) fn shows_inline_deletions(&self) -> bool {
+        self.markup == Markup::All && self.hidden & Category::Text.bit() == 0
+    }
+
     pub(super) fn is_original(&self) -> bool {
         self.markup == Markup::Original
     }
@@ -366,8 +353,8 @@ impl ReviewView {
         self.epoch = epoch;
         self.entries.clear();
         self.markers.clear();
-        self.removed_text.clear();
         self.order.clear();
+        self.lengths.clear();
         let document = &editor.document;
         let review = &document.review;
         if review.tracked_changes.is_empty()
@@ -378,6 +365,9 @@ impl ReviewView {
             return;
         }
         let paragraphs = model::document_paragraphs(document);
+        self.lengths = paragraphs.iter().map(|paragraph| (
+            paragraph.id.0.clone(), paragraph.content.iter().map(model::inline_flat_len).sum(),
+        )).collect();
         let lookup: HashMap<_, _> = paragraphs
             .iter()
             .enumerate()
@@ -485,13 +475,6 @@ impl ReviewView {
                 .ranges
                 .sort_by_key(|mark| (lookup[&mark.range.start.paragraph], mark.range.start.offset));
             for mark in &entry.ranges {
-                if let Some(removed) = &mark.removed {
-                    let start = &mark.range.start;
-                    self.removed_text
-                        .entry(start.paragraph.0.clone())
-                        .or_default()
-                        .push((start.offset, removed.clone()));
-                }
                 let first = lookup[&mark.range.start.paragraph];
                 let last = lookup[&mark.range.end.paragraph];
                 for (index, paragraph) in (first..=last).zip(&paragraphs[first..=last]) {
@@ -653,9 +636,13 @@ pub(crate) fn adorn(
                 if view.hidden & category.bit() != 0 {
                     continue;
                 }
+                // Deleted runs are already shaped and struck through in the
+                // All Markup flow. Only Simple Markup needs their anchor bars.
+                if mode == Markup::All && *category == Category::Text && *deletion {
+                    continue;
+                }
                 let marker = if range.is_empty() {
-                    (hit.byte_range.contains(&range.start)
-                        || hit.caret_stops.iter().any(|p| p.byte_offset == range.start))
+                    point_on_line(hit, range.start, view.lengths[&hit.node_id])
                     .then(|| render::OverlayRect {
                         page_index,
                         rect: hit.inline_rect(hit.coordinate_for_offset(range.start), 2.0),
@@ -716,6 +703,13 @@ fn matches_painted_document(state: &CanvasState) -> bool {
         && state.revisions.epoch == state.documents.epoch
 }
 
+// At a soft-wrap/page boundary the insertion point belongs to the following
+// line. Only an actual paragraph end falls back to its last caret stop.
+fn point_on_line(hit: &render::TextHitRegion, offset: usize, length: usize) -> bool {
+    hit.byte_range.contains(&offset) || (offset == length
+        && hit.caret_stops.iter().any(|stop| stop.byte_offset == offset))
+}
+
 /// Find room outside the table controls. When zoom or horizontal scrolling
 /// leaves no room on the left, try the other side of the same controls.
 fn margin_bar(
@@ -760,88 +754,6 @@ fn margin_bar(
         x: right.min(limit),
         ..bar
     }
-}
-
-pub(super) fn shows_deletions(state: &CanvasState) -> bool {
-    let view = &state.revisions;
-    view.markup == Markup::All
-        && view.hidden & Category::Text.bit() == 0
-        && !view.removed_text.is_empty()
-}
-
-/// Resolve deleted runs to the visual rows of the live document. On a
-/// wrapped boundary prefer the run beginning at the deletion's anchor.
-pub(super) fn deletion_rows(state: &CanvasState) -> Vec<(i32, String)> {
-    if !shows_deletions(state) || !matches_painted_document(state) {
-        return Vec::new();
-    }
-    let document = &state.vector_document;
-    let k = state.pixel_scale.max(1.0);
-    let scale = state.viewport.points_to_pixels();
-    let mut entries = Vec::new();
-    for (index, page_rect) in state
-        .viewport
-        .page_rects_px(document)
-        .into_iter()
-        .enumerate()
-    {
-        if page_rect.max_y() <= 0.0 || page_rect.y >= state.viewport.viewport_px.height {
-            continue;
-        }
-        let page = &document.pages[index];
-        let mut anchors: HashMap<(&str, usize), (bool, f32, f32)> = HashMap::new();
-        for hit in &page.hit_regions {
-            let Some(removed) = state.revisions.removed_text.get(&hit.node_id) else {
-                continue;
-            };
-            for (offset, _) in removed {
-                let begins_here = hit.byte_range.contains(offset);
-                if !begins_here
-                    && !hit
-                        .caret_stops
-                        .iter()
-                        .any(|stop| stop.byte_offset == *offset)
-                {
-                    continue;
-                }
-                let coordinate = hit.coordinate_for_offset(*offset);
-                let (x, y) = if hit.vertical {
-                    (hit.rect.x, coordinate)
-                } else {
-                    (coordinate, hit.rect.y + hit.rect.height * 0.5)
-                };
-                let entry =
-                    anchors
-                        .entry((hit.node_id.as_str(), *offset))
-                        .or_insert((begins_here, x, y));
-                if begins_here && !entry.0 {
-                    *entry = (true, x, y);
-                }
-            }
-        }
-        for ((id, offset), (_, x, y)) in anchors {
-            let y = (page_rect.y + y * scale) / k;
-            if y < 0.0 || y >= state.viewport.viewport_px.height / k {
-                continue;
-            }
-            for (_, text) in state.revisions.removed_text[id]
-                .iter()
-                .filter(|(at, _)| *at == offset)
-            {
-                entries.push((y.round() as i32, x, id, offset, text.clone()));
-            }
-        }
-    }
-    entries.sort_by(|a, b| {
-        a.0.cmp(&b.0)
-            .then_with(|| a.1.total_cmp(&b.1))
-            .then(a.2.cmp(b.2))
-            .then(a.3.cmp(&b.3))
-    });
-    entries
-        .into_iter()
-        .map(|(y, _, _, _, text)| (y, text))
-        .collect()
 }
 
 #[derive(Default)]
@@ -948,15 +860,18 @@ impl Ribbon {
     fn repaint_revision_marks(&self) {
         self.state.borrow_mut().needs_present = true;
         self.ui.paper_canvas.refresh(false, None);
-        self.sync_revision_gutter();
     }
 
     fn set_markup_mode(&self, mode: Markup) {
         {
             let mut state = self.state.borrow_mut();
+            let old_inline = state.revisions.shows_inline_deletions();
             state.revisions.markup = mode;
             if mode != Markup::Original {
                 state.revisions.editable_markup = mode;
+            }
+            if old_inline != state.revisions.shows_inline_deletions() {
+                crate::submit_layout(&mut state);
             }
         }
         self.sync_original_preview();
@@ -964,7 +879,12 @@ impl Ribbon {
     }
 
     pub(super) fn close_original(&self) {
-        self.state.borrow_mut().revisions.leave_original();
+        {
+            let mut state = self.state.borrow_mut();
+            let old_inline = state.revisions.shows_inline_deletions();
+            state.revisions.leave_original();
+            if old_inline != state.revisions.shows_inline_deletions() { crate::submit_layout(&mut state); }
+        }
         self.sync_original_preview();
         self.sync_revision_controls();
     }
@@ -982,7 +902,11 @@ impl Ribbon {
         let Some((category, _)) = Category::MENU.get(id.wrapping_sub(MARKUP_FIRST) as usize) else {
             return false;
         };
-        self.state.borrow_mut().revisions.hidden ^= category.bit();
+        {
+            let mut state = self.state.borrow_mut();
+            state.revisions.hidden ^= category.bit();
+            if *category == Category::Text { crate::submit_layout(&mut state); }
+        }
         self.repaint_revision_marks();
         true
     }
@@ -1064,7 +988,6 @@ impl Ribbon {
             state.needs_present = true;
         }
         drop(state);
-        self.sync_revision_gutter();
         let button = self.ui.markup_display_button;
         let label = Markup::MODES[mode as usize].1;
         let painted = skin::caption(&button, label);
@@ -1259,6 +1182,21 @@ mod tests {
     use model::{Inline, Paragraph, TextRun, TrackedChange};
 
     #[test]
+    fn simple_markup_does_not_mark_the_line_before_a_soft_wrap_or_page_break() {
+        let line = |range: std::ops::Range<usize>| render::TextHitRegion {
+            node_id: "paragraph".into(), visual_line: 0,
+            caret_stops: vec![render::CaretStop { byte_offset: range.end, x_pt: 30.0 }],
+            byte_range: range, rect: render::Rect::new(0.0, 0.0, 30.0, 12.0), vertical: false,
+        };
+        let first = line(0..5);
+        let second = line(5..10);
+        assert!(!point_on_line(&first, 5, 10));
+        assert!(point_on_line(&second, 5, 10));
+        assert!(point_on_line(&second, 10, 10));
+        assert!(point_on_line(&line(0..0), 0, 0));
+    }
+
+    #[test]
     fn simple_markup_stays_clear_of_selected_table_handles() {
         let bar = render::Rect::new(20.0, 30.0, 3.0, 13.0);
         let selected_row_handle = render::Rect::new(19.0, 32.0, 7.0, 10.0);
@@ -1428,6 +1366,5 @@ mod tests {
         assert!(mark.deletion);
         assert_eq!(mark.range.start.offset, "α".len());
         assert_eq!(mark.range.start, mark.range.end);
-        assert_eq!(mark.removed.as_deref(), Some("β"));
     }
 }

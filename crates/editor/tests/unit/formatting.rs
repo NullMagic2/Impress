@@ -317,3 +317,48 @@ fn table_text_colour_and_highlight_are_scoped_to_the_selected_cells() {
     assert_ne!(e.formatting_summary().character.color, patch.color);
     assert_ne!(e.formatting_summary().character.highlight, patch.highlight);
 }
+
+#[test]
+fn configured_indent_preserves_nesting_hanging_and_undo_for_mixed_selection() {
+    let mut document = Document::default();
+    let mut paragraphs: Vec<_> = [2.0, 7.0, 12.0].iter().map(|left| {
+        let mut p = Paragraph::plain("nested");
+        p.properties.left_indent_mm = Some(*left);
+        p.properties.first_line_indent_mm = Some(-2.0);
+        p
+    }).collect();
+    let mut e = editor("list"); e.toggle_list(ListFormat::Bullet).unwrap();
+    let list_id = e.focus_position().unwrap().node_id;
+    let list = e.paragraph(&list_id).unwrap().clone();
+    document.lists = e.document.lists.clone();
+    paragraphs.push(list);
+    let ids: Vec<_> = paragraphs.iter().map(|p| p.id.clone()).collect();
+    document.sections[0].blocks = paragraphs.into_iter().map(Block::Paragraph).collect();
+    let mut e = EditorState::new(document);
+    e.set_caret(ids[0].clone(), 0); e.extend_selection(ids[3].clone(), 4);
+    let before = e.document.clone(); let selection = e.selection.clone();
+    e.adjust_indent(7.5).unwrap();
+    for (id, left) in ids.iter().take(3).zip([9.5, 14.5, 19.5]) {
+        let p = e.paragraph(id).unwrap();
+        assert_eq!(p.properties.left_indent_mm, Some(left));
+        assert_eq!(p.properties.first_line_indent_mm, Some(-2.0));
+    }
+    let p = e.paragraph(&ids[3]).unwrap();
+    assert_eq!(p.properties.list_level, Some(1));
+    assert_eq!(p.properties.left_indent_mm, Some(13.85));
+    assert_eq!(e.selection, selection);
+    assert!(e.undo()); assert_eq!(e.document, before);
+    assert!(e.redo()); assert_eq!(e.paragraph(&ids[0]).unwrap().properties.left_indent_mm, Some(9.5));
+}
+#[test]
+fn outdent_at_margin_preserves_relative_indentation() {
+    let mut document = Document::default();
+    let mut a = Paragraph::plain("parent"); a.properties.left_indent_mm = Some(2.0);
+    let mut b = Paragraph::plain("child"); b.properties.left_indent_mm = Some(7.0);
+    let (aid, bid) = (a.id.clone(), b.id.clone());
+    document.sections[0].blocks = vec![Block::Paragraph(a), Block::Paragraph(b)].into();
+    let mut e = EditorState::new(document); e.set_caret(aid.clone(), 0); e.extend_selection(bid.clone(), 5);
+    e.adjust_indent(-5.0).unwrap();
+    assert_eq!(e.paragraph(&aid).unwrap().properties.left_indent_mm, Some(0.0));
+    assert_eq!(e.paragraph(&bid).unwrap().properties.left_indent_mm, Some(5.0));
+}

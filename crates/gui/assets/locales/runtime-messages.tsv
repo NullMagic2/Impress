@@ -241,3 +241,6 @@ Text can overlap table	Το κείμενο μπορεί να επικαλύπτ�
 DOC text-overlap table wrapping exports as text around the table.	Στο DOC, η επικάλυψη κειμένου και πίνακα εξάγεται ως αναδίπλωση γύρω από τον πίνακα.	En DOC, la superposición de texto y tabla se exporta como ajuste alrededor de la tabla.	No DOC, a sobreposição de texto e tabela é exportada como texto ao redor da tabela.	Em DOC, a sobreposição de texto e tabela é exportada como texto em redor da tabela.
 Free position — release to place the table here (Shift: sideways only)	Ελεύθερη θέση — αφήστε το κουμπί για τοποθέτηση του πίνακα εδώ (Shift: μόνο οριζόντια)	Posición libre — suelte para colocar la tabla aquí (Mayús: solo horizontalmente)	Posição livre — solte para colocar a tabela aqui (Shift: somente na horizontal)	Posição livre — solte para colocar a tabela aqui (Shift: apenas na horizontal)
 Destination	Προορισμός	Destino	Destino	Destino
+
+Paragraph settings	Ρυθμίσεις παραγράφου	Configuración de párrafo	Configurações de parágrafo	Definições de parágrafo
+Default indent step:	Προεπιλεγμένο βήμα εσοχής:	Incremento de sangría predeterminado:	Incremento padrão do recuo:	Incremento predefinido do avanço:

@@ -195,8 +195,8 @@ joined(rr,[dict(name='bullets_button',label_='Bullets',icon='bullets',action='Bu
 space(rr,3)
 joined(rr,[dict(name='align_'+name+'_button',label_=title,icon='align_'+name,action='Align(ParagraphAlignment::'+title+')',kind='icon',tip='Align '+name) for name,title in [('left','Left'),('center','Center'),('right','Right'),('justify','Justify')]])
 space(rr,3)
-joined(rr,[dict(name='outdent_button',label_='Decrease indent',icon='outdent',action='Indent(-5.0)',kind='icon'),
-    dict(name='indent_button',label_='Increase indent',icon='indent',action='Indent(5.0)',kind='icon')])
+joined(rr,[dict(name='outdent_button',label_='Decrease indent',icon='outdent',action='Indent(-1.0)',kind='icon'),
+    dict(name='indent_button',label_='Increase indent',icon='indent',action='Indent(1.0)',kind='icon')])
 rr=row(v)
 joined(rr,[dict(name=n,label_=l,icon=i,action='Direction(ParagraphDirection::'+a+')',kind='icon') for n,l,i,a in [
     ('auto_direction_button','Auto direction','auto_direction','Auto'),('ltr_button','Left to right','ltr','LeftToRight'),('rtl_button','Right to left','rtl','RightToLeft')]])
@@ -347,8 +347,6 @@ vertical_ruler=obj(item(canvas_row,0,'wxEXPAND'),'wxPanel','vertical_ruler',bg='
 size(vertical_ruler,'vertical_ruler',34,-1)
 cv=obj(item(canvas_row,1),'wxPanel','paper_canvas',bg=COLORS['canvas'],style='wxWANTS_CHARS|wxCLIP_CHILDREN')
 obj(item(canvas_row),'wxScrollBar','vertical_scroll',style='wxSB_VERTICAL',value='0',thumbsize='100',range='100',pagesize='100')
-gutter=obj(item(canvas_row),'wxPanel','revision_gutter_panel',bg=COLORS['workspace'],hidden='1')
-size(gutter,'revision_gutter_panel',220,-1)
 obj(item(cf),'wxScrollBar','horizontal_scroll',style='wxSB_HORIZONTAL',value='0',thumbsize='100',range='100',pagesize='100')
 # Original is a read-only page preview in the same workspace.
 original,original_box=panel(workrow,'original_panel','wxVERTICAL',option=1,bg=COLORS['workspace'])
@@ -523,7 +521,7 @@ for index,n in enumerate(GROUPS):
     caption=next(node for node in r.iter('object') if node.get('name')==f'{n}_caption')
     title=next(label.text or '' for label in caption.iter('label'))
     # Word-style dialog launcher in the corner of groups that open a pane.
-    launcher=str((page,title) in {('home','Styles'),('references','Footnotes')}).lower()
+    launcher=str((page,title) in {('home','Styles'),('references','Footnotes'),('layout','Paragraph')}).lower()
     caption_metrics.append((n,title,launcher))
     lines.append(f'    super::group_relief::install_caption(ui.{n}_caption, {rs(title)}, {str(first).lower()}, {str(last).lower()}, {launcher});')
 lines+=['}', '', 'pub fn layout_groups(ui: &MainUi) {']

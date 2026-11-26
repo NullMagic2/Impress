@@ -2,6 +2,7 @@
 //! this module owns commands, native widgets, UI state and embedded icon images.
 mod interface_language;
 mod zoom_dialog;
+mod indent_settings;
 mod dialog_actions;
 mod document_info;
 mod input_dialog;
@@ -54,7 +55,6 @@ mod custom_colours;
 mod review_ui;
 mod original_review;
 pub(crate) mod revision_tools;
-mod revision_gutter;
 mod spelling_menu;
 mod spelling_dialog;
 mod dictionary_install_ui;
@@ -139,7 +139,7 @@ enum Action {
     ReviewDisplay, ReviewMarkup, ReviewOriginalClose, ReviewPane, RevisionResolve(bool), RevisionStep(bool),
     EquationClose,
     SelectCells(u8), Table(crate::table_ui::TableOp), TablePosition, CloseTableTools, PictureAlign(u8), PictureDelete, ClosePictureTools, HeaderVariant(u8), HeaderFooterGo(bool), InsertField(u8), RemoveHeaderFooter, InsertNote(bool), NextFootnote(bool), ShowNotes, ExitHeaderFooter, ToggleRibbon, Help, CitationManager, SelectRibbonTab(u8), Brand, Unavailable,
-    GrowFont, ShrinkFont, FontColor, Typography, Align(ParagraphAlignment), Indent(f32),
+    GrowFont, ShrinkFont, FontColor, Typography, Align(ParagraphAlignment), Indent(f32), IndentSettings,
     Direction(ParagraphDirection), Symbol, PageBreak, ColumnBreak, SectionBreak, Landscape(bool),
     Bullets, Numbering, InsertTable, InsertImage, PageNumber, HeaderFooter(bool), Columns,
     ShowNavigation, Find, WordCount, View(ViewMode), FitWidth, FitPage, Zoom100, ZoomDialog,
@@ -280,7 +280,6 @@ pub struct Ribbon {
     picture_bar: RefCell<Option<Rc<picture_bar::PictureBar>>>,
     spell_job: RefCell<Option<review_ui::SpellJob>>,
     review_pane: RefCell<revision_tools::PaneView>,
-    revision_gutter: revision_gutter::Gutter,
     original_preview: RefCell<Option<original_review::OriginalPreview>>,
     original_reader: Rc<output_dialogs::PagePreview>,
     spelling_languages: RefCell<Vec<String>>,
@@ -309,7 +308,6 @@ impl Ribbon {
         ui.styles_resize_handle.hide();
         ui.styles_panel.hide();
         ui.review_panel.hide();
-        ui.revision_gutter_panel.hide();
         ui.original_panel.hide();
         ui.root_panel.layout();
         ui.main_frame.layout();
@@ -329,7 +327,7 @@ impl Ribbon {
             last_status: RefCell::new(String::new()), last_title: RefCell::new(String::new()),
             word_count: RefCell::default(), last_scroll: Cell::new(None), navigation: RefCell::new(Vec::new()), navigation_revision: Cell::new(None),
             search_options: Cell::new(Default::default()), search_report: RefCell::new(None), search_job: RefCell::new(None), search_due: Cell::new(Instant::now()), search_cursor: Cell::new(None),
-            last_context: RefCell::new(None), context_key: RefCell::new(None), label_text: RefCell::new(HashMap::new()), equation: RefCell::new(None), comments: RefCell::new(None), style_gallery: RefCell::new(None), style_context: RefCell::new(None), tab_strip: RefCell::new(None), tab_ruler: RefCell::new(None), recent_paths: RefCell::new(Vec::new()), recent_settings_open: Rc::new(Cell::new(false)), table_bar: RefCell::new(None), picture_bar: RefCell::new(None), spell_job: RefCell::new(None), review_pane: RefCell::default(), revision_gutter: revision_gutter::Gutter::default(), original_preview: RefCell::default(), original_reader, spelling_languages: RefCell::new(Vec::new()), output_progress: RefCell::new(None), dictionary_install: RefCell::new(None), dictionary_manager: RefCell::new(None), spelling_context: RefCell::new(None), table_context_menu: RefCell::new(None),
+            last_context: RefCell::new(None), context_key: RefCell::new(None), label_text: RefCell::new(HashMap::new()), equation: RefCell::new(None), comments: RefCell::new(None), style_gallery: RefCell::new(None), style_context: RefCell::new(None), tab_strip: RefCell::new(None), tab_ruler: RefCell::new(None), recent_paths: RefCell::new(Vec::new()), recent_settings_open: Rc::new(Cell::new(false)), table_bar: RefCell::new(None), picture_bar: RefCell::new(None), spell_job: RefCell::new(None), review_pane: RefCell::default(), original_preview: RefCell::default(), original_reader, spelling_languages: RefCell::new(Vec::new()), output_progress: RefCell::new(None), dictionary_install: RefCell::new(None), dictionary_manager: RefCell::new(None), spelling_context: RefCell::new(None), table_context_menu: RefCell::new(None),
             source_revision: Cell::new(None), source_job: RefCell::new(None), source_copy_pending: Cell::new(false),
         });
         generated::install_group_relief(&this.ui);
@@ -342,7 +340,6 @@ impl Ribbon {
         this.bind();
         content_controls::bind(&this);
         revision_tools::bind(&this);
-        revision_gutter::bind(&this);
         this.style_gallery.replace(Some(style_gallery::install(&this)));
         this.tab_strip.replace(Some(tab_strip::install(&this)));
         interface_language::install(&this);
@@ -484,6 +481,7 @@ impl Ribbon {
         for (caption, tip, action) in [
             (self.ui.home_styles_3_group_caption, "Styles pane (F11)", Action::StyleManager),
             (self.ui.references_footnotes_1_group_caption, "Footnotes and endnotes", Action::Footnotes),
+            (self.ui.layout_paragraph_2_group_caption, "Paragraph settings", Action::IndentSettings),
         ] {
             caption.set_tooltip(&crate::i18n::text(&(tip)));
             let weak = Rc::downgrade(self);
@@ -648,11 +646,11 @@ impl Ribbon {
             }
             Action::Align(alignment) => self.edit_formatting(|e| e.apply_paragraph_properties(&ParagraphProperties { alignment: Some(alignment), ..Default::default() }))?,
             Action::Direction(direction) => self.edit_formatting(|e| e.apply_paragraph_properties(&ParagraphProperties { direction: Some(direction), ..Default::default() }))?,
-            Action::Indent(delta) => self.edit_formatting(|e| {
-                if e.current_list_level().is_some() {
-                    e.adjust_list_level(if delta > 0.0 { 1 } else { -1 })
-                } else { e.adjust_left_indent(delta) }
-            })?,
+            Action::Indent(direction) => {
+                let step = indent_settings::load();
+                self.edit_formatting(|e| e.adjust_indent(direction.signum() * step))?;
+            }
+            Action::IndentSettings => indent_settings::show(self)?,
             Action::PageBreak => self.edit(EditorState::insert_page_break)?,
             Action::ColumnBreak => self.edit(EditorState::insert_column_break)?,
             Action::SectionBreak => section_break_menu::show(self),

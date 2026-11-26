@@ -5399,15 +5399,6 @@
                                       <pagesize>100</pagesize>
                                     </object>
                                   </object>
-                                  <object class="sizeritem">
-                                    <option>0</option>
-                                    <flag>wxEXPAND</flag>
-                                    <object class="wxPanel" name="revision_gutter_panel">
-                                      <bg>#e3e7ed</bg>
-                                      <hidden>1</hidden>
-                                      <minsize>220,-1</minsize>
-                                    </object>
-                                  </object>
                                 </object>
                               </object>
                               <object class="sizeritem">

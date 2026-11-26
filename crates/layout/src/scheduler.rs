@@ -11,6 +11,7 @@ use std::ops::Range;
 
 #[derive(Clone)]
 struct LayoutRequest {
+    show_deletions: bool,
     recover_display: bool,
     paint: PagePaint,
     revision: u64,
@@ -69,6 +70,7 @@ impl LayoutScheduler {
             let engine = LayoutEngine { options };
 
             let mut pagination = crate::incremental::LayoutCache::default();
+            let mut projection: Option<(Arc<Document>, crate::review_projection::ReviewProjection)> = None;
             while !worker_stopping.load(Ordering::Acquire) {
                 let request = {
                     let (lock, cv) = &*worker_mailbox;
@@ -80,17 +82,22 @@ impl LayoutScheduler {
                 };
                 let Some(request) = request else { continue; };
                 let revision = request.revision;
+                if request.show_deletions && projection.as_ref().is_none_or(|(source, _)| !Arc::ptr_eq(source, &request.document)) {
+                    projection = Some((Arc::clone(&request.document), crate::review_projection::ReviewProjection::new(&request.document)));
+                }
+                let projected = request.show_deletions.then(|| &projection.as_ref().expect("review projection prepared").1);
+                let source = projected.map_or(&*request.document, |projection| &projection.document);
                 let hits_before = crate::cache_totals().0;
                 let result = pool.install(|| {
                     let result = engine.layout_document_cached(
-                        &request.document, revision, &worker_generation, &mut pagination, request.paint,
+                        source, revision, &worker_generation, &mut pagination, request.paint,
                     );
-                    let (document, display_warning) = match result {
+                    let (mut document, display_warning) = match result {
                         Ok(scene) => (scene, None),
                         Err(LayoutError::Cancelled) => return Err(LayoutError::Cancelled),
                         Err(error) if request.recover_display => {
                             let cancel = Some((&*worker_generation, revision));
-                            let scene = engine.layout_document_pass(&request.document, cancel, &mut pagination, true, request.paint)?;
+                            let scene = engine.layout_document_pass(source, cancel, &mut pagination, true, request.paint)?;
                             let scene = crate::materialize_scene(scene, cancel)?;
                             (scene, Some(format!("Simplified document view: {error}")))
                         }
@@ -99,6 +106,7 @@ impl LayoutScheduler {
                     if worker_generation.load(Ordering::Acquire) != revision {
                         return Err(LayoutError::Cancelled);
                     }
+                    if let Some(projection) = projected { projection.remap_scene(&mut document); }
                     // Pagination already counts the intact page prefixes and
                     // suffixes it reused. Comparing every glyph outline in
                     // every page again only to display a status metric slows
@@ -126,23 +134,23 @@ impl LayoutScheduler {
     }
 
     pub fn submit(&self, revision: u64, document: Arc<Document>) {
-        self.enqueue(revision, document, false, PagePaint::default());
+        self.enqueue(revision, document, false, PagePaint::default(), false);
     }
 
     /// A file opened for editing may display a local fallback. Equation validation
     /// and callers asking for an exact layout continue to use submit().
-    pub fn submit_for_display(&self, revision: u64, document: Arc<Document>, pages: Range<usize>) {
-        self.enqueue(revision, document, true, PagePaint::window(pages));
+    pub fn submit_for_display(&self, revision: u64, document: Arc<Document>, pages: Range<usize>, show_deletions: bool) {
+        self.enqueue(revision, document, true, PagePaint::window(pages), show_deletions);
     }
 
-    pub fn submit_preview(&self, revision: u64, document: Arc<Document>, pages: Range<usize>) {
-        self.enqueue(revision, document, false, PagePaint::window(pages));
+    pub fn submit_preview(&self, revision: u64, document: Arc<Document>, pages: Range<usize>, show_deletions: bool) {
+        self.enqueue(revision, document, false, PagePaint::window(pages), show_deletions);
     }
 
-    fn enqueue(&self, revision: u64, document: Arc<Document>, recover_display: bool, paint: PagePaint) {
+    fn enqueue(&self, revision: u64, document: Arc<Document>, recover_display: bool, paint: PagePaint, show_deletions: bool) {
         self.generation.store(revision, Ordering::Release);
         let (lock, cv) = &*self.mailbox;
-        *lock.lock().expect("layout mailbox poisoned") = Some(LayoutRequest { revision, document, recover_display, paint });
+        *lock.lock().expect("layout mailbox poisoned") = Some(LayoutRequest { revision, document, recover_display, paint, show_deletions });
         cv.notify_one();
     }
 

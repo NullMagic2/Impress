@@ -494,7 +494,7 @@
       "name": "outdent_button",
       "label": "",
       "icon": "outdent",
-      "action": "Indent(-5.0)",
+      "action": "Indent(-1.0)",
       "kind": "icon",
       "tip": "Decrease indent",
       "disabled": false,
@@ -508,7 +508,7 @@
       "name": "indent_button",
       "label": "",
       "icon": "indent",
-      "action": "Indent(5.0)",
+      "action": "Indent(1.0)",
       "kind": "icon",
       "tip": "Increase indent",
       "disabled": false,
@@ -3658,11 +3658,6 @@
     [
       "vertical_ruler",
       34,
-      -1
-    ],
-    [
-      "revision_gutter_panel",
-      220,
       -1
     ],
     [

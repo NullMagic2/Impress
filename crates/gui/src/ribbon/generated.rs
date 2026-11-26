@@ -41,8 +41,8 @@ pub fn buttons(ui: &MainUi) -> Vec<ButtonSpec> {
         ButtonSpec { button: ui.align_center_button, name: "align_center_button", label: "", icon: "align-center", action: Action::Align(ParagraphAlignment::Center), segment: "single", kind: "icon", tip: "Center", disabled: false, width_dip: 30, height_dip: 28, art_width_dip: 18, art_height_dip: 18 },
         ButtonSpec { button: ui.align_right_button, name: "align_right_button", label: "", icon: "align-right", action: Action::Align(ParagraphAlignment::Right), segment: "single", kind: "icon", tip: "Align right", disabled: false, width_dip: 30, height_dip: 28, art_width_dip: 18, art_height_dip: 18 },
         ButtonSpec { button: ui.align_justify_button, name: "align_justify_button", label: "", icon: "align-justify", action: Action::Align(ParagraphAlignment::Justify), segment: "single", kind: "icon", tip: "Justify", disabled: false, width_dip: 30, height_dip: 28, art_width_dip: 18, art_height_dip: 18 },
-        ButtonSpec { button: ui.outdent_button, name: "outdent_button", label: "", icon: "outdent", action: Action::Indent(-5.0), segment: "single", kind: "icon", tip: "Decrease indent", disabled: false, width_dip: 30, height_dip: 28, art_width_dip: 18, art_height_dip: 18 },
-        ButtonSpec { button: ui.indent_button, name: "indent_button", label: "", icon: "indent", action: Action::Indent(5.0), segment: "single", kind: "icon", tip: "Increase indent", disabled: false, width_dip: 30, height_dip: 28, art_width_dip: 18, art_height_dip: 18 },
+        ButtonSpec { button: ui.outdent_button, name: "outdent_button", label: "", icon: "outdent", action: Action::Indent(-1.0), segment: "single", kind: "icon", tip: "Decrease indent", disabled: false, width_dip: 30, height_dip: 28, art_width_dip: 18, art_height_dip: 18 },
+        ButtonSpec { button: ui.indent_button, name: "indent_button", label: "", icon: "indent", action: Action::Indent(1.0), segment: "single", kind: "icon", tip: "Increase indent", disabled: false, width_dip: 30, height_dip: 28, art_width_dip: 18, art_height_dip: 18 },
         ButtonSpec { button: ui.auto_direction_button, name: "auto_direction_button", label: "", icon: "dir-auto", action: Action::Direction(ParagraphDirection::Auto), segment: "single", kind: "icon", tip: "Automatic text direction", disabled: false, width_dip: 30, height_dip: 28, art_width_dip: 18, art_height_dip: 18 },
         ButtonSpec { button: ui.ltr_button, name: "ltr_button", label: "", icon: "ltr", action: Action::Direction(ParagraphDirection::LeftToRight), segment: "single", kind: "icon", tip: "Left-to-right", disabled: false, width_dip: 30, height_dip: 28, art_width_dip: 18, art_height_dip: 18 },
         ButtonSpec { button: ui.rtl_button, name: "rtl_button", label: "", icon: "rtl", action: Action::Direction(ParagraphDirection::RightToLeft), segment: "single", kind: "icon", tip: "Right-to-left", disabled: false, width_dip: 30, height_dip: 28, art_width_dip: 18, art_height_dip: 18 },
@@ -351,7 +351,6 @@ pub fn scale_controls(ui: &MainUi) {
     ui.header_exit_button.set_min_size(ui.header_exit_button.from_dip(Size::new(62, 78)));
     ui.tab_ruler.set_min_size(ui.tab_ruler.from_dip(Size::new(-1, 34)));
     ui.vertical_ruler.set_min_size(ui.vertical_ruler.from_dip(Size::new(34, -1)));
-    ui.revision_gutter_panel.set_min_size(ui.revision_gutter_panel.from_dip(Size::new(220, -1)));
     ui.original_close_button.set_min_size(ui.original_close_button.from_dip(Size::new(28, 28)));
     ui.split_handle.set_min_size(ui.split_handle.from_dip(Size::new(6, -1)));
     ui.source_close_button.set_min_size(ui.source_close_button.from_dip(Size::new(28, 28)));
@@ -579,7 +578,7 @@ pub fn install_group_relief(ui: &MainUi) {
     super::group_relief::install(ui.layout_page_1_group, false, false);
     super::group_relief::install_caption(ui.layout_page_1_group_caption, "Page", false, false, false);
     super::group_relief::install(ui.layout_paragraph_2_group, false, false);
-    super::group_relief::install_caption(ui.layout_paragraph_2_group_caption, "Paragraph", false, false, false);
+    super::group_relief::install_caption(ui.layout_paragraph_2_group_caption, "Paragraph", false, false, true);
     super::group_relief::install(ui.layout_arrange_3_group, false, true);
     super::group_relief::install_caption(ui.layout_arrange_3_group_caption, "Arrange", false, true, false);
     super::group_relief::install(ui.references_table_of_contents_0_group, true, false);
@@ -655,7 +654,7 @@ pub fn layout_groups(ui: &MainUi) {
     super::group_relief::measure_caption(ui.insert_code_7_group_caption, "Code", false);
     super::group_relief::measure_caption(ui.layout_page_setup_0_group_caption, "Page setup", false);
     super::group_relief::measure_caption(ui.layout_page_1_group_caption, "Page", false);
-    super::group_relief::measure_caption(ui.layout_paragraph_2_group_caption, "Paragraph", false);
+    super::group_relief::measure_caption(ui.layout_paragraph_2_group_caption, "Paragraph", true);
     super::group_relief::measure_caption(ui.layout_arrange_3_group_caption, "Arrange", false);
     super::group_relief::measure_caption(ui.references_table_of_contents_0_group_caption, "Table of contents", false);
     super::group_relief::measure_caption(ui.references_footnotes_1_group_caption, "Footnotes", true);
